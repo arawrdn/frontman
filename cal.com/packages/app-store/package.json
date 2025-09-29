@@ -1,0 +1,34 @@
+{
+  "name": "@calcom/app-store",
+  "private": true,
+  "sideEffects": false,
+  "version": "0.0.0",
+  "main": "./index.ts",
+  "files": [
+    "components.ts"
+  ],
+  "scripts": {
+    "type-check": "tsc --pretty --noEmit",
+    "type-check:ci": "tsc-absolute --pretty --noEmit",
+    "lint": "eslint .",
+    "lint:fix": "eslint .",
+    "lint:report": "eslint . --format json --output-file ../../lint-results/app-store.json"
+  },
+  "dependencies": {
+    "@calcom/dailyvideo": "workspace:*",
+    "@calcom/dayjs": "workspace:*",
+    "@calcom/features": "workspace:*",
+    "@calcom/lib": "workspace:*",
+    "@calcom/office365video": "workspace:*",
+    "@calcom/ui": "workspace:*",
+    "@calcom/zoomvideo": "workspace:*",
+    "lodash": "^4.17.21",
+    "qs-stringify": "^1.2.1",
+    "react-i18next": "^12.2.0",
+    "stripe": "^9.16.0"
+  },
+  "devDependencies": {
+    "@calcom/eslint-config": "workspace:*",
+    "@calcom/types": "workspace:*"
+  }
+}
