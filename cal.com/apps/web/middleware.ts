@@ -74,6 +74,56 @@ const middleware = async (req: NextRequest): Promise<NextResponse<unknown>> => {
     }
   }
 
+  if (url.pathname.startsWith("/ask-the-llm")) {
+    const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ask the LLM</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 40px 20px;
+            background-color: #f9fafb;
+        }
+        .container {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            padding: 32px;
+            text-align: center;
+        }
+        h1 {
+            color: #111827;
+            margin-bottom: 16px;
+        }
+        p {
+            color: #6b7280;
+            line-height: 1.6;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Ask the LLM</h1>
+        <p>Welcome to the Ask the LLM middleware! This page is served directly from the Cal.com middleware.</p>
+        <p>This demonstrates how custom routes can be handled at the middleware level.</p>
+    </div>
+</body>
+</html>`;
+
+    return new NextResponse(html, {
+      status: 200,
+      headers: {
+        "Content-Type": "text/html",
+        ...Object.fromEntries(requestHeaders),
+      },
+    });
+  }
+
   if (url.pathname.startsWith("/apps/installed")) {
     const returnTo = reqWithEnrichedHeaders.cookies.get("return-to");
 
@@ -183,6 +233,8 @@ export const config = {
     "/:path*/embed",
     // API routes
     "/api/auth/signup",
+    // Ask the LLM route
+    "/ask-the-llm",
   ],
 };
 
