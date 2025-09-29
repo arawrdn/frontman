@@ -1,5 +1,7 @@
 import React from 'react';
 import { PaperPlaneIcon } from '@radix-ui/react-icons';
+import SelectElementButton from './SelectElementButton';
+import { SelectElement } from '../types/SelectElement';
 
 interface ChatInputProps {
   message: string;
@@ -9,6 +11,9 @@ interface ChatInputProps {
   modelName?: string;
   trialInfo?: string;
   onSettingsClick?: () => void;
+  onElementSelected?: (element: SelectElement) => void;
+  selectedElement?: SelectElement | null;
+  onClearSelection?: () => void;
 }
 
 const ChatInput: React.FC<ChatInputProps> = ({
@@ -18,7 +23,10 @@ const ChatInput: React.FC<ChatInputProps> = ({
   placeholder = "Message the agent",
   modelName = "Claude Sonnet 4",
   trialInfo = "Trial mode: 0 / 20 messages available",
-  onSettingsClick
+  onSettingsClick,
+  onElementSelected,
+  selectedElement,
+  onClearSelection
 }) => {
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -52,7 +60,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
               width: '100%',
               minHeight: '44px',
               maxHeight: '120px',
-              padding: '12px 40px 12px 12px',
+              padding: '12px 72px 12px 12px',
               backgroundColor: '#374151',
               border: '1px solid #4b5563',
               borderRadius: '8px',
@@ -65,27 +73,40 @@ const ChatInput: React.FC<ChatInputProps> = ({
             }}
             rows={1}
           />
-          <button
-            onClick={onSendMessage}
-            disabled={!message.trim()}
-            style={{
-              position: 'absolute',
-              right: '8px',
-              bottom: '8px',
-              width: '28px',
-              height: '28px',
-              backgroundColor: message.trim() ? '#3b82f6' : '#6b7280',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: message.trim() ? 'pointer' : 'not-allowed',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              transition: 'background-color 0.2s'
-            }}
-          >
-            <PaperPlaneIcon width={14} height={14} color="white" />
-          </button>
+          <div style={{
+            position: 'absolute',
+            right: '8px',
+            bottom: '8px',
+            display: 'flex',
+            gap: '4px'
+          }}>
+            {onElementSelected && (
+              <SelectElementButton
+                onElementSelected={onElementSelected}
+                selectedElement={selectedElement}
+                onClearSelection={onClearSelection}
+                disabled={false}
+              />
+            )}
+            <button
+              onClick={onSendMessage}
+              disabled={!message.trim()}
+              style={{
+                width: '28px',
+                height: '28px',
+                backgroundColor: message.trim() ? '#3b82f6' : '#6b7280',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: message.trim() ? 'pointer' : 'not-allowed',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transition: 'background-color 0.2s'
+              }}
+            >
+              <PaperPlaneIcon width={14} height={14} color="white" />
+            </button>
+          </div>
         </div>
       </div>
 

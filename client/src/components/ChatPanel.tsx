@@ -2,6 +2,7 @@ import React from 'react';
 import ChatHeader from './ChatHeader';
 import ChatMessages from './ChatMessages';
 import ChatInput from './ChatInput';
+import { SelectElement } from '../types/SelectElement';
 
 interface ChatPanelProps {
   message: string;
@@ -10,6 +11,9 @@ interface ChatPanelProps {
   messages?: Array<{ id: string; text: string; sender: 'user' | 'assistant' }>;
   onLearnMoreClick?: () => void;
   onSettingsClick?: () => void;
+  onElementSelected?: (element: SelectElement) => void;
+  selectedElement?: SelectElement | null;
+  onClearSelection?: () => void;
 }
 
 const ChatPanel: React.FC<ChatPanelProps> = ({
@@ -18,7 +22,10 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
   onSendMessage,
   messages = [],
   onLearnMoreClick,
-  onSettingsClick
+  onSettingsClick,
+  onElementSelected,
+  selectedElement,
+  onClearSelection
 }) => {
   return (
     <div
@@ -46,6 +53,9 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
         onMessageChange={onMessageChange}
         onSendMessage={onSendMessage}
         onSettingsClick={onSettingsClick}
+        onElementSelected={onElementSelected}
+        selectedElement={selectedElement}
+        onClearSelection={onClearSelection}
       />
     </div>
   );
