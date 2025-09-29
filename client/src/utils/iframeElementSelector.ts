@@ -1,3 +1,489 @@
+import { finder } from "@medv/finder";
+import { snapdom } from "@zumer/snapdom";
+import { useCallback, useEffect, useRef } from "react";
+
+interface ElementSelectorProps {
+	isActive: boolean;
+	onElementSelected: (
+		element: Element,
+		imageDataUrl?: string,
+		cssSelector?: string,
+		componentPath?: string,
+	) => void;
+	onCancel: () => void;
+	onOpenDialog: () => void;
+	selectedElements: Element[];
+	maxSelections: number;
+}
+
+export const ElementSelector: React.FC<ElementSelectorProps> = ({
+	isActive,
+	onElementSelected,
+	onCancel,
+	onOpenDialog,
+	selectedElements,
+	maxSelections, // Currently unused - selection limiting is handled in parent App component
+}) => {
+	// Explicitly mark as unused to avoid TypeScript warning
+	void maxSelections;
+
+	const lastHighlightedElement = useRef<Element | null>(null);
+	const overlayRef = useRef<HTMLDivElement | null>(null);
+
+	// Hover-cycle state
+	const hoverStartTopElementRef = useRef<Element | null>(null);
+	const hoverTimeoutRef = useRef<number | null>(null);
+	const hoverIntervalRef = useRef<number | null>(null);
+	const lastMousePosRef = useRef<{ x: number; y: number } | null>(null);
+	const elementStackRef = useRef<Element[]>([]);
+	const stackIndexRef = useRef<number>(0);
+
+	const removeHighlight = useCallback(() => {
+		if (lastHighlightedElement.current) {
+			lastHighlightedElement.current.classList.remove(
+				"element-selector-highlight",
+			);
+			lastHighlightedElement.current = null;
+		}
+		if (overlayRef.current) {
+			overlayRef.current.style.display = "none";
+		}
+	}, []);
+
+	const isElementSelected = useCallback(
+		(element: Element) => {
+			return selectedElements.includes(element);
+		},
+		[selectedElements],
+	);
+
+	const getComponentPath = useCallback((element: Element) => {
+		try {
+			// Get all keys on the element
+			const keys = Object.keys(element);
+
+			// Find React fiber key (always present in React apps)
+			const reactKey = keys.find(
+				(key) =>
+					key.startsWith("__reactFiber$") ||
+					key.startsWith("__reactInternalInstance$"),
+			);
+
+			if (!reactKey) return null;
+
+			// @ts-ignore @biome-ignore
+			let fiber = element[reactKey];
+			const componentPath = [];
+
+			// Walk up the fiber tree and collect all components
+			while (fiber) {
+				if (fiber.type && typeof fiber.type === "function") {
+					const componentName =
+						fiber.type.displayName || fiber.type.name || "Anonymous";
+					componentPath.push({
+						name: componentName,
+						type: fiber.type,
+						props: fiber.memoizedProps || {},
+						state: fiber.memoizedState,
+						instance: fiber.stateNode,
+					});
+				}
+				fiber = fiber.return;
+			}
+
+			const reversedPath = componentPath.reverse();
+
+			return {
+				path: reversedPath,
+				pathString: reversedPath.map((comp) => comp.name).join(" "),
+				root: reversedPath[0] || null,
+			};
+		} catch (error) {
+			// Graceful fallback
+			console.warn("Could not extract component path:", error);
+			return null;
+		}
+	}, []);
+
+	const generateCssSelector = useCallback((element: Element): string => {
+		try {
+			// Generate optimal CSS selector
+			console.log("📋 Generating CSS selector for element:", element);
+			return finder(element, {
+				root: document.body,
+				className: (name: string) =>
+					!name.includes("element-selector-") &&
+					!name.includes("ask-the-llm-"),
+			});
+		} catch (error) {
+			console.warn("Failed to generate CSS selector:", error);
+			// Fallback to basic selector
+			const tagName = element.tagName.toLowerCase();
+			const id = element.id ? `#${element.id}` : "";
+			const classes = element.className
+				? `.${element.className.split(" ").join(".")}`
+				: "";
+			return `${tagName}${id}${classes}`.replace(/\s+/g, "");
+		}
+	}, []);
+
+	const highlightElement = useCallback(
+		(element: Element) => {
+			removeHighlight();
+
+			const shadowHost = element.closest("#ask-the-llm-host");
+			if (shadowHost) return;
+
+			element.classList.add("element-selector-highlight");
+			lastHighlightedElement.current = element;
+
+			if (!overlayRef.current) {
+				overlayRef.current = document.createElement("div");
+				overlayRef.current.className = "element-selector-overlay";
+				document.body.appendChild(overlayRef.current);
+			}
+
+			const rect = element.getBoundingClientRect();
+			const overlay = overlayRef.current;
+			const isSelected = isElementSelected(element);
+
+			overlay.style.display = "block";
+			overlay.style.left = `${rect.left + window.scrollX}px`;
+			overlay.style.top = `${rect.top + window.scrollY}px`;
+			overlay.style.width = `${rect.width}px`;
+			overlay.style.height = `${rect.height}px`;
+
+			if (isSelected) {
+				overlay.className =
+					"element-selector-overlay element-selector-overlay-selected";
+			} else {
+				overlay.className = "element-selector-overlay";
+			}
+		},
+		[removeHighlight, isElementSelected],
+	);
+
+	const isOurUiElement = useCallback((element: Element): boolean => {
+		if (element.closest(".element-selector-overlay")) {
+			return true;
+		}
+		const shadowHost = element.closest("#ask-the-llm-host");
+		return Boolean(shadowHost);
+	}, []);
+
+	const getFilteredElementsFromPoint = useCallback(
+		(x: number, y: number): Element[] => {
+			const all = document.elementsFromPoint(x, y);
+			return all.filter((el) => !isOurUiElement(el));
+		},
+		[isOurUiElement],
+	);
+
+	const clearHoverTimers = useCallback(() => {
+		if (hoverTimeoutRef.current !== null) {
+			window.clearTimeout(hoverTimeoutRef.current);
+			hoverTimeoutRef.current = null;
+		}
+		if (hoverIntervalRef.current !== null) {
+			window.clearInterval(hoverIntervalRef.current);
+			hoverIntervalRef.current = null;
+		}
+	}, []);
+
+	const startHoverCycle = useCallback(() => {
+		clearHoverTimers();
+		// First descent after 1s, then every 1s
+		hoverTimeoutRef.current = window.setTimeout(() => {
+			const stack = elementStackRef.current;
+			if (stack.length === 0) return;
+			stackIndexRef.current = Math.min(
+				stackIndexRef.current + 1,
+				stack.length - 1,
+			);
+			highlightElement(stack[stackIndexRef.current]);
+			// Continue descending every second until bottom reached
+			hoverIntervalRef.current = window.setInterval(() => {
+				const s = elementStackRef.current;
+				if (s.length === 0) return;
+				if (stackIndexRef.current >= s.length - 1) {
+					clearHoverTimers();
+					return;
+				}
+				stackIndexRef.current += 1;
+				highlightElement(s[stackIndexRef.current]);
+			}, 1000);
+		}, 1000);
+	}, [clearHoverTimers, highlightElement]);
+
+	const captureElementImage = useCallback(
+		async (element: Element): Promise<string | undefined> => {
+			try {
+				// Use snapdom to capture the element as an image
+				const result = await snapdom(element as HTMLElement, {
+					// Configure snapdom options for better quality
+					scale: 1,
+					backgroundColor: "transparent",
+					embedFonts: true,
+				});
+
+				// Convert to blob and then to data URL
+				const blob = await result.toBlob({ type: "png" });
+				return new Promise((resolve) => {
+					const reader = new FileReader();
+					reader.onload = () => resolve(reader.result as string);
+					reader.readAsDataURL(blob);
+				});
+			} catch (error) {
+				console.warn("Failed to capture element image:", error);
+				return undefined;
+			}
+		},
+		[],
+	);
+
+	const handleMouseMove = useCallback(
+		(e: MouseEvent) => {
+			if (!isActive) return;
+
+			e.preventDefault();
+			e.stopPropagation();
+
+			const { clientX, clientY } = e;
+
+			const lastPos = lastMousePosRef.current;
+			const moved = !lastPos || lastPos.x !== clientX || lastPos.y !== clientY;
+			if (moved) {
+				lastMousePosRef.current = { x: clientX, y: clientY };
+				// Rebuild stack and reset cycle when pointer moves
+				const elements = getFilteredElementsFromPoint(clientX, clientY);
+				if (elements.length > 0) {
+					elementStackRef.current = elements;
+					stackIndexRef.current = 0;
+					hoverStartTopElementRef.current = elements[0];
+					highlightElement(elements[0]);
+					startHoverCycle();
+				} else {
+					clearHoverTimers();
+					removeHighlight();
+				}
+				return;
+			}
+
+			// If not moved, ensure we are still over the same starting top element
+			const currentTop = document.elementFromPoint(clientX, clientY);
+			if (
+				currentTop &&
+				!isOurUiElement(currentTop) &&
+				hoverStartTopElementRef.current &&
+				currentTop !== hoverStartTopElementRef.current
+			) {
+				// Pointer left the original element; reset to new context
+				const elements = getFilteredElementsFromPoint(clientX, clientY);
+				if (elements.length > 0) {
+					elementStackRef.current = elements;
+					stackIndexRef.current = 0;
+					hoverStartTopElementRef.current = elements[0];
+					highlightElement(elements[0]);
+					startHoverCycle();
+				} else {
+					clearHoverTimers();
+					removeHighlight();
+				}
+			}
+		},
+		[
+			isActive,
+			getFilteredElementsFromPoint,
+			isOurUiElement,
+			highlightElement,
+			startHoverCycle,
+			clearHoverTimers,
+			removeHighlight,
+		],
+	);
+
+	const handleClick = useCallback(
+		async (e: MouseEvent) => {
+			if (!isActive) return;
+
+			const possibleOurUiElement = document.elementFromPoint(
+				e.clientX,
+				e.clientY,
+			);
+			if (possibleOurUiElement) {
+				// Don't select our own components - let them handle their own clicks
+				if (isOurUiElement(possibleOurUiElement)) return;
+			}
+
+			// Only prevent default and stop propagation for actual element selection
+			e.preventDefault();
+			e.stopPropagation();
+
+			const element =
+				lastHighlightedElement.current ||
+				document.elementFromPoint(e.clientX, e.clientY);
+
+			if (element) {
+				clearHoverTimers();
+
+				// Generate CSS selector for this element
+				const cssSelector = generateCssSelector(element);
+
+				// Get full component path from element to root
+				const componentPath = getComponentPath(element);
+
+				// Capture the element image before calling onElementSelected (only if not already selected)
+				const isSelected = isElementSelected(element);
+				let imageDataUrl: string | undefined;
+
+				if (!isSelected) {
+					imageDataUrl = await captureElementImage(element);
+				}
+
+				onElementSelected(
+					element,
+					imageDataUrl,
+					cssSelector,
+					componentPath?.pathString,
+				);
+			}
+		},
+		[
+			isActive,
+			onElementSelected,
+			clearHoverTimers,
+			captureElementImage,
+			isElementSelected,
+			generateCssSelector,
+			getComponentPath,
+			isOurUiElement,
+		],
+	);
+
+	const handleKeyDown = useCallback(
+		(e: KeyboardEvent) => {
+			if (!isActive) return;
+
+			if (e.key === "Escape") {
+				e.preventDefault();
+				removeHighlight();
+				onCancel();
+			} else if (e.key === "Enter") {
+				e.preventDefault();
+				removeHighlight();
+				onOpenDialog();
+			}
+		},
+		[isActive, onCancel, onOpenDialog, removeHighlight],
+	);
+
+	useEffect(() => {
+		if (isActive) {
+			// Add CSS for highlighting including selected state
+			const style = document.createElement("style");
+			style.id = "element-selector-styles";
+			style.textContent = `
+        .element-selector-highlight {
+          outline: 2px solid #667eea !important;
+          outline-offset: -2px !important;
+          background-color: rgba(102, 126, 234, 0.1) !important;
+          cursor: grab !important;
+        }
+        
+        .element-selector-overlay {
+          position: absolute;
+          pointer-events: none;
+          border: 2px solid #667eea;
+          background-color: rgba(102, 126, 234, 0.1);
+          z-index: 9999;
+          box-sizing: border-box;
+        }
+        
+        .element-selector-overlay-selected {
+          border: 2px solid #f59e0b !important;
+          background-color: rgba(245, 158, 11, 0.2) !important;
+        }
+        
+        * {
+          cursor: grab !important;
+        }
+      `;
+			document.head.appendChild(style);
+
+			// Add persistent styling to already selected elements
+			for (const element of selectedElements) {
+				element.classList.add("element-selector-selected");
+			}
+
+			// Add styles for selected elements
+			const selectedStyle = document.createElement("style");
+			selectedStyle.id = "element-selector-selected-styles";
+			selectedStyle.textContent = `
+        .element-selector-selected {
+          background-color: rgba(245, 158, 11, 0.15) !important;
+          outline: 1px solid #f59e0b !important;
+          outline-offset: -1px !important;
+        }
+      			`;
+			document.head.appendChild(selectedStyle);
+
+			// Add event listeners
+			document.addEventListener("mousemove", handleMouseMove, true);
+			document.addEventListener("click", handleClick, true);
+			document.addEventListener("keydown", handleKeyDown, true);
+
+			// Prevent text selection during element selection
+			document.body.style.userSelect = "none";
+
+			return () => {
+				// Cleanup
+				document.removeEventListener("mousemove", handleMouseMove, true);
+				document.removeEventListener("click", handleClick, true);
+				document.removeEventListener("keydown", handleKeyDown, true);
+				clearHoverTimers();
+
+				const existingStyle = document.getElementById(
+					"element-selector-styles",
+				);
+				if (existingStyle) {
+					existingStyle.remove();
+				}
+
+				const existingSelectedStyle = document.getElementById(
+					"element-selector-selected-styles",
+				);
+				if (existingSelectedStyle) {
+					existingSelectedStyle.remove();
+				}
+
+				// Remove selected styling from all elements
+				for (const element of selectedElements) {
+					element.classList.remove("element-selector-selected");
+				}
+
+				removeHighlight();
+
+				if (overlayRef.current) {
+					overlayRef.current.remove();
+					overlayRef.current = null;
+				}
+
+				document.body.style.userSelect = "";
+			};
+		}
+	}, [
+		isActive,
+		handleMouseMove,
+		handleClick,
+		handleKeyDown,
+		removeHighlight,
+		clearHoverTimers,
+		selectedElements,
+	]);
+
+	return null; // This component doesn't render anything itself
+};
+
 // Utility for injecting element selection functionality into iframes
 export const IFRAME_SELECTOR_SCRIPT = `
 (function() {
@@ -88,6 +574,7 @@ export const IFRAME_SELECTOR_SCRIPT = `
       highlightOverlay = null;
     }
   }
+    
 
   function getReactComponentInfo(element) {
     try {

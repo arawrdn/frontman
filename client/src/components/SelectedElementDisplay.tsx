@@ -52,7 +52,12 @@ const SelectedElementDisplay: React.FC<SelectedElementDisplayProps> = ({
             padding: '2px 6px', 
             borderRadius: '4px',
             fontSize: '12px',
-            fontFamily: 'Monaco, Consolas, monospace'
+            fontFamily: 'Monaco, Consolas, monospace',
+            maxWidth: '300px',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+            display: 'inline-block'
           }}>
             {selectedElement.selector}
           </code>
@@ -67,7 +72,12 @@ const SelectedElementDisplay: React.FC<SelectedElementDisplayProps> = ({
               padding: '2px 6px', 
               borderRadius: '4px',
               fontSize: '11px',
-              fontFamily: 'Monaco, Consolas, monospace'
+              fontFamily: 'Monaco, Consolas, monospace',
+              maxWidth: '400px',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              display: 'inline-block'
             }}>
               {selectedElement.reactComponent.name.split(" ").reverse().slice(0, 3).reverse().join(" ")}
             </code>

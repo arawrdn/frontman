@@ -25,30 +25,54 @@ const SelectElementButton: React.FC<SelectElementButtonProps> = ({
   const cleanupFunctionRef = useRef<(() => void) | null>(null);
 
   const getReactComponentInfo = (element: Element) => {
-    // Try to find React component info from the element
-    // This is a best-effort approach as React internals vary
-    const reactFiber = (element as any)._reactInternalFiber || 
-                       (element as any)._reactInternals ||
-                       Object.keys(element).find(key => key.startsWith('__reactInternalInstance'));
-    
-    if (reactFiber) {
-      let fiber = typeof reactFiber === 'string' ? (element as any)[reactFiber] : reactFiber;
-      
-      // Walk up the fiber tree to find component
+    try {
+      // Get all keys on the element
+      const keys = Object.keys(element);
+
+      // Find React fiber key (always present in React apps)
+      const reactKey = keys.find(
+        (key) =>
+          key.startsWith("__reactFiber$") ||
+          key.startsWith("__reactInternalInstance$") ||
+          key.startsWith("_reactInternalFiber") ||
+          key.startsWith("_reactInternals")
+      );
+
+      if (!reactKey) return undefined;
+
+      // @ts-ignore
+      let fiber = element[reactKey];
+      const componentPath = [];
+
+      // Walk up the fiber tree and collect all components
       while (fiber) {
-        if (fiber.type && typeof fiber.type === 'function' && fiber.type.name) {
-          return {
-            name: fiber.type.name,
+        if (fiber.type && typeof fiber.type === "function") {
+          const componentName =
+            fiber.type.displayName || fiber.type.name || "Anonymous";
+          componentPath.push({
+            name: componentName,
             sourceLocation: fiber._debugSource ? 
               `${fiber._debugSource.fileName}:${fiber._debugSource.lineNumber}` : 
               undefined
-          };
+          });
         }
         fiber = fiber.return;
       }
+
+      // Reverse the path so root is first (leftmost) and immediate component is last (rightmost)
+      const reversedPath = componentPath.reverse();
+
+      if (reversedPath.length === 0) return undefined;
+
+      return {
+        name: reversedPath.map((comp) => comp.name).join(" → "), // Human readable path (Root → ... → Component)
+        sourceLocation: reversedPath[reversedPath.length - 1]?.sourceLocation // Source location of the immediate component
+      };
+    } catch (error) {
+      // Graceful fallback
+      console.warn("Could not extract component path:", error);
+      return undefined;
     }
-    
-    return undefined;
   };
 
   const cleanup = useCallback(() => {
@@ -93,7 +117,7 @@ const SelectElementButton: React.FC<SelectElementButtonProps> = ({
             const screenshot = result.url;
 
             const selectElement: SelectElement = {
-              selector: `iframe ${data.selector}`,
+              selector: data.selector,
               screenshot,
               reactComponent: data.reactComponent
             };
