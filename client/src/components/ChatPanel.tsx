@@ -1,6 +1,8 @@
 import React from 'react';
 import ChatHeader from './ChatHeader';
 import ChatMessages from './ChatMessages';
+import ChatTextLength from './ChatTextLength';
+import ChatSelectedElement from './ChatSelectedElement';
 import ChatInput from './ChatInput';
 import { SelectElement } from '../types/SelectElement';
 
@@ -45,6 +47,15 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
       />
       
       <ChatMessages 
+        messages={messages}
+      />
+      
+      <ChatSelectedElement
+        selectedElement={selectedElement}
+        onClearSelection={onClearSelection}
+      />
+      
+      <ChatTextLength
         messages={messages}
       />
       

@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import ChatPanel from './components/ChatPanel';
 import ContentPanel from './components/ContentPanel';
-import SelectedElementDisplay from './components/SelectedElementDisplay';
 import { SelectElement } from './types/SelectElement';
 
 // Types for compatibility with ChatPanel
@@ -28,6 +27,16 @@ const SplitLayoutWidget: React.FC = () => {
 	const handleSendMessage = () => {
 		// Placeholder for send message functionality
 		console.log('Send message:', message);
+		// Add message to conversation history
+		if (message.trim()) {
+			const newMessage: ChatMessage = {
+				id: Date.now().toString(),
+				text: message,
+				sender: 'user'
+			};
+			setMessages(prev => [...prev, newMessage]);
+			setMessage('');
+		}
 	};
 
 	const handleElementSelected = (element: SelectElement) => {
@@ -50,6 +59,7 @@ const SplitLayoutWidget: React.FC = () => {
 		console.log('Settings clicked');
 		// Add your settings logic here
 	};
+
 
 	return (
 		<div
@@ -79,11 +89,6 @@ const SplitLayoutWidget: React.FC = () => {
 			
 			<ContentPanel
 				iframeUrl={iframeUrl}
-			/>
-			
-			<SelectedElementDisplay
-				selectedElement={selectedElement}
-				onClear={handleClearSelection}
 			/>
 		</div>
 	);
