@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bundle Demo - Split Layout Widget</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 40px;
+            background-color: #f5f5f5;
+        }
+        .content {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 40px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 { color: #333; }
+        p { line-height: 1.6; color: #666; }
+        .info-box {
+            background: #e3f2fd;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        .info-box h3 {
+            color: #1565c0;
+            margin-top: 0;
+        }
+        .info-box p {
+            margin-bottom: 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="content">
+        <h1>Bundle Demo - Split Layout Widget</h1>
+        <p>This page demonstrates loading the split layout widget from the Vite development server's bundle endpoint.</p>
+
+        <div class="info-box">
+            <h3>Bundle Loading</h3>
+            <p>The widget is loaded from: <code>http://localhost:5173/bundle.js</code></p>
+            <p>This allows you to use the built bundle during development and testing.</p>
+        </div>
+
+        <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.</p>
+
+        <h2>How to test:</h2>
+        <ol>
+            <li>Run <code>npm run build</code> to generate the bundle</li>
+            <li>Run <code>npm run dev</code> to start the development server</li>
+            <li>Open this page in your browser</li>
+            <li>The split layout widget should load and take over the page</li>
+        </ol>
+
+        <p>Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.</p>
+
+        <div class="info-box">
+            <h3>Available Endpoints</h3>
+            <p>• <code>/bundle.js</code> - UMD bundle (for script tags)</p>
+            <p>• <code>/bundle.es.js</code> - ES module bundle (for modern imports)</p>
+        </div>
+    </div>
+
+    <!-- Load the split layout widget from the bundle endpoint -->
+    <script src="http://localhost:5173/bundle.js"></script>
+</body>
+</html>

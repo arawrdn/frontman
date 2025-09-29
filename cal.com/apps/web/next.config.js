@@ -427,24 +427,24 @@ const nextConfig = (phase) => {
       };
 
       return [
-        {
-          source: "/auth/:path*",
-          headers: [
-            {
-              key: "X-Frame-Options",
-              value: "DENY",
-            },
-          ],
-        },
-        {
-          source: "/signup",
-          headers: [
-            {
-              key: "X-Frame-Options",
-              value: "DENY",
-            },
-          ],
-        },
+        // {
+        //   source: "/auth/:path*",
+        //   headers: [
+        //     {
+        //       key: "X-Frame-Options",
+        //       value: "DENY",
+        //     },
+        //   ],
+        // },
+        // {
+        //   source: "/signup",
+        //   headers: [
+        //     {
+        //       key: "X-Frame-Options",
+        //       value: "DENY",
+        //     },
+        //   ],
+        // },
         {
           source: "/:path*",
           headers: [

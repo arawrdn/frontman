@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Process Error Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            line-height: 1.6;
+        }
+        .result {
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 5px;
+            font-weight: bold;
+        }
+        .success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        pre {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>Process Error Test for ask-the-llm Bundle</h1>
+    
+    <p>Testing both UMD and ES module formats to ensure no "process is not defined" errors occur.</p>
+    
+    <div id="es-result" class="result">Testing ES Module...</div>
+    <div id="umd-result" class="result">Testing UMD...</div>
+    
+    <h3>Console Output:</h3>
+    <pre id="console-output"></pre>
+
+    <!-- React is now bundled internally, no external dependencies needed -->
+
+    <script>
+        const consoleOutput = document.getElementById('console-output');
+        const originalLog = console.log;
+        const originalError = console.error;
+        
+        // Capture console output
+        function addToConsole(type, ...args) {
+            const timestamp = new Date().toLocaleTimeString();
+            consoleOutput.textContent += `[${timestamp}] ${type}: ${args.join(' ')}\n`;
+        }
+        
+        console.log = (...args) => {
+            originalLog(...args);
+            addToConsole('LOG', ...args);
+        };
+        
+        console.error = (...args) => {
+            originalError(...args);
+            addToConsole('ERROR', ...args);
+        };
+    </script>
+
+    <!-- Test UMD Bundle -->
+    <script src="./dist/ask-the-llm.umd.js"></script>
+    <script>
+        try {
+            console.log('UMD bundle loaded');
+            if (typeof AskTheLLM !== 'undefined') {
+                console.log('AskTheLLM global is available:', typeof AskTheLLM);
+                document.getElementById('umd-result').textContent = '✅ UMD: No process errors!';
+                document.getElementById('umd-result').className = 'result success';
+            } else {
+                console.log('AskTheLLM global not found');
+                document.getElementById('umd-result').textContent = '⚠️ UMD: Loaded but AskTheLLM not found';
+                document.getElementById('umd-result').className = 'result error';
+            }
+        } catch (error) {
+            console.error('UMD Error:', error.message);
+            document.getElementById('umd-result').textContent = `❌ UMD Error: ${error.message}`;
+            document.getElementById('umd-result').className = 'result error';
+        }
+    </script>
+
+    <!-- Test ES Module -->
+    <script type="module">
+        try {
+            console.log('Testing ES module import...');
+            const module = await import('./dist/ask-the-llm.es.js');
+            console.log('ES module loaded:', Object.keys(module));
+            
+            if (module.injectSplitLayoutWidget) {
+                console.log('injectSplitLayoutWidget function found');
+                document.getElementById('es-result').textContent = '✅ ES Module: No process errors!';
+                document.getElementById('es-result').className = 'result success';
+            } else {
+                console.log('injectSplitLayoutWidget not found in module');
+                document.getElementById('es-result').textContent = '⚠️ ES Module: Loaded but function not found';
+                document.getElementById('es-result').className = 'result error';
+            }
+        } catch (error) {
+            console.error('ES Module Error:', error.message);
+            document.getElementById('es-result').textContent = `❌ ES Module Error: ${error.message}`;
+            document.getElementById('es-result').className = 'result error';
+        }
+    </script>
+</body>
+</html>
