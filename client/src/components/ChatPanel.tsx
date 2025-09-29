@@ -1,0 +1,54 @@
+import React from 'react';
+import ChatHeader from './ChatHeader';
+import ChatMessages from './ChatMessages';
+import ChatInput from './ChatInput';
+
+interface ChatPanelProps {
+  message: string;
+  onMessageChange: (message: string) => void;
+  onSendMessage: () => void;
+  messages?: Array<{ id: string; text: string; sender: 'user' | 'assistant' }>;
+  onLearnMoreClick?: () => void;
+  onSettingsClick?: () => void;
+}
+
+const ChatPanel: React.FC<ChatPanelProps> = ({
+  message,
+  onMessageChange,
+  onSendMessage,
+  messages = [],
+  onLearnMoreClick,
+  onSettingsClick
+}) => {
+  return (
+    <div
+      style={{
+        width: '400px',
+        minWidth: '300px',
+        maxWidth: '500px',
+        backgroundColor: '#1f2937',
+        color: 'white',
+        display: 'flex',
+        flexDirection: 'column',
+        borderRight: '1px solid #374151'
+      }}
+    >
+      <ChatHeader 
+        onLearnMoreClick={onLearnMoreClick}
+      />
+      
+      <ChatMessages 
+        messages={messages}
+      />
+      
+      <ChatInput
+        message={message}
+        onMessageChange={onMessageChange}
+        onSendMessage={onSendMessage}
+        onSettingsClick={onSettingsClick}
+      />
+    </div>
+  );
+};
+
+export default ChatPanel;

@@ -6,6 +6,7 @@ export const askTheLlmHtml = `<!DOCTYPE html>
     <title>Ask the LLM</title>
 </head>
 <body>
+    <div id="root"></div>
     <script type="module" src="http://localhost:5173/ask-the-llm.es.js"></script>
 </body>
 </html>`;
