@@ -1,5 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { PaperPlaneIcon, ReloadIcon } from '@radix-ui/react-icons';
+import { createOpenAIClient } from './services/openai';
+
+// Types
+interface Message {
+	id: string;
+	content: string;
+	role: 'user' | 'assistant';
+	timestamp: Date;
+}
 
 const SplitLayoutWidget: React.FC = () => {
 	const [message, setMessage] = useState("");
@@ -11,7 +20,7 @@ const SplitLayoutWidget: React.FC = () => {
 	// Initialize OpenAI client
 	const [openAIClient] = useState(() => {
 		try {
-			return openai.createOpenAIClient();
+			return createOpenAIClient();
 		} catch {
 			setError(
 				"OpenAI API key not configured. Please set VITE_OPENAI_API_KEY.",
@@ -25,15 +34,21 @@ const SplitLayoutWidget: React.FC = () => {
 		const currentUrl = new URL(window.location.href);
 		const originUrl = `${currentUrl.protocol}//${currentUrl.host}`;
 		setIframeUrl(originUrl);
+	}, []);
 
-  const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSendMessage();
-    }
-  };
+	const handleKeyPress = (e: React.KeyboardEvent) => {
+		if (e.key === 'Enter' && !e.shiftKey) {
+			e.preventDefault();
+			handleSendMessage();
+		}
+	};
 
-  return (
+	const handleSendMessage = () => {
+		// Placeholder for send message functionality
+		console.log('Send message:', message);
+	};
+
+	return (
     <div
       style={{
         display: 'flex',
