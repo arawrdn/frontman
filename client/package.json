@@ -4,9 +4,13 @@
 	"version": "0.0.0",
 	"type": "module",
 	"scripts": {
-		"dev": "vite",
-		"build": "tsc -b && vite build",
-		"build:lib": "vite build --mode library",
+		"dev": "npm run build && npm run copy-bundle && vite",
+		"copy-bundle": "cp dist/ask-the-llm.es.js public/ && cp dist/ask-the-llm.es.js public/bundle.es.js",
+		"dev:hot": "vite --mode development",
+		"dev:clean": "vite",
+		"build": "npm run clean && tsc -b && vite build",
+		"build:lib": "npm run clean && vite build --mode library",
+		"clean": "rm -rf dist && tsc -b --clean",
 		"serve": "vite preview --port 5173 --host",
 		"lint": "eslint .",
 		"preview": "vite preview"
