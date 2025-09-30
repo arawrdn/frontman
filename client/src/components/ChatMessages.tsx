@@ -3,7 +3,7 @@ import React from 'react';
 interface ChatMessagesProps {
   title?: string;
   subtitle?: string;
-  messages?: Array<{ id: string; text: string; sender: 'user' | 'assistant' }>;
+  messages?: Array<{ id: string; text: string; sender: 'user' | 'assistant'; status?: 'sending' | 'completed' | 'error' }>;
 }
 
 const ChatMessages: React.FC<ChatMessagesProps> = ({
@@ -34,10 +34,29 @@ const ChatMessages: React.FC<ChatMessagesProps> = ({
               backgroundColor: message.sender === 'user' ? '#374151' : '#1f2937',
               color: '#f3f4f6',
               fontSize: '14px',
-              lineHeight: '1.5'
+              lineHeight: '1.5',
+              opacity: message.status === 'sending' ? 0.7 : 1,
+              border: message.status === 'error' ? '1px solid #ef4444' : 'none'
             }}
           >
-            {message.text}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              {message.status === 'sending' && (
+                <div style={{
+                  width: '12px',
+                  height: '12px',
+                  border: '2px solid #9ca3af',
+                  borderTop: '2px solid #60a5fa',
+                  borderRadius: '50%',
+                  animation: 'spin 1s linear infinite'
+                }} />
+              )}
+              {message.status === 'error' && (
+                <span style={{ color: '#ef4444', fontSize: '12px' }}>⚠</span>
+              )}
+              <div style={{ flex: 1 }}>
+                {message.text}
+              </div>
+            </div>
           </div>
         ))}
       </div>

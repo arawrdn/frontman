@@ -10,7 +10,7 @@ interface ChatPanelProps {
   message: string;
   onMessageChange: (message: string) => void;
   onSendMessage: () => void;
-  messages?: Array<{ id: string; text: string; sender: 'user' | 'assistant' }>;
+  messages?: Array<{ id: string; text: string; sender: 'user' | 'assistant'; status?: 'sending' | 'completed' | 'error' }>;
   onLearnMoreClick?: () => void;
   onSettingsClick?: () => void;
   onElementSelected?: (element: SelectElement) => void;

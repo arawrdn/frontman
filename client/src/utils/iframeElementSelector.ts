@@ -178,21 +178,9 @@ export const ElementSelector: React.FC<ElementSelectorProps> = ({
 	const captureElementImage = useCallback(
 		async (element: Element): Promise<string | undefined> => {
 			try {
-				// Use snapdom to capture the element as an image
-				const result = await snapdom(element as HTMLElement, {
-					// Configure snapdom options for better quality
-					scale: 1,
-					backgroundColor: "transparent",
-					embedFonts: true,
-				});
-
-				// Convert to blob and then to data URL
-				const blob = await result.toBlob({ type: "png" });
-				return new Promise((resolve) => {
-					const reader = new FileReader();
-					reader.onload = () => resolve(reader.result as string);
-					reader.readAsDataURL(blob);
-				});
+				const result = await snapdom(element as HTMLElement);
+				const canvas = await result.toCanvas();
+        return canvas.toDataURL("image/png");
 			} catch (error) {
 				console.warn("Failed to capture element image:", error);
 				return undefined;
