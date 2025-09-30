@@ -517,6 +517,22 @@ async function handleChatRequest(req: NextRequest): Promise<NextResponse> {
 =======
 >>>>>>> e42543244 (try to use sourceLocation)
 
+    // Check if client wants streaming
+    const acceptHeader = req.headers.get('accept');
+    const streamHeader = req.headers.get('x-stream-request');
+    const isStreaming = acceptHeader === 'text/event-stream' || streamHeader === 'true';
+    
+    console.log("[Chat API] Accept header:", acceptHeader);
+    console.log("[Chat API] Stream header:", streamHeader);
+    console.log("[Chat API] Is streaming:", isStreaming);
+    
+    if (isStreaming) {
+      console.log("[Chat API] Using streaming handler");
+      return handleStreamingRequest(req, { messages, selectedElement });
+    }
+    
+    console.log("[Chat API] Using non-streaming handler");
+
     // Initialize OpenAI client
     const openai = new OpenAI({
       apiKey: process.env.OPENAI_API_KEY,
