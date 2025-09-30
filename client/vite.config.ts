@@ -64,6 +64,9 @@ export default defineConfig(({ command, mode }) => {
       sourcemap: true,
       target: 'es2015',
       minify: false,
+      watch: mode === 'development' ? {
+        include: ['src/**']
+      } : null,
     },
     server: {
       port: 5173,

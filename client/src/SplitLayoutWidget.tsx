@@ -47,7 +47,6 @@ const SplitLayoutWidget: React.FC = () => {
 	const [isLoading, setIsLoading] = useState(false);
 
 	useEffect(() => {
-		// Get the origin (protocol + hostname + port) without the path
 		const currentUrl = new URL(window.location.href);
 		const originUrl = `${currentUrl.protocol}//${currentUrl.host}`;
 		setIframeUrl(originUrl);
