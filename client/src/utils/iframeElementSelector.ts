@@ -1,6 +1,7 @@
 import { finder } from "@medv/finder";
 import { snapdom } from "@zumer/snapdom";
 import { useCallback, useEffect, useRef } from "react";
+import { getReactComponentInfo as extractReactComponentInfo, generateIframeReactExtractorScript } from "./reactFiberExtractor";
 
 interface ElementSelectorProps {
 	isActive: boolean;
@@ -13,7 +14,6 @@ interface ElementSelectorProps {
 	onCancel: () => void;
 	onOpenDialog: () => void;
 	selectedElements: Element[];
-	maxSelections: number;
 }
 
 export const ElementSelector: React.FC<ElementSelectorProps> = ({
@@ -22,11 +22,7 @@ export const ElementSelector: React.FC<ElementSelectorProps> = ({
 	onCancel,
 	onOpenDialog,
 	selectedElements,
-	maxSelections, // Currently unused - selection limiting is handled in parent App component
 }) => {
-	// Explicitly mark as unused to avoid TypeScript warning
-	void maxSelections;
-
 	const lastHighlightedElement = useRef<Element | null>(null);
 	const overlayRef = useRef<HTMLDivElement | null>(null);
 
@@ -58,51 +54,16 @@ export const ElementSelector: React.FC<ElementSelectorProps> = ({
 	);
 
 	const getComponentPath = useCallback((element: Element) => {
-		try {
-			// Get all keys on the element
-			const keys = Object.keys(element);
+		const componentInfo = extractReactComponentInfo(element);
+		if (!componentInfo) return null;
 
-			// Find React fiber key (always present in React apps)
-			const reactKey = keys.find(
-				(key) =>
-					key.startsWith("__reactFiber$") ||
-					key.startsWith("__reactInternalInstance$"),
-			);
-
-			if (!reactKey) return null;
-
-			// @ts-ignore @biome-ignore
-			let fiber = element[reactKey];
-			const componentPath = [];
-
-			// Walk up the fiber tree and collect all components
-			while (fiber) {
-				if (fiber.type && typeof fiber.type === "function") {
-					const componentName =
-						fiber.type.displayName || fiber.type.name || "Anonymous";
-					componentPath.push({
-						name: componentName,
-						type: fiber.type,
-						props: fiber.memoizedProps || {},
-						state: fiber.memoizedState,
-						instance: fiber.stateNode,
-					});
-				}
-				fiber = fiber.return;
-			}
-
-			const reversedPath = componentPath.reverse();
-
-			return {
-				path: reversedPath,
-				pathString: reversedPath.map((comp) => comp.name).join(" "),
-				root: reversedPath[0] || null,
-			};
-		} catch (error) {
-			// Graceful fallback
-			console.warn("Could not extract component path:", error);
-			return null;
-		}
+		// Return in the format expected by the rest of the code
+		return {
+			pathString: componentInfo.name,
+			// Legacy fields not used but kept for compatibility
+			path: [],
+			root: null
+		};
 	}, []);
 
 	const generateCssSelector = useCallback((element: Element): string => {
@@ -112,8 +73,7 @@ export const ElementSelector: React.FC<ElementSelectorProps> = ({
 			return finder(element, {
 				root: document.body,
 				className: (name: string) =>
-					!name.includes("element-selector-") &&
-					!name.includes("ask-the-llm-"),
+					!name.includes("element-selector-") && !name.includes("ask-the-llm-"),
 			});
 		} catch (error) {
 			console.warn("Failed to generate CSS selector:", error);
@@ -535,7 +495,7 @@ export const IFRAME_SELECTOR_SCRIPT = `
         <span>🎯 Click any element to select it • Press ESC to cancel</span>
       </div>
     \`;
-    
+
     // Add CSS animations
     const style = document.createElement('style');
     style.textContent = \`
@@ -549,7 +509,7 @@ export const IFRAME_SELECTOR_SCRIPT = `
       }
     \`;
     document.head.appendChild(style);
-    
+
     document.body.appendChild(notice);
     return notice;
   }
@@ -574,57 +534,8 @@ export const IFRAME_SELECTOR_SCRIPT = `
       highlightOverlay = null;
     }
   }
-    
 
-  function getReactComponentInfo(element) {
-    try {
-      // Get all keys on the element
-      const keys = Object.keys(element);
-
-      // Find React fiber key (always present in React apps)
-      const reactKey = keys.find(
-        (key) =>
-          key.startsWith("__reactFiber$") ||
-          key.startsWith("__reactInternalInstance$") ||
-          key.startsWith("_reactInternalFiber") ||
-          key.startsWith("_reactInternals")
-      );
-
-      if (!reactKey) return null;
-
-      let fiber = element[reactKey];
-      const componentPath = [];
-
-      // Walk up the fiber tree and collect all components
-      while (fiber) {
-        if (fiber.type && typeof fiber.type === "function") {
-          const componentName =
-            fiber.type.displayName || fiber.type.name || "Anonymous";
-          componentPath.push({
-            name: componentName,
-            sourceLocation: fiber._debugSource ? 
-              \`\${fiber._debugSource.fileName}:\${fiber._debugSource.lineNumber}\` : 
-              undefined
-          });
-        }
-        fiber = fiber.return;
-      }
-
-      // Reverse the path so root is first (leftmost) and immediate component is last (rightmost)
-      const reversedPath = componentPath.reverse();
-
-      if (reversedPath.length === 0) return null;
-
-      return {
-        name: reversedPath.map((comp) => comp.name).join(" "), // Human readable path (Root → ... → Component)
-        sourceLocation: reversedPath[reversedPath.length - 1]?.sourceLocation // Source location of the immediate component
-      };
-    } catch (error) {
-      // Graceful fallback
-      console.warn("Could not extract component path:", error);
-      return null;
-    }
-  }
+  ${generateIframeReactExtractorScript()}
 
   function handleMouseOver(event) {
     if (!isSelecting) return;
@@ -639,7 +550,6 @@ export const IFRAME_SELECTOR_SCRIPT = `
     
     const element = event.target;
     
-    // Get element selector (simple implementation)
     function getSelector(el) {
       if (el.id) return '#' + el.id;
       if (el.className) return '.' + el.className.split(' ').join('.');
@@ -649,7 +559,6 @@ export const IFRAME_SELECTOR_SCRIPT = `
     const selector = getSelector(element);
     const reactComponent = getReactComponentInfo(element);
     
-    // Send data back to parent
     window.parent.postMessage({
       type: 'ELEMENT_SELECTED',
       data: {
@@ -702,28 +611,29 @@ export const IFRAME_SELECTOR_SCRIPT = `
       stopSelection();
     }
   });
-
-  console.log('Element selector injected into iframe');
 })();
 `;
 
 export function injectSelectorScript(iframe: HTMLIFrameElement): boolean {
-  try {
-    if (iframe.contentDocument) {
-      // Same-origin iframe - inject directly
-      const script = iframe.contentDocument.createElement('script');
-      script.textContent = IFRAME_SELECTOR_SCRIPT;
-      iframe.contentDocument.head.appendChild(script);
-      return true;
-    }
-  } catch (error) {
-    console.warn('Cannot inject script directly into iframe (cross-origin):', error);
-  }
-  return false;
+	try {
+		if (iframe.contentDocument) {
+			// Same-origin iframe - inject directly
+			const script = iframe.contentDocument.createElement("script");
+			script.textContent = IFRAME_SELECTOR_SCRIPT;
+			iframe.contentDocument.head.appendChild(script);
+			return true;
+		}
+	} catch (error) {
+		console.warn(
+			"Cannot inject script directly into iframe (cross-origin):",
+			error,
+		);
+	}
+	return false;
 }
 
 export function sendMessageToIframe(iframe: HTMLIFrameElement, message: any) {
-  if (iframe.contentWindow) {
-    iframe.contentWindow.postMessage(message, '*');
-  }
+	if (iframe.contentWindow) {
+		iframe.contentWindow.postMessage(message, "*");
+	}
 }
