@@ -168,11 +168,11 @@ async function executeTool(toolCall: z.infer<typeof ToolCallSchema>): Promise<st
 }
 
 // System prompt for the AI agent
-const SYSTEM_PROMPT = `You are an AI coding assistant that helps users make changes to their codebase with visual aid. Your purpose is to:
+const SYSTEM_PROMPT = `You are an AI coding assistant that helps users make changes to their codebase with precise source location context. Your purpose is to:
 
 1. Analyze code and understand the current project structure
 2. Help users implement features, fix bugs, and refactor code
-3. Use visual information from selectedElement (screenshots and React element paths) to understand the user's context
+3. Use source location information (file path and line number) to understand exactly where the user is working
 4. Make precise and safe code changes
 
 Available tools:
@@ -183,13 +183,14 @@ Available tools:
 
 Guidelines:
 - Always understand the current code before making changes
-- Use the visual context from selectedElement when available
+- When provided with source location context (file and line number), focus your analysis and changes around that specific location
 - Make minimal, focused changes
 - Explain your reasoning for each change
 - Ensure code quality and follow existing patterns
 - Be careful with file operations and validate paths
+- Use the exact file path and line number information to provide targeted assistance
 
-When the user provides a selectedElement with a screenshot and reactElementPath, use this visual context to better understand what they're working on.`;
+When the user provides source location context, prioritize reading that specific file and understanding the code around the specified line number.`;
 
 async function handleStreamingRequest(
   req: NextRequest, 
@@ -496,6 +497,7 @@ async function handleChatRequest(req: NextRequest): Promise<NextResponse> {
     const { messages, selectedElement } = ChatRequestSchema.parse(body);
     
     console.log("[Chat API] Parsed selectedElement:", selectedElement);
+<<<<<<< HEAD
 
     // Check if client wants streaming
     const acceptHeader = req.headers.get('accept');
@@ -512,6 +514,8 @@ async function handleChatRequest(req: NextRequest): Promise<NextResponse> {
     }
     
     console.log("[Chat API] Using non-streaming handler");
+=======
+>>>>>>> e42543244 (try to use sourceLocation)
 
     // Initialize OpenAI client
     const openai = new OpenAI({
@@ -669,6 +673,7 @@ async function handleChatRequest(req: NextRequest): Promise<NextResponse> {
       // Add assistant's response to conversation history
       conversationHistory.push(message);
 
+<<<<<<< HEAD
         // Check if there are tool calls to execute
         if (message.tool_calls && message.tool_calls.length > 0) {
           console.log(`[Chat API] Executing ${message.tool_calls.length} tool calls in iteration ${currentIteration}`);
@@ -717,6 +722,56 @@ async function handleChatRequest(req: NextRequest): Promise<NextResponse> {
               };
             })
           );
+=======
+      // Check if there are tool calls to execute
+      if (message.tool_calls && message.tool_calls.length > 0) {
+        console.log(`[Chat API] Executing ${message.tool_calls.length} tool calls in iteration ${currentIteration}`);
+        
+        const toolResults = await Promise.all(
+          message.tool_calls.map(async (toolCall) => {
+            const { name, arguments: args } = toolCall.function;
+            const parsedArgs = JSON.parse(args);
+            
+            console.log(`[Chat API] Executing tool: ${name}`, parsedArgs);
+            
+            let result: string;
+            const startTime = Date.now();
+            
+            switch (name) {
+              case "read_file":
+                result = await executeReadFile(parsedArgs.filePath);
+                break;
+              case "search_files":
+                result = await executeSearchFiles(parsedArgs.pattern, parsedArgs.directory);
+                break;
+              case "list_folder":
+                result = await executeListFolder(parsedArgs.folderPath);
+                break;
+              case "apply_patch":
+                result = await executeApplyPatch(parsedArgs.filePath, parsedArgs.patch, parsedArgs.description);
+                break;
+              default:
+                result = `Unknown tool: ${name}`;
+            }
+
+            const executionTime = Date.now() - startTime;
+            console.log(`[Chat API] Tool ${name} completed in ${executionTime}ms`);
+            
+            // Store tool call info for response
+            allToolCalls.push({
+              tool: name,
+              parameters: parsedArgs,
+              result: result.length > 500 ? result.substring(0, 500) + "..." : result,
+            });
+
+            return {
+              tool_call_id: toolCall.id,
+              role: "tool" as const,
+              content: result,
+            };
+          })
+        );
+>>>>>>> e42543244 (try to use sourceLocation)
 
         // Add tool results to conversation history
         conversationHistory.push(...toolResults);
