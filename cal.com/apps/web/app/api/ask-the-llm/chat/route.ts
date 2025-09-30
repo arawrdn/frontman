@@ -670,7 +670,6 @@ async function handleChatRequest(req: NextRequest): Promise<NextResponse> {
       // Add assistant's response to conversation history
       conversationHistory.push(message);
 
-<<<<<<< HEAD
         // Check if there are tool calls to execute
         if (message.tool_calls && message.tool_calls.length > 0) {
           console.log(`[Chat API] Executing ${message.tool_calls.length} tool calls in iteration ${currentIteration}`);
@@ -719,56 +718,6 @@ async function handleChatRequest(req: NextRequest): Promise<NextResponse> {
               };
             })
           );
-=======
-      // Check if there are tool calls to execute
-      if (message.tool_calls && message.tool_calls.length > 0) {
-        console.log(`[Chat API] Executing ${message.tool_calls.length} tool calls in iteration ${currentIteration}`);
-        
-        const toolResults = await Promise.all(
-          message.tool_calls.map(async (toolCall) => {
-            const { name, arguments: args } = toolCall.function;
-            const parsedArgs = JSON.parse(args);
-            
-            console.log(`[Chat API] Executing tool: ${name}`, parsedArgs);
-            
-            let result: string;
-            const startTime = Date.now();
-            
-            switch (name) {
-              case "read_file":
-                result = await executeReadFile(parsedArgs.filePath);
-                break;
-              case "search_files":
-                result = await executeSearchFiles(parsedArgs.pattern, parsedArgs.directory);
-                break;
-              case "list_folder":
-                result = await executeListFolder(parsedArgs.folderPath);
-                break;
-              case "apply_patch":
-                result = await executeApplyPatch(parsedArgs.filePath, parsedArgs.patch, parsedArgs.description);
-                break;
-              default:
-                result = `Unknown tool: ${name}`;
-            }
-
-            const executionTime = Date.now() - startTime;
-            console.log(`[Chat API] Tool ${name} completed in ${executionTime}ms`);
-            
-            // Store tool call info for response
-            allToolCalls.push({
-              tool: name,
-              parameters: parsedArgs,
-              result: result.length > 500 ? result.substring(0, 500) + "..." : result,
-            });
-
-            return {
-              tool_call_id: toolCall.id,
-              role: "tool" as const,
-              content: result,
-            };
-          })
-        );
->>>>>>> e42543244 (try to use sourceLocation)
 
         // Add tool results to conversation history
         conversationHistory.push(...toolResults);
