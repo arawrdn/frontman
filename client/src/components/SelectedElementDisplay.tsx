@@ -1,5 +1,6 @@
 import React from 'react';
 import { SelectElement } from '../types/SelectElement';
+import SourceLocationDisplay from './SourceLocationDisplay';
 
 interface SelectedElementDisplayProps {
   selectedElement: SelectElement | null;
@@ -64,23 +65,31 @@ const SelectedElementDisplay: React.FC<SelectedElementDisplayProps> = ({
         </div>
         
         {selectedElement.reactComponent && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ color: '#3b82f6', fontSize: '12px' }}>React:</span>
-            <code style={{ 
-              backgroundColor: '#1e3a8a', 
-              color: '#93c5fd',
-              padding: '2px 6px', 
-              borderRadius: '4px',
-              fontSize: '11px',
-              fontFamily: 'Monaco, Consolas, monospace',
-              maxWidth: '400px',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-              display: 'inline-block'
-            }}>
-              {selectedElement.reactComponent.name.split(" ").reverse().slice(0, 3).reverse().join(" ")}
-            </code>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ color: '#3b82f6', fontSize: '12px' }}>React:</span>
+              <code style={{
+                backgroundColor: '#1e3a8a',
+                color: '#93c5fd',
+                padding: '2px 6px',
+                borderRadius: '4px',
+                fontSize: '11px',
+                fontFamily: 'Monaco, Consolas, monospace',
+                maxWidth: '400px',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                display: 'inline-block'
+              }}>
+                {selectedElement.reactComponent.name.split(" ").reverse().slice(0, 3).reverse().join(" ")}
+              </code>
+            </div>
+            {selectedElement.reactComponent.sourceLocation && (
+              <SourceLocationDisplay
+                sourceLocation={selectedElement.reactComponent.sourceLocation}
+                compact={false}
+              />
+            )}
           </div>
         )}
       </div>

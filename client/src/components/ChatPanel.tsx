@@ -31,6 +31,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
 }) => {
   return (
     <div
+      data-widget-ui="true"
       style={{
         width: '400px',
         minWidth: '300px',

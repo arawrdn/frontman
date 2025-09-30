@@ -1,5 +1,6 @@
 import React from 'react';
 import { SelectElement } from '../types/SelectElement';
+import SourceLocationDisplay from './SourceLocationDisplay';
 
 interface ChatSelectedElementProps {
   selectedElement?: SelectElement | null;
@@ -86,18 +87,26 @@ const ChatSelectedElement: React.FC<ChatSelectedElementProps> = ({
 
       {selectedElement.reactComponent && (
         <div>
-          <span style={{ color: '#9ca3af', fontSize: '11px' }}>React Component: </span>
-          <code style={{ 
-            backgroundColor: '#1e3a8a', 
-            color: '#93c5fd',
-            padding: '2px 4px', 
-            borderRadius: '3px',
-            fontSize: '11px',
-            fontFamily: 'Monaco, Consolas, monospace',
-            wordBreak: 'break-all'
-          }}>
-            {selectedElement.reactComponent.name.split(" ").reverse().slice(0, 3).reverse().join(" ")}
-          </code>
+          <div style={{ marginBottom: '4px' }}>
+            <span style={{ color: '#9ca3af', fontSize: '11px' }}>React Component: </span>
+            <code style={{
+              backgroundColor: '#1e3a8a',
+              color: '#93c5fd',
+              padding: '2px 4px',
+              borderRadius: '3px',
+              fontSize: '11px',
+              fontFamily: 'Monaco, Consolas, monospace',
+              wordBreak: 'break-all'
+            }}>
+              {selectedElement.reactComponent.name.split(" ").reverse().slice(0, 3).reverse().join(" ")}
+            </code>
+          </div>
+          {selectedElement.reactComponent.sourceLocation && (
+            <SourceLocationDisplay
+              sourceLocation={selectedElement.reactComponent.sourceLocation}
+              compact={true}
+            />
+          )}
         </div>
       )}
     </div>
