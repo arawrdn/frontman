@@ -1,14 +1,27 @@
-import React, { useState, useEffect } from "react";
+import type React from "react";
+import { useEffect, useState } from "react";
 import ChatPanel from "./components/ChatPanel";
 import ContentPanel from "./components/ContentPanel";
-import { SelectElement } from "./types/SelectElement";
+import type { SelectElement } from "./types/SelectElement";
 
 // Types for compatibility with ChatPanel
+interface ToolCall {
+	tool: string;
+	parameters: Record<string, unknown>;
+	result?: string;
+	executionTime?: number;
+	status: "executing" | "completed";
+}
+
 interface ChatMessage {
 	id: string;
-	text: string;
+	content: string; // Clean content for LLM (data layer)
 	sender: "user" | "assistant";
 	status?: "sending" | "completed" | "error";
+
+	// Presentation metadata
+	toolCalls?: ToolCall[];
+	statusMessage?: string;
 }
 
 // API request/response types
@@ -21,7 +34,7 @@ interface ChatRequest {
 		};
 		selector?: string;
 		componentName?: string;
-	};
+	} | null;
 }
 
 interface ChatResponse {
@@ -30,7 +43,7 @@ interface ChatResponse {
 	iterations: number;
 	toolCalls?: Array<{
 		tool: string;
-		parameters: any;
+		parameters: Record<string, unknown>;
 		result: string;
 	}>;
 	error?: string;
@@ -58,7 +71,7 @@ const SplitLayoutWidget: React.FC = () => {
 		// Add user message to conversation history
 		const userMessage: ChatMessage = {
 			id: Date.now().toString(),
-			text: message,
+			content: message,
 			sender: "user",
 			status: "completed",
 		};
@@ -66,9 +79,11 @@ const SplitLayoutWidget: React.FC = () => {
 		// Add assistant loading message
 		const assistantMessage: ChatMessage = {
 			id: (Date.now() + 1).toString(),
-			text: "Thinking...",
+			content: "",
 			sender: "assistant",
 			status: "sending",
+			statusMessage: "Thinking...",
+			toolCalls: [],
 		};
 
 		setMessages((prev) => [...prev, userMessage, assistantMessage]);
@@ -78,7 +93,7 @@ const SplitLayoutWidget: React.FC = () => {
 		try {
 			// Prepare the API request
 			const chatRequest: ChatRequest = {
-				messages: [...messages.map((m) => m.text), message],
+				messages: [...messages.map((m) => m.content), message],
 			};
 
 			// Add selected element if available
@@ -156,26 +171,22 @@ const SplitLayoutWidget: React.FC = () => {
 				console.log("[Client] Received JSON response:", data);
 
 				// Handle as regular JSON response
-				let responseText = data.response;
-				if (data.toolCalls && data.toolCalls.length > 0) {
-					const toolCallSummary = data.toolCalls
-						.map((tc, index) => {
-							const params = Object.entries(tc.parameters)
-								.map(([key, value]) => `${key}: ${JSON.stringify(value)}`)
-								.join(", ");
-							return `${index + 1}. 🔧 ${tc.tool}(${params})`;
-						})
-						.join("\n");
-					responseText = `${responseText}\n\n**Tools executed (${data.toolCalls.length}):**\n${toolCallSummary}`;
-				}
+				const toolCalls: ToolCall[] = (data.toolCalls || []).map((tc) => ({
+					tool: tc.tool,
+					parameters: tc.parameters,
+					result: tc.result,
+					status: "completed" as const,
+				}));
 
 				setMessages((prev) =>
 					prev.map((m) =>
 						m.id === assistantMessage.id
 							? {
 									...m,
-									text: responseText,
+									content: data.response,
 									status: "completed" as const,
+									toolCalls,
+									statusMessage: undefined,
 								}
 							: m,
 					),
@@ -194,7 +205,6 @@ const SplitLayoutWidget: React.FC = () => {
 			}
 
 			let buffer = "";
-			let toolCallsLog: string[] = [];
 
 			while (true) {
 				const { done, value } = await reader.read();
@@ -217,82 +227,108 @@ const SplitLayoutWidget: React.FC = () => {
 									setMessages((prev) =>
 										prev.map((m) =>
 											m.id === assistantMessage.id
-												? { ...m, text: data.message }
+												? { ...m, statusMessage: data.message }
 												: m,
 										),
 									);
 									break;
 
 								case "tool_start":
-									toolCallsLog.push(
-										`🔧 Starting ${data.tools.length} tools...`,
-									);
 									setMessages((prev) =>
 										prev.map((m) =>
 											m.id === assistantMessage.id
 												? {
 														...m,
-														text: `${data.message}\n\n${toolCallsLog.join("\n")}`,
+														statusMessage: data.message,
+														toolCalls: data.tools.map((t: { name: string; parameters: Record<string, unknown> }) => ({
+															tool: t.name,
+															parameters: t.parameters,
+															status: "executing" as const,
+														})),
 													}
 												: m,
 										),
 									);
 									break;
 
-								case "tool_executing":
-									const params = Object.entries(data.parameters)
-										.map(([key, value]) => `${key}: ${JSON.stringify(value)}`)
-										.join(", ");
-									toolCallsLog.push(`⚡ Executing ${data.tool}(${params})`);
+								case "tool_executing": {
 									setMessages((prev) =>
-										prev.map((m) =>
-											m.id === assistantMessage.id
-												? {
-														...m,
-														text: `Executing tools...\n\n${toolCallsLog.join("\n")}`,
-													}
-												: m,
-										),
+										prev.map((m) => {
+											if (m.id !== assistantMessage.id) return m;
+
+											const updatedToolCalls = [...(m.toolCalls || [])];
+											const existingIndex = updatedToolCalls.findIndex(
+												(tc) => tc.tool === data.tool,
+											);
+
+											if (existingIndex >= 0) {
+												updatedToolCalls[existingIndex] = {
+													...updatedToolCalls[existingIndex],
+													status: "executing" as const,
+												};
+											} else {
+												updatedToolCalls.push({
+													tool: data.tool,
+													parameters: data.parameters,
+													status: "executing" as const,
+												});
+											}
+
+											return {
+												...m,
+												toolCalls: updatedToolCalls,
+												statusMessage: "Executing tools...",
+											};
+										}),
 									);
 									break;
+								}
 
-								case "tool_completed":
-									const completedParams = Object.entries(data.parameters)
-										.map(([key, value]) => `${key}: ${JSON.stringify(value)}`)
-										.join(", ");
-									toolCallsLog.push(
-										`✅ ${data.tool}(${completedParams}) - ${data.executionTime}ms`,
-									);
-									if (data.result) {
-										toolCallsLog.push(`   Result: ${data.result}`);
-									}
+								case "tool_completed": {
 									setMessages((prev) =>
-										prev.map((m) =>
-											m.id === assistantMessage.id
-												? {
-														...m,
-														text: `Processing...\n\n${toolCallsLog.join("\n")}`,
-													}
-												: m,
-										),
+										prev.map((m) => {
+											if (m.id !== assistantMessage.id) return m;
+
+											const updatedToolCalls = [...(m.toolCalls || [])];
+											const toolIndex = updatedToolCalls.findIndex(
+												(tc) => tc.tool === data.tool,
+											);
+
+											if (toolIndex >= 0) {
+												updatedToolCalls[toolIndex] = {
+													...updatedToolCalls[toolIndex],
+													status: "completed" as const,
+													result: data.result,
+													executionTime: data.executionTime,
+												};
+											}
+
+											return {
+												...m,
+												toolCalls: updatedToolCalls,
+												statusMessage: "Processing...",
+											};
+										}),
 									);
 									break;
+								}
 
-								case "final_response":
+								case "final_response": {
 									// Update with final response
-									const finalText = `${data.response}\n\n**Tools executed:**\n${toolCallsLog.join("\n")}`;
 									setMessages((prev) =>
 										prev.map((m) =>
 											m.id === assistantMessage.id
 												? {
 														...m,
-														text: finalText,
+														content: data.response,
 														status: "completed" as const,
+														statusMessage: undefined,
 													}
 												: m,
 										),
 									);
 									break;
+								}
 
 								case "complete":
 									console.log("[Client] Stream completed");
@@ -319,8 +355,9 @@ const SplitLayoutWidget: React.FC = () => {
 					m.id === assistantMessage.id
 						? {
 								...m,
-								text: `Error: ${error instanceof Error ? error.message : "Unknown error occurred"}`,
+								content: `Error: ${error instanceof Error ? error.message : "Unknown error occurred"}`,
 								status: "error" as const,
+								statusMessage: undefined,
 							}
 						: m,
 				),

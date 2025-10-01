@@ -1,15 +1,15 @@
 import React from 'react';
 
 interface ChatTextLengthProps {
-  messages?: Array<{ id: string; text: string; sender: 'user' | 'assistant' }>;
+  messages?: Array<{ id: string; content: string; sender: 'user' | 'assistant' }>;
 }
 
 const ChatTextLength: React.FC<ChatTextLengthProps> = ({
   messages = []
 }) => {
-  const totalCharacters = messages.reduce((total, message) => total + message.text.length, 0);
+  const totalCharacters = messages.reduce((total, message) => total + message.content.length, 0);
   const totalWords = messages.reduce((total, message) => {
-    const words = message.text.trim().split(/\s+/).filter(word => word.length > 0);
+    const words = message.content.trim().split(/\s+/).filter(word => word.length > 0);
     return total + words.length;
   }, 0);
 

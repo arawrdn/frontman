@@ -10,7 +10,20 @@ interface ChatPanelProps {
   message: string;
   onMessageChange: (message: string) => void;
   onSendMessage: () => void;
-  messages?: Array<{ id: string; text: string; sender: 'user' | 'assistant'; status?: 'sending' | 'completed' | 'error' }>;
+  messages?: Array<{
+    id: string;
+    content: string;
+    sender: 'user' | 'assistant';
+    status?: 'sending' | 'completed' | 'error';
+    statusMessage?: string;
+    toolCalls?: Array<{
+      tool: string;
+      parameters: Record<string, unknown>;
+      result?: string;
+      executionTime?: number;
+      status: "executing" | "completed";
+    }>;
+  }>;
   onLearnMoreClick?: () => void;
   onSettingsClick?: () => void;
   onElementSelected?: (element: SelectElement) => void;
