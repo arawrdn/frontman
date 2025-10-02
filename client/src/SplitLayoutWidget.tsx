@@ -5,12 +5,36 @@ import ContentPanel from "./components/ContentPanel";
 import type { SelectElement } from "./types/SelectElement";
 
 // Types for compatibility with ChatPanel
+export interface ChangeProposal {
+	filePath: string;
+	description: string;
+	changeType: "create" | "modify" | "delete";
+	currentExists: boolean;
+	currentLines: number;
+	proposedLines: number;
+	lineDiff: number;
+	proposedContent: string;
+	diff: string;
+	preview: {
+		currentContent: string;
+		proposedContent: string;
+	};
+}
+
+export interface ProposalState {
+	proposal: ChangeProposal;
+	status: "pending" | "accepted" | "rejected" | "applying" | "error";
+	errorMessage?: string;
+}
+
 interface ToolCall {
 	tool: string;
 	parameters: Record<string, unknown>;
 	result?: string;
 	executionTime?: number;
 	status: "executing" | "completed";
+	// Add proposal state for propose_change tools
+	proposalState?: ProposalState;
 }
 
 interface ChatMessage {
@@ -24,7 +48,7 @@ interface ChatMessage {
 	statusMessage?: string;
 }
 
-// API request/response types
+// API request types
 interface ChatRequest {
 	messages: string[];
 	selectedElement?: {
@@ -35,19 +59,6 @@ interface ChatRequest {
 		selector?: string;
 		componentName?: string;
 	} | null;
-}
-
-interface ChatResponse {
-	response: string;
-	status: string;
-	iterations: number;
-	toolCalls?: Array<{
-		tool: string;
-		parameters: Record<string, unknown>;
-		result: string;
-	}>;
-	error?: string;
-	details?: string;
 }
 
 const SplitLayoutWidget: React.FC = () => {
@@ -145,7 +156,6 @@ const SplitLayoutWidget: React.FC = () => {
 				headers: {
 					"Content-Type": "application/json",
 					Accept: "text/event-stream",
-					"X-Stream-Request": "true",
 				},
 				body: JSON.stringify(chatRequest),
 			});
@@ -163,38 +173,7 @@ const SplitLayoutWidget: React.FC = () => {
 				throw new Error(`HTTP ${response.status}`);
 			}
 
-			// Check if we actually got a streaming response
-			const contentType = response.headers.get("content-type");
-			if (contentType !== "text/event-stream") {
-				console.log("[Client] Not a streaming response, falling back to JSON");
-				const data: ChatResponse = await response.json();
-				console.log("[Client] Received JSON response:", data);
-
-				// Handle as regular JSON response
-				const toolCalls: ToolCall[] = (data.toolCalls || []).map((tc) => ({
-					tool: tc.tool,
-					parameters: tc.parameters,
-					result: tc.result,
-					status: "completed" as const,
-				}));
-
-				setMessages((prev) =>
-					prev.map((m) =>
-						m.id === assistantMessage.id
-							? {
-									...m,
-									content: data.response,
-									status: "completed" as const,
-									toolCalls,
-									statusMessage: undefined,
-								}
-							: m,
-					),
-				);
-				return;
-			}
-
-			console.log("[Client] Got streaming response, processing...");
+			console.log("[Client] Processing streaming response...");
 
 			// Handle streaming response
 			const reader = response.body?.getReader();
@@ -222,6 +201,21 @@ const SplitLayoutWidget: React.FC = () => {
 							console.log("[Client] Stream event:", data);
 
 							switch (data.type) {
+								case "reasoning_chunk":
+									// Append reasoning content to assistant message
+									setMessages((prev) =>
+										prev.map((m) =>
+											m.id === assistantMessage.id
+												? {
+														...m,
+														content: (m.content || "") + data.content,
+														statusMessage: "Thinking...",
+													}
+												: m,
+										),
+									);
+									break;
+
 								case "status":
 									// Update assistant message with status
 									setMessages((prev) =>
@@ -233,21 +227,40 @@ const SplitLayoutWidget: React.FC = () => {
 									);
 									break;
 
-								case "tool_start":
+								case "strategy":
+									// Display the task strategy to the user
 									setMessages((prev) =>
 										prev.map((m) =>
 											m.id === assistantMessage.id
 												? {
 														...m,
-														statusMessage: data.message,
-														toolCalls: data.tools.map((t: { name: string; parameters: Record<string, unknown> }) => ({
-															tool: t.name,
-															parameters: t.parameters,
-															status: "executing" as const,
-														})),
+														content: data.message,
+														statusMessage: "Strategy planned"
 													}
 												: m,
 										),
+									);
+									break;
+
+								case "tool_start":
+									setMessages((prev) =>
+										prev.map((m) => {
+											if (m.id !== assistantMessage.id) return m;
+
+											// APPEND new tools to existing toolCalls, don't replace
+											const existingToolCalls = m.toolCalls || [];
+											const newTools = data.tools.map((t: { name: string; parameters: Record<string, unknown> }) => ({
+												tool: t.name,
+												parameters: t.parameters,
+												status: "executing" as const,
+											}));
+
+											return {
+												...m,
+												statusMessage: data.message,
+												toolCalls: [...existingToolCalls, ...newTools],
+											};
+										}),
 									);
 									break;
 
@@ -285,14 +298,23 @@ const SplitLayoutWidget: React.FC = () => {
 								}
 
 								case "tool_completed": {
+									console.log("[DEBUG] tool_completed event received:", {
+										tool: data.tool,
+										resultLength: data.result?.length,
+										resultPreview: data.result?.substring(0, 100),
+									});
+
 									setMessages((prev) =>
 										prev.map((m) => {
 											if (m.id !== assistantMessage.id) return m;
 
 											const updatedToolCalls = [...(m.toolCalls || [])];
+											console.log("[DEBUG] Current toolCalls:", updatedToolCalls.map(tc => ({ tool: tc.tool, status: tc.status })));
+
 											const toolIndex = updatedToolCalls.findIndex(
 												(tc) => tc.tool === data.tool,
 											);
+											console.log("[DEBUG] Found toolIndex:", toolIndex, "for tool:", data.tool);
 
 											if (toolIndex >= 0) {
 												updatedToolCalls[toolIndex] = {
@@ -301,6 +323,31 @@ const SplitLayoutWidget: React.FC = () => {
 													result: data.result,
 													executionTime: data.executionTime,
 												};
+
+												// NEW: Parse propose_change results
+												if (data.tool === "propose_change") {
+													console.log("[DEBUG] Attempting to parse propose_change result...");
+													try {
+														const proposal: ChangeProposal = JSON.parse(data.result);
+														console.log("[DEBUG] Successfully parsed proposal:", {
+															filePath: proposal.filePath,
+															changeType: proposal.changeType,
+															hasDiff: !!proposal.diff,
+															diffLength: proposal.diff?.length,
+															diffPreview: proposal.diff?.substring(0, 100),
+														});
+														updatedToolCalls[toolIndex].proposalState = {
+															proposal,
+															status: "pending",
+														};
+														console.log("[DEBUG] proposalState set successfully");
+													} catch (e) {
+														console.error("[DEBUG] Failed to parse proposal:", e);
+														console.error("[DEBUG] Raw result was:", data.result);
+													}
+												}
+											} else {
+												console.warn("[DEBUG] toolIndex not found! data.tool =", data.tool, "available tools:", updatedToolCalls.map(tc => tc.tool));
 											}
 
 											return {
@@ -378,6 +425,128 @@ const SplitLayoutWidget: React.FC = () => {
 		setSelectedElement(null);
 	};
 
+	const handleAcceptProposal = async (
+		messageId: string,
+		toolIndex: number,
+	) => {
+		const message = messages.find((m) => m.id === messageId);
+		if (!message?.toolCalls?.[toolIndex]?.proposalState) return;
+
+		const { proposal } = message.toolCalls[toolIndex].proposalState!;
+
+		// Update status to "applying"
+		setMessages((prev) =>
+			prev.map((m) =>
+				m.id === messageId
+					? {
+							...m,
+							toolCalls: m.toolCalls?.map((tc, idx) =>
+								idx === toolIndex && tc.proposalState
+									? {
+											...tc,
+											proposalState: {
+												...tc.proposalState,
+												status: "applying" as const,
+											},
+										}
+									: tc,
+							),
+						}
+					: m,
+			),
+		);
+
+		try {
+			// Call apply_patch API
+			const response = await fetch("/api/ask-the-llm/apply-patch", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					filePath: proposal.filePath,
+					patch: proposal.proposedContent,
+					description: proposal.description,
+				}),
+			});
+
+			const result = await response.json();
+
+			if (response.ok && result.success) {
+				// Mark as accepted
+				setMessages((prev) =>
+					prev.map((m) =>
+						m.id === messageId
+							? {
+									...m,
+									toolCalls: m.toolCalls?.map((tc, idx) =>
+										idx === toolIndex && tc.proposalState
+											? {
+													...tc,
+													proposalState: {
+														...tc.proposalState,
+														status: "accepted" as const,
+													},
+												}
+											: tc,
+									),
+								}
+							: m,
+					),
+				);
+			} else {
+				throw new Error(result.error || "Failed to apply patch");
+			}
+		} catch (error) {
+			// Mark as error
+			setMessages((prev) =>
+				prev.map((m) =>
+					m.id === messageId
+						? {
+								...m,
+								toolCalls: m.toolCalls?.map((tc, idx) =>
+									idx === toolIndex && tc.proposalState
+										? {
+												...tc,
+												proposalState: {
+													...tc.proposalState,
+													status: "error" as const,
+													errorMessage:
+														error instanceof Error
+															? error.message
+															: "Unknown error",
+												},
+											}
+										: tc,
+								),
+							}
+						: m,
+				),
+			);
+		}
+	};
+
+	const handleRejectProposal = (messageId: string, toolIndex: number) => {
+		setMessages((prev) =>
+			prev.map((m) =>
+				m.id === messageId
+					? {
+							...m,
+							toolCalls: m.toolCalls?.map((tc, idx) =>
+								idx === toolIndex && tc.proposalState
+									? {
+											...tc,
+											proposalState: {
+												...tc.proposalState,
+												status: "rejected" as const,
+											},
+										}
+									: tc,
+							),
+						}
+					: m,
+			),
+		);
+	};
+
 	const handleLearnMoreClick = () => {
 		console.log("Learn more clicked");
 		// Add your learn more logic here
@@ -413,6 +582,8 @@ const SplitLayoutWidget: React.FC = () => {
 				onElementSelected={handleElementSelected}
 				selectedElement={selectedElement}
 				onClearSelection={handleClearSelection}
+				onAcceptProposal={handleAcceptProposal}
+				onRejectProposal={handleRejectProposal}
 			/>
 
 			<ContentPanel iframeUrl={iframeUrl} />

@@ -22,6 +22,7 @@ interface ChatPanelProps {
       result?: string;
       executionTime?: number;
       status: "executing" | "completed";
+      proposalState?: any;
     }>;
   }>;
   onLearnMoreClick?: () => void;
@@ -29,6 +30,8 @@ interface ChatPanelProps {
   onElementSelected?: (element: SelectElement) => void;
   selectedElement?: SelectElement | null;
   onClearSelection?: () => void;
+  onAcceptProposal: (messageId: string, toolIndex: number) => Promise<void>;
+  onRejectProposal: (messageId: string, toolIndex: number) => void;
 }
 
 const ChatPanel: React.FC<ChatPanelProps> = ({
@@ -40,7 +43,9 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
   onSettingsClick,
   onElementSelected,
   selectedElement,
-  onClearSelection
+  onClearSelection,
+  onAcceptProposal,
+  onRejectProposal
 }) => {
   return (
     <div
@@ -60,8 +65,10 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
         onLearnMoreClick={onLearnMoreClick}
       />
       
-      <ChatMessages 
+      <ChatMessages
         messages={messages}
+        onAcceptProposal={onAcceptProposal}
+        onRejectProposal={onRejectProposal}
       />
       
       <ChatSelectedElement

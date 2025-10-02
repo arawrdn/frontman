@@ -1,10 +1,11 @@
+import * as fs from "node:fs";
+import path from "node:path";
 import { defaultResponderForAppDir } from "app/api/defaultResponderForAppDir";
-import { NextRequest, NextResponse } from "next/server";
+import { glob } from "glob";
+import { type NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
 import { z } from "zod";
-import { promises as fs } from "fs";
-import path from "path";
-import { glob } from "glob";
+import DiffMatchPatch from "diff-match-patch";
 
 // Types for the request
 const ChatRequestSchema = z.object({
@@ -23,56 +24,6 @@ const ChatRequestSchema = z.object({
 		.optional(),
 });
 
-// Tool calling schemas
-const ReadFileToolSchema = z.object({
-	type: z.literal("read_file"),
-	parameters: z.object({
-		filePath: z.string(),
-	}),
-});
-
-const SearchFilesToolSchema = z.object({
-	type: z.literal("search_files"),
-	parameters: z.object({
-		pattern: z.string(),
-		directory: z.string().optional(),
-	}),
-});
-
-const ListFolderToolSchema = z.object({
-	type: z.literal("list_folder"),
-	parameters: z.object({
-		folderPath: z.string(),
-	}),
-});
-
-const ApplyPatchToolSchema = z.object({
-	type: z.literal("apply_patch"),
-	parameters: z.object({
-		filePath: z.string(),
-		patch: z.string(),
-		description: z.string(),
-	}),
-});
-
-const ProposeChangeToolSchema = z.object({
-	type: z.literal("propose_change"),
-	parameters: z.object({
-		filePath: z.string(),
-		proposedContent: z.string(),
-		description: z.string(),
-		changeType: z.enum(["create", "modify", "delete"]).optional(),
-	}),
-});
-
-const ToolCallSchema = z.union([
-	ReadFileToolSchema,
-	SearchFilesToolSchema,
-	ListFolderToolSchema,
-	ApplyPatchToolSchema,
-	ProposeChangeToolSchema,
-]);
-
 // Tool implementations
 async function executeReadFile(filePath: string): Promise<string> {
 	try {
@@ -86,7 +37,7 @@ async function executeReadFile(filePath: string): Promise<string> {
 			);
 		}
 
-		const content = await fs.readFile(resolvedPath, "utf-8");
+		const content = await fs.promises.readFile(resolvedPath, "utf-8");
 		return `File content of ${filePath}:\n\`\`\`\n${content}\n\`\`\``;
 	} catch (error) {
 		return `Error reading file ${filePath}: ${error instanceof Error ? error.message : String(error)}`;
@@ -136,7 +87,9 @@ async function executeListFolder(folderPath: string): Promise<string> {
 			);
 		}
 
-		const items = await fs.readdir(resolvedPath, { withFileTypes: true });
+		const items = await fs.promises.readdir(resolvedPath, {
+			withFileTypes: true,
+		});
 		const folders = items
 			.filter((item) => item.isDirectory())
 			.map((item) => `📁 ${item.name}/`);
@@ -165,24 +118,74 @@ async function executeApplyPatch(
 			);
 		}
 
-		// Read current file content
-		let currentContent = "";
-		try {
-			currentContent = await fs.readFile(resolvedPath, "utf-8");
-		} catch {
-			// File doesn't exist, will create new file
-		}
-
 		// Apply patch (simple replacement for now - could be enhanced with proper diff/patch logic)
 		const newContent = patch;
 
 		// Write the new content
-		await fs.writeFile(resolvedPath, newContent, "utf-8");
+		await fs.promises.writeFile(resolvedPath, newContent, "utf-8");
 
 		return `Successfully applied patch to ${filePath}. ${description}`;
 	} catch (error) {
 		return `Error applying patch to ${filePath}: ${error instanceof Error ? error.message : String(error)}`;
 	}
+}
+
+// Generate unified diff string from current and proposed content
+function generateUnifiedDiff(
+	currentContent: string,
+	proposedContent: string,
+	filePath: string,
+): string {
+	const dmp = new DiffMatchPatch();
+	const diffs = dmp.diff_main(currentContent, proposedContent);
+	dmp.diff_cleanupSemantic(diffs);
+
+	// Convert to unified diff format
+	const lines: string[] = [`--- ${filePath}`, `+++ ${filePath}`];
+	let currentLine = 1;
+	let proposedLine = 1;
+
+	// Group changes into hunks
+	let hunkLines: string[] = [];
+	let hunkStart = 1;
+
+	for (const [operation, text] of diffs) {
+		const textLines = text.split("\n");
+		// Remove last empty line from split
+		if (textLines[textLines.length - 1] === "") {
+			textLines.pop();
+		}
+
+		if (operation === 0) {
+			// Equal - context lines
+			for (const line of textLines) {
+				hunkLines.push(` ${line}`);
+				currentLine++;
+				proposedLine++;
+			}
+		} else if (operation === -1) {
+			// Deletion
+			for (const line of textLines) {
+				hunkLines.push(`-${line}`);
+				currentLine++;
+			}
+		} else if (operation === 1) {
+			// Insertion
+			for (const line of textLines) {
+				hunkLines.push(`+${line}`);
+				proposedLine++;
+			}
+		}
+	}
+
+	// Add hunk header and lines
+	if (hunkLines.length > 0) {
+		const hunkHeader = `@@ -${hunkStart},${currentLine - 1} +${hunkStart},${proposedLine - 1} @@`;
+		lines.push(hunkHeader);
+		lines.push(...hunkLines);
+	}
+
+	return lines.join("\n");
 }
 
 async function executeProposeChange(
@@ -206,7 +209,7 @@ async function executeProposeChange(
 		let currentContent = "";
 		let exists = true;
 		try {
-			currentContent = await fs.readFile(resolvedPath, "utf-8");
+			currentContent = await fs.promises.readFile(resolvedPath, "utf-8");
 		} catch {
 			exists = false;
 			currentContent = "";
@@ -220,6 +223,13 @@ async function executeProposeChange(
 		// Determine actual change type
 		const actualChangeType = exists ? changeType : "create";
 
+		// Generate unified diff for visualization
+		const unifiedDiff = generateUnifiedDiff(
+			currentContent,
+			proposedContent,
+			filePath,
+		);
+
 		// Return structured proposal data as JSON
 		const proposal = {
 			filePath,
@@ -229,6 +239,11 @@ async function executeProposeChange(
 			currentLines,
 			proposedLines,
 			lineDiff,
+			// Full content for applying the change
+			proposedContent,
+			// Diff string for visualization
+			diff: unifiedDiff,
+			// Preview for LLM context (keep short)
 			preview: {
 				currentContent: currentContent.substring(0, 500),
 				proposedContent: proposedContent.substring(0, 500),
@@ -241,34 +256,136 @@ async function executeProposeChange(
 	}
 }
 
-// System prompt for the AI agent
-const SYSTEM_PROMPT = `You are an AI coding assistant that helps users make changes to their codebase with precise source location context. Your purpose is to:
+// Task classification types
+interface TaskClassification {
+	type: "i18n_change" | "component_modification" | "feature_addition" | "refactor" | "bug_fix" | "other";
+	complexity: "simple" | "medium" | "complex";
+	requiredFiles: string[];
+	strategy: string[];
+	successCriteria: string;
+	estimatedIterations: number;
+}
 
-1. Analyze code and understand the current project structure
-2. Help users implement features, fix bugs, and refactor code
-3. Use source location information (file path and line number) to understand exactly where the user is working
-4. **Propose changes for user review before applying them**
+// System prompt for task classification
+const TASK_CLASSIFIER_PROMPT = `You are a task classification expert. Analyze the user's request and classify it.
 
-Available tools:
-- read_file: Read the contents of a file
-- search_files: Search for files matching a pattern
-- list_folder: List contents of a directory
-- propose_change: **Propose a code change for user review (USE THIS for code modifications)**
-- apply_patch: Apply code changes to a file (ONLY use if explicitly instructed to apply changes)
+Return a JSON object with:
+{
+  "type": "i18n_change" | "component_modification" | "feature_addition" | "refactor" | "bug_fix" | "other",
+  "complexity": "simple" | "medium" | "complex",
+  "requiredFiles": ["list", "of", "files", "to", "examine"],
+  "strategy": ["step 1", "step 2", "step 3"],
+  "successCriteria": "how to know the task is complete",
+  "estimatedIterations": <number between 5 and 25>
+}
 
-Guidelines:
-- Always understand the current code before making changes
-- When proposing changes, use the propose_change tool to show the user what will change
-- Make minimal, focused changes
-- Explain your reasoning for each change
-- Ensure code quality and follow existing patterns
-- Be careful with file operations and validate paths
-- Use the exact file path and line number information to provide targeted assistance
+Examples:
 
-**IMPORTANT**: When the user asks for code changes, use propose_change to show them what you plan to do. Only use apply_patch if they explicitly approve or ask you to apply the changes.`;
+User: "Change email label to 'Email'"
+Response: {
+  "type": "i18n_change",
+  "complexity": "simple",
+  "requiredFiles": ["component with email field", "apps/web/public/static/locales/en/common.json"],
+  "strategy": ["Read component to find i18n key", "Read translation file", "Modify translation value"],
+  "successCriteria": "Translation file updated with new value",
+  "estimatedIterations": 6
+}
+
+User: "Add phone validation to signup form"
+Response: {
+  "type": "feature_addition",
+  "complexity": "medium",
+  "requiredFiles": ["signup form component", "validation utilities", "i18n files"],
+  "strategy": ["Read signup form", "Add phone field component", "Add validation logic", "Add i18n keys"],
+  "successCriteria": "Phone field with validation in signup form",
+  "estimatedIterations": 12
+}
+
+Classify this request and respond with ONLY the JSON object:`;
+
+// Base system prompt
+const BASE_SYSTEM_PROMPT = `You are an AI coding assistant for Cal.com (Next.js 15/React/TypeScript monorepo).
+
+## Key Patterns:
+- **i18n**: UI text uses t("key") from apps/web/public/static/locales/en/common.json
+- **Forms**: @calcom/ui components (TextField, EmailField, PasswordField) with react-hook-form
+- **Files**: All paths relative to monorepo root (process.cwd())
+
+## CRITICAL Rules:
+- **ALWAYS use propose_change for code modifications** (shows diff with Accept/Reject buttons)
+- **NEVER call apply_patch** (auto-called when user clicks Accept)
+- **UI text changes** → Edit translation files, NOT component files
+- **Be concise** → No long explanations, bullet points, or verbose formatting
+
+You have limited iterations. Make every tool call count.`;
+
+// Task-specific prompt additions
+const TASK_SPECIFIC_PROMPTS = {
+	i18n_change: `
+## i18n Change Strategy:
+1. **MUST read component file** to find the t("key") being used
+2. **MUST read translation file** (apps/web/public/static/locales/en/common.json)
+3. **MUST modify translation VALUE**, not the key reference
+4. Verify other components don't break from this change`,
+
+	component_modification: `
+## Component Modification Strategy:
+1. Read the target component file
+2. Understand component hierarchy and props
+3. Check for related components that might be affected
+4. Consider type updates if needed`,
+
+	feature_addition: `
+## Feature Addition Strategy:
+1. Understand existing patterns in codebase
+2. Identify all files that need changes (component, types, i18n, validation)
+3. Follow Cal.com conventions
+4. Propose changes in logical order`,
+
+	refactor: `
+## Refactoring Strategy:
+1. Read current implementation thoroughly
+2. Identify all usages before changing
+3. Ensure backwards compatibility
+4. Propose changes incrementally`,
+
+	bug_fix: `
+## Bug Fix Strategy:
+1. Understand the bug's root cause
+2. Read relevant code to understand current behavior
+3. Identify minimal fix
+4. Consider edge cases`,
+
+	other: `
+## General Strategy:
+1. Understand the request thoroughly
+2. Read relevant files
+3. Propose clear, focused changes`
+};
+
+function buildSystemPrompt(classification: TaskClassification): string {
+	const taskSpecific = TASK_SPECIFIC_PROMPTS[classification.type] || TASK_SPECIFIC_PROMPTS.other;
+
+	return `${BASE_SYSTEM_PROMPT}
+
+## Your Task Classification:
+- **Type**: ${classification.type}
+- **Complexity**: ${classification.complexity}
+- **Success Criteria**: ${classification.successCriteria}
+
+${taskSpecific}
+
+## Execution Strategy:
+${classification.strategy.map((step, i) => `${i + 1}. ${step}`).join('\n')}
+
+## Required Files to Examine:
+${classification.requiredFiles.map(f => `- ${f}`).join('\n')}
+
+Focus on achieving the success criteria efficiently.`;
+}
 
 async function handleStreamingRequest(
-	req: NextRequest,
+	_req: NextRequest,
 	{ messages, selectedElement }: { messages: string[]; selectedElement?: any },
 ): Promise<NextResponse> {
 	console.log("[Chat API] Starting streaming handler");
@@ -283,8 +400,59 @@ async function handleStreamingRequest(
 					apiKey: process.env.OPENAI_API_KEY,
 				});
 
+				// Step 1: Classify the task
+				controller.enqueue(
+					encoder.encode(
+						`data: ${JSON.stringify({
+							type: "status",
+							message: "Analyzing task...",
+						})}\n\n`,
+					),
+				);
+
+				const userRequest = messages[messages.length - 1] || "No request provided";
+				const classificationMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+					{ role: "system", content: TASK_CLASSIFIER_PROMPT },
+					{ role: "user", content: userRequest }
+				];
+
+				const classificationResponse = await openai.chat.completions.create({
+					model: "gpt-5",
+					messages: classificationMessages,
+					response_format: { type: "json_object" }
+				});
+
+				let classification: TaskClassification;
+				try {
+					classification = JSON.parse(classificationResponse.choices[0]?.message?.content || "{}");
+				} catch {
+					// Fallback if parsing fails
+					classification = {
+						type: "other",
+						complexity: "medium",
+						requiredFiles: [],
+						strategy: ["Analyze request", "Read relevant files", "Propose changes"],
+						successCriteria: "User request fulfilled",
+						estimatedIterations: 10
+					};
+				}
+
+				// Step 2: Display strategy to user
+				controller.enqueue(
+					encoder.encode(
+						`data: ${JSON.stringify({
+							type: "strategy",
+							classification: classification,
+							message: `**Task Type**: ${classification.type}\n**Complexity**: ${classification.complexity}\n\n**Strategy**:\n${classification.strategy.map((s, i) => `${i + 1}. ${s}`).join('\n')}\n\n**Success Criteria**: ${classification.successCriteria}`
+						})}\n\n`,
+					),
+				);
+
+				// Step 3: Build dynamic system prompt based on classification
+				const SYSTEM_PROMPT = buildSystemPrompt(classification);
+
 				// Build the conversation context
-				let conversationHistory: OpenAI.Chat.Completions.ChatCompletionMessageParam[] =
+				const conversationHistory: OpenAI.Chat.Completions.ChatCompletionMessageParam[] =
 					[{ role: "system", content: SYSTEM_PROMPT }];
 
 				// Add element context if available
@@ -446,29 +614,56 @@ async function handleStreamingRequest(
 				);
 
 				// Agent loop - continue until no more tool calls are needed
-				let maxIterations = 5;
+				const maxIterations = classification.estimatedIterations;
 				let currentIteration = 0;
 				let finalResponse = "";
+				let hasCalledProposeChange = false;
+
+				// Task types that require code modifications
+				const modificationTaskTypes = ["i18n_change", "component_modification", "feature_addition", "refactor", "bug_fix"];
+				const requiresModification = modificationTaskTypes.includes(classification.type);
 
 				while (currentIteration < maxIterations) {
 					currentIteration++;
 
-					// Send iteration status
+					// Send iteration status with progress
+					const progress = Math.round((currentIteration / maxIterations) * 100);
 					controller.enqueue(
 						encoder.encode(
 							`data: ${JSON.stringify({
 								type: "status",
-								message: `Iteration ${currentIteration}/${maxIterations}...`,
+								message: `Iteration ${currentIteration}/${maxIterations} (${progress}%)...`,
+								progress: progress
 							})}\n\n`,
 						),
 					);
+
+					// Force propose_change if this is a modification task and we're running out of iterations
+					const shouldForcePropose = requiresModification &&
+					                           !hasCalledProposeChange &&
+					                           currentIteration >= maxIterations - 2;
+
+					let toolChoice: "auto" | { type: "function"; function: { name: string } } = "auto";
+
+					if (shouldForcePropose) {
+						toolChoice = { type: "function", function: { name: "propose_change" } };
+						controller.enqueue(
+							encoder.encode(
+								`data: ${JSON.stringify({
+									type: "status",
+									message: "Preparing code changes...",
+								})}\n\n`,
+							),
+						);
+						console.log(`[API DEBUG] Forcing propose_change on iteration ${currentIteration} for task type: ${classification.type}`);
+					}
 
 					// Call OpenAI with function calling
 					const completion = await openai.chat.completions.create({
 						model: "gpt-5",
 						messages: conversationHistory,
 						tools: tools,
-						tool_choice: "auto",
+						tool_choice: toolChoice,
 					});
 
 					const message = completion.choices[0]?.message;
@@ -499,6 +694,11 @@ async function handleStreamingRequest(
 							message.tool_calls.map(async (toolCall) => {
 								const { name, arguments: args } = toolCall.function;
 								const parsedArgs = JSON.parse(args);
+
+								// Track if propose_change was called
+								if (name === "propose_change") {
+									hasCalledProposeChange = true;
+								}
 
 								// Send individual tool execution
 								controller.enqueue(
@@ -549,16 +749,29 @@ async function handleStreamingRequest(
 								const executionTime = Date.now() - startTime;
 
 								// Send tool completion
+								const resultToSend =
+									// Don't truncate propose_change results - client needs full JSON for parsing
+									name === "propose_change"
+										? result
+										: result.length > 200
+											? result.substring(0, 200) + "..."
+											: result;
+
+								console.log("[API DEBUG] Sending tool_completed event:", {
+									tool: name,
+									resultLength: result.length,
+									truncated: name !== "propose_change" && result.length > 200,
+									resultPreview: result.substring(0, 100),
+									sending: resultToSend.length,
+								});
+
 								controller.enqueue(
 									encoder.encode(
 										`data: ${JSON.stringify({
 											type: "tool_completed",
 											tool: name,
 											parameters: parsedArgs,
-											result:
-												result.length > 200
-													? result.substring(0, 200) + "..."
-													: result,
+											result: resultToSend,
 											executionTime,
 										})}\n\n`,
 									),
@@ -567,7 +780,7 @@ async function handleStreamingRequest(
 								return {
 									tool_call_id: toolCall.id,
 									role: "tool" as const,
-									content: result,
+									content: result.length > 1000 ? result.substring(0, 1000) + `\n\n[... truncated ${result.length - 1000} characters ...]` : result,
 								};
 							}),
 						);
@@ -595,8 +808,22 @@ async function handleStreamingRequest(
 							break;
 						}
 					} else {
-						// No more tool calls, we have the final response
+						// No more tool calls - check if we achieved the goal
 						finalResponse = message.content || "No response content";
+
+						// Goal achievement check
+						if (finalResponse.toLowerCase().includes("proposed") ||
+						    finalResponse.toLowerCase().includes("changed") ||
+						    finalResponse.toLowerCase().includes("complete")) {
+							controller.enqueue(
+								encoder.encode(
+									`data: ${JSON.stringify({
+										type: "status",
+										message: "✓ Goal achieved",
+									})}\n\n`,
+								),
+							);
+						}
 						break;
 					}
 				}
@@ -663,326 +890,9 @@ async function handleChatRequest(req: NextRequest): Promise<NextResponse> {
 		const { messages, selectedElement } = ChatRequestSchema.parse(body);
 
 		console.log("[Chat API] Parsed selectedElement:", selectedElement);
+		console.log("[Chat API] Using streaming handler");
 
-		// Check if client wants streaming
-		const acceptHeader = req.headers.get("accept");
-		const streamHeader = req.headers.get("x-stream-request");
-		const isStreaming =
-			acceptHeader === "text/event-stream" || streamHeader === "true";
-
-		console.log("[Chat API] Accept header:", acceptHeader);
-		console.log("[Chat API] Stream header:", streamHeader);
-		console.log("[Chat API] Is streaming:", isStreaming);
-
-		if (isStreaming) {
-			console.log("[Chat API] Using streaming handler");
-			return handleStreamingRequest(req, { messages, selectedElement });
-		}
-
-		console.log("[Chat API] Using non-streaming handler");
-
-		// Initialize OpenAI client
-		const openai = new OpenAI({
-			apiKey: process.env.OPENAI_API_KEY,
-		});
-
-		// Build the conversation context
-		let conversationHistory: OpenAI.Chat.Completions.ChatCompletionMessageParam[] =
-			[{ role: "system", content: SYSTEM_PROMPT }];
-
-		// Add element context if available
-		if (selectedElement) {
-			let contextMessage = "Element context: ";
-
-			if (selectedElement.sourceLocation) {
-				contextMessage += `I'm working on file "${selectedElement.sourceLocation.file}" at line ${selectedElement.sourceLocation.line}.`;
-			} else {
-				contextMessage += "I'm working on an element";
-				if (selectedElement.componentName) {
-					contextMessage += ` (React component: ${selectedElement.componentName})`;
-				}
-				if (selectedElement.selector) {
-					contextMessage += ` with selector: ${selectedElement.selector}`;
-				}
-				contextMessage += ".";
-			}
-
-			console.log("[Chat API] Adding element context:", contextMessage);
-
-			conversationHistory.push({
-				role: "user",
-				content: contextMessage,
-			});
-		}
-
-		// Add user messages
-		messages.forEach((message, index) => {
-			conversationHistory.push({
-				role: index % 2 === 0 ? "user" : "assistant",
-				content: message,
-			});
-		});
-
-		// Define tools for OpenAI function calling
-		const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
-			{
-				type: "function",
-				function: {
-					name: "read_file",
-					description: "Read the contents of a file",
-					parameters: {
-						type: "object",
-						properties: {
-							filePath: {
-								type: "string",
-								description: "Path to the file to read",
-							},
-						},
-						required: ["filePath"],
-					},
-				},
-			},
-			{
-				type: "function",
-				function: {
-					name: "search_files",
-					description: "Search for files matching a pattern",
-					parameters: {
-						type: "object",
-						properties: {
-							pattern: {
-								type: "string",
-								description: "Glob pattern to search for files",
-							},
-							directory: {
-								type: "string",
-								description:
-									"Directory to search in (optional, defaults to current directory)",
-							},
-						},
-						required: ["pattern"],
-					},
-				},
-			},
-			{
-				type: "function",
-				function: {
-					name: "list_folder",
-					description: "List contents of a directory",
-					parameters: {
-						type: "object",
-						properties: {
-							folderPath: {
-								type: "string",
-								description: "Path to the folder to list",
-							},
-						},
-						required: ["folderPath"],
-					},
-				},
-			},
-			{
-				type: "function",
-				function: {
-					name: "apply_patch",
-					description: "Apply code changes to a file",
-					parameters: {
-						type: "object",
-						properties: {
-							filePath: {
-								type: "string",
-								description: "Path to the file to modify",
-							},
-							patch: {
-								type: "string",
-								description: "New content for the file",
-							},
-							description: {
-								type: "string",
-								description: "Description of the changes being made",
-							},
-						},
-						required: ["filePath", "patch", "description"],
-					},
-				},
-			},
-			{
-				type: "function",
-				function: {
-					name: "propose_change",
-					description:
-						"Propose a code change to a file without applying it. Returns a detailed proposal for user review. Use this tool when suggesting code modifications.",
-					parameters: {
-						type: "object",
-						properties: {
-							filePath: {
-								type: "string",
-								description: "Path to the file to modify",
-							},
-							proposedContent: {
-								type: "string",
-								description: "The proposed new content for the file",
-							},
-							description: {
-								type: "string",
-								description:
-									"Description of what changes are being made and why",
-							},
-							changeType: {
-								type: "string",
-								enum: ["create", "modify", "delete"],
-								description: "Type of change being proposed (optional)",
-							},
-						},
-						required: ["filePath", "proposedContent", "description"],
-					},
-				},
-			},
-		];
-
-		// Agent loop - continue until no more tool calls are needed
-		let maxIterations = 5;
-		let currentIteration = 0;
-		let finalResponse = "";
-		let allToolCalls: Array<{
-			tool: string;
-			parameters: any;
-			result: string;
-		}> = [];
-
-		while (currentIteration < maxIterations) {
-			currentIteration++;
-
-			// Call OpenAI with function calling
-			const completion = await openai.chat.completions.create({
-				model: "gpt-5",
-				messages: conversationHistory,
-				tools: tools,
-				tool_choice: "auto",
-			});
-
-			const message = completion.choices[0]?.message;
-			if (!message) {
-				throw new Error("No response from OpenAI");
-			}
-
-			// Add assistant's response to conversation history
-			conversationHistory.push(message);
-
-			// Check if there are tool calls to execute
-			if (message.tool_calls && message.tool_calls.length > 0) {
-				console.log(
-					`[Chat API] Executing ${message.tool_calls.length} tool calls in iteration ${currentIteration}`,
-				);
-
-				const toolResults = await Promise.all(
-					message.tool_calls.map(async (toolCall) => {
-						const { name, arguments: args } = toolCall.function;
-						const parsedArgs = JSON.parse(args);
-
-						console.log(`[Chat API] Executing tool: ${name}`, parsedArgs);
-
-						let result: string;
-						const startTime = Date.now();
-
-						switch (name) {
-							case "read_file":
-								result = await executeReadFile(parsedArgs.filePath);
-								break;
-							case "search_files":
-								result = await executeSearchFiles(
-									parsedArgs.pattern,
-									parsedArgs.directory,
-								);
-								break;
-							case "list_folder":
-								result = await executeListFolder(parsedArgs.folderPath);
-								break;
-							case "apply_patch":
-								result = await executeApplyPatch(
-									parsedArgs.filePath,
-									parsedArgs.patch,
-									parsedArgs.description,
-								);
-								break;
-							case "propose_change":
-								result = await executeProposeChange(
-									parsedArgs.filePath,
-									parsedArgs.proposedContent,
-									parsedArgs.description,
-									parsedArgs.changeType,
-								);
-								break;
-							default:
-								result = `Unknown tool: ${name}`;
-						}
-
-						const executionTime = Date.now() - startTime;
-						console.log(
-							`[Chat API] Tool ${name} completed in ${executionTime}ms`,
-						);
-
-						// Store tool call info for response
-						allToolCalls.push({
-							tool: name,
-							parameters: parsedArgs,
-							result:
-								result.length > 500 ? result.substring(0, 500) + "..." : result,
-						});
-
-						return {
-							tool_call_id: toolCall.id,
-							role: "tool" as const,
-							content: result,
-						};
-					}),
-				);
-
-				// Add tool results to conversation history
-				conversationHistory.push(...toolResults);
-
-				// If this is the last iteration, force a final response
-				if (currentIteration >= maxIterations) {
-					conversationHistory.push({
-						role: "user",
-						content:
-							"Please provide a final response based on the information gathered. Do not make any more tool calls.",
-					});
-
-					const finalCompletion = await openai.chat.completions.create({
-						model: "gpt-5",
-						messages: conversationHistory,
-						tools: [], // No tools available to force a text response
-					});
-
-					finalResponse =
-						finalCompletion.choices[0]?.message?.content ||
-						"I've completed the analysis but couldn't generate a final response.";
-					break;
-				}
-			} else {
-				// No more tool calls, we have the final response
-				finalResponse = message.content || "No response content";
-				break;
-			}
-		}
-
-		// Fallback if we still don't have a response
-		if (!finalResponse) {
-			finalResponse =
-				"I've gathered information but reached the maximum number of iterations. Please try rephrasing your request.";
-		}
-
-		console.log(
-			`[Chat API] Request completed after ${currentIteration} iterations with ${allToolCalls.length} total tool calls`,
-		);
-
-		return NextResponse.json({
-			response: finalResponse,
-			status: "completed",
-			iterations: currentIteration,
-			toolCalls: allToolCalls,
-		});
+		return handleStreamingRequest(req, { messages, selectedElement });
 	} catch (error) {
 		console.error("Chat API error:", error);
 		return NextResponse.json(

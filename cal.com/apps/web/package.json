@@ -88,6 +88,7 @@
     "bcp-47-match": "^2.0.3",
     "bcryptjs": "^2.4.3",
     "classnames": "^2.3.1",
+    "diff-match-patch": "^1.0.5",
     "dompurify": "^3.1.7",
     "dotenv-cli": "^6.0.0",
     "entities": "^4.4.0",

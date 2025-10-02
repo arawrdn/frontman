@@ -1,4 +1,6 @@
 import React from 'react';
+import ProposalCard from "./ProposalCard";
+import type { ProposalState } from "../SplitLayoutWidget";
 
 interface ChatMessagesProps {
   title?: string;
@@ -15,14 +17,19 @@ interface ChatMessagesProps {
       result?: string;
       executionTime?: number;
       status: "executing" | "completed";
+      proposalState?: ProposalState;
     }>;
   }>;
+  onAcceptProposal: (messageId: string, toolIndex: number) => Promise<void>;
+  onRejectProposal: (messageId: string, toolIndex: number) => void;
 }
 
 const ChatMessages: React.FC<ChatMessagesProps> = ({
   title = "What do you want to build?",
   subtitle = "Type a message below to begin",
-  messages = []
+  messages = [],
+  onAcceptProposal,
+  onRejectProposal
 }) => {
   const hasMessages = messages.length > 0;
 
@@ -96,8 +103,23 @@ const ChatMessages: React.FC<ChatMessagesProps> = ({
                                 ✅ {tc.tool}({params})
                                 {tc.executionTime && ` - ${tc.executionTime}ms`}
                                 {tc.result && (
-                                  <div style={{ marginLeft: '16px', fontSize: '11px' }}>
-                                    Result: {tc.result}
+                                  <div style={{ marginLeft: '16px', fontSize: '11px', marginTop: '4px' }}>
+                                    {(() => {
+                                      console.log("[DEBUG] Rendering tool result:", {
+                                        tool: tc.tool,
+                                        hasProposalState: !!tc.proposalState,
+                                        resultPreview: tc.result?.substring(0, 50),
+                                      });
+                                      return tc.proposalState ? (
+                                        <ProposalCard
+                                          proposalState={tc.proposalState}
+                                          onAccept={() => onAcceptProposal(message.id, idx)}
+                                          onReject={() => onRejectProposal(message.id, idx)}
+                                        />
+                                      ) : (
+                                        <div>Result: {tc.result}</div>
+                                      );
+                                    })()}
                                   </div>
                                 )}
                               </>
