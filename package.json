@@ -1,0 +1,8 @@
+{
+	"name": "ask-the-llm",
+	"packageManager": "yarn@4.9.4",
+	"enableGlobalCache": false,
+	"workspaces": [
+		"apps/cli"
+	]
+}

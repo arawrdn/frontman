@@ -1,58 +1,53 @@
-# ask-the-llm
+# Ask-the-LLM
 
-## Setting up Cal.com
+A framework-integrated AI coding agent that embeds directly into web development frameworks, providing real-time assistance with compilation errors, code generation, and debugging.
 
-This project includes Cal.com as a submodule. To set it up:
+## Overview
 
-### Prerequisites
-- Node.js (Version: >=18.x)
-- PostgreSQL (Version: >=13.x)
-- Yarn (recommended)
-- Docker and Docker Compose (for quick start)
+Unlike traditional IDE-based coding assistants, Ask-the-LLM integrates directly into your running application, gaining access to:
 
-### Quick Start
-```sh
-cd cal.com
-yarn dx
+- Real-time compilation errors and warnings
+- Runtime logs and framework events
+- Route changes and build status
+- Component structure and state
+
+## Getting Started
+
+Install the plugin for your framework:
+
+- **Next.js:** See `libs/nextjs-plugin`
+- **Other frameworks:** Coming soon
+
+## Architecture
+
+The system consists of two main components:
+
+- **Agent Core** (`apps/agent`) - Stateless executable that processes requests and executes the agentic loop
+- **Framework Plugin** - Framework integration that collects context and manages communication
+
+Communication between components uses STDIO with JSON-encoded messages.
+
+## Technology Stack
+
+- **Language:** ReScript
+- **Runtime:** Node.js
+- **UI:** React
+- **Communication:** STDIO (Agent ↔ Plugin), WebSocket/HTTP (Plugin ↔ UI)
+
+## Project Structure
+
 ```
-This will start a local Postgres instance with test users.
+ask-the-llm/
+├── apps/
+│   └── agent/              # Agent core executable
+├── libs/
+│   └── nextjs-plugin/      # Next.js integration
+└── docs/
+    └── architecture.md     # Detailed architecture documentation
+```
 
-### Manual Setup
-1. **Navigate to cal.com directory**
-   ```sh
-   cd cal.com
-   ```
+## Documentation
 
-2. **Install dependencies**
-   ```sh
-   yarn
-   ```
+For detailed information, see the [`docs/`](./docs) directory:
 
-3. **Environment setup**
-   ```sh
-   cp .env.example .env
-   # Generate secrets:
-   openssl rand -base64 32  # Add to NEXTAUTH_SECRET in .env
-   openssl rand -base64 32  # Add to CALENDSO_ENCRYPTION_KEY in .env
-   ```
-
-4. **Database setup**
-   - Configure `DATABASE_URL` in `.env` file
-   - Copy `DATABASE_URL` to `.env.appStore`
-   - Run migrations:
-     ```sh
-     yarn workspace @calcom/prisma db-migrate
-     ```
-
-5. **Seed database (optional)**
-   ```sh
-   cd packages/prisma
-   yarn db-seed
-   ```
-
-6. **Start development server**
-   ```sh
-   yarn dev
-   ```
-
-Access Cal.com at `http://localhost:3000`
+- [Architecture](./docs/architecture.md) - System architecture and design decisions
