@@ -165,9 +165,10 @@ The system consists of two primary components:
 ask-the-llm/
 ├── apps/
 │   └── agent/              # Agent core executable
-│
-└── libs/
-    └── nextjs-plugin/      # Next.js integration library
+├── libs/
+│   └── nextjs-plugin/      # Next.js integration library
+└── examples/
+    └── nextjs/             # Development/testing Next.js app
 ```
 
 ### 7.2 Installation Flow
@@ -177,6 +178,30 @@ ask-the-llm/
 3. Developer starts their development server normally
 4. Plugin initializes, spawns agent, injects UI
 5. Agent becomes available for interaction
+
+### 7.3 Development and Testing
+
+The `examples/` directory contains framework applications used for development, testing, and demonstrating integration:
+
+```
+examples/
+└── nextjs/              # Next.js application with plugin integrated
+    ├── app/             # Next.js app router
+    ├── next.config.js   # Uses plugin
+    └── package.json     # Depends on local plugin
+```
+
+**Purpose:**
+- Rapid iteration during development
+- Integration testing with real framework
+- Reference implementation for users
+- Documentation through working examples
+
+**Development Workflow:**
+1. Make changes to plugin or agent code
+2. Changes hot-reload in example app
+3. Test integration in real environment
+4. Validate before publishing
 
 ## 8. Context Strategy
 

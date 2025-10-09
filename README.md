@@ -18,6 +18,8 @@ Install the plugin for your framework:
 - **Next.js:** See `libs/nextjs-plugin`
 - **Other frameworks:** Coming soon
 
+For development and testing, see the `examples/` directory for working integrations.
+
 ## Architecture
 
 The system consists of two main components:
@@ -42,6 +44,8 @@ ask-the-llm/
 │   └── agent/              # Agent core executable
 ├── libs/
 │   └── nextjs-plugin/      # Next.js integration
+├── examples/
+│   └── nextjs/             # Example Next.js app for development/testing
 └── docs/
     └── architecture.md     # Detailed architecture documentation
 ```
