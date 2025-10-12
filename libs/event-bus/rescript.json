@@ -1,0 +1,22 @@
+{
+	"name": "@ask-the-llm/event-bus",
+	"sources": [
+		{
+			"dir": "src",
+			"subdirs": true
+		},
+		{
+			"dir": "test",
+			"subdirs": true
+		}
+	],
+	"package-specs": [
+		{
+			"module": "esmodule",
+			"in-source": false,
+			"suffix": ".res.mjs"
+		}
+	],
+	"dependencies": ["sury", "rescript-vitest"],
+	"compiler-flags": []
+}

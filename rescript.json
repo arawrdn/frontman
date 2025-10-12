@@ -1,14 +1,10 @@
 {
-	"name": "@ask-the-llm/cli",
-	"sources": {
-		"dir": "src",
-		"subdirs": true
-	},
+	"name": "ask-the-llm",
+	"dependencies": ["@ask-the-llm/event-bus"],
 	"package-specs": {
 		"module": "esmodule",
 		"in-source": true
 	},
 	"suffix": ".res.mjs",
-	"dependencies": [],
 	"compiler-flags": []
 }

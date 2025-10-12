@@ -3,6 +3,10 @@
 	"packageManager": "yarn@4.9.4",
 	"enableGlobalCache": false,
 	"workspaces": [
-		"apps/cli"
-	]
+		"apps/cli",
+		"libs/event-bus"
+	],
+	"dependencies": {
+		"rescript": "catalog:"
+	}
 }
