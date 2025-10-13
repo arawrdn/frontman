@@ -5,11 +5,13 @@ __metadata:
   version: 8
   cacheKey: 10c0
 
-"@ask-the-llm/cli@workspace:apps/cli":
+"@ask-the-llm/agent@workspace:apps/agent":
   version: 0.0.0-use.local
-  resolution: "@ask-the-llm/cli@workspace:apps/cli"
+  resolution: "@ask-the-llm/agent@workspace:apps/agent"
   dependencies:
+    openai: "npm:^6.3.0"
     rescript: "catalog:"
+    sury: "catalog:"
   languageName: unknown
   linkType: soft
 
@@ -19,7 +21,7 @@ __metadata:
   dependencies:
     rescript: "catalog:"
     rescript-vitest: "npm:^2.1.1"
-    sury: "npm:11.0.0-alpha.4"
+    sury: "catalog:"
     vite: "npm:^7.1.9"
     vitest: "npm:^3.2.4"
   languageName: unknown
@@ -1248,6 +1250,23 @@ __metadata:
   bin:
     nopt: bin/nopt.js
   checksum: 10c0/62e9ea70c7a3eb91d162d2c706b6606c041e4e7b547cbbb48f8b3695af457dd6479904d7ace600856bf923dd8d1ed0696f06195c8c20f02ac87c1da0e1d315ef
+  languageName: node
+  linkType: hard
+
+"openai@npm:^6.3.0":
+  version: 6.3.0
+  resolution: "openai@npm:6.3.0"
+  peerDependencies:
+    ws: ^8.18.0
+    zod: ^3.25 || ^4.0
+  peerDependenciesMeta:
+    ws:
+      optional: true
+    zod:
+      optional: true
+  bin:
+    openai: bin/cli
+  checksum: 10c0/192304069a75b9b0d71ee6e1b719544ec31f6f64cd750e1837cff9cc00187c023c80dd2c6d3049627b3b74721dd0a463a8fed230443003e4ab72c705c0d540dc
   languageName: node
   linkType: hard
 

@@ -1,12 +1,8 @@
 {
-	"name": "@ask-the-llm/event-bus",
+	"name": "@ask-the-llm/agent",
 	"sources": [
 		{
 			"dir": "src",
-			"subdirs": true
-		},
-		{
-			"dir": "test",
 			"subdirs": true
 		}
 	],
@@ -17,6 +13,6 @@
 			"suffix": ".res.mjs"
 		}
 	],
-	"dependencies": ["sury", "rescript-vitest"],
+	"dependencies": ["@ask-the-llm/event-bus", "sury"],
 	"compiler-flags": []
 }

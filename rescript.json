@@ -1,6 +1,6 @@
 {
 	"name": "ask-the-llm",
-	"dependencies": ["@ask-the-llm/event-bus"],
+	"dependencies": ["@ask-the-llm/event-bus", "@ask-the-llm/agent"],
 	"package-specs": {
 		"module": "esmodule",
 		"in-source": true
