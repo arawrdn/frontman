@@ -1,0 +1,10 @@
+{
+	"name": "ask-the-llm",
+	"dependencies": ["@ask-the-llm/event-bus"],
+	"package-specs": {
+		"module": "esmodule",
+		"in-source": true
+	},
+	"suffix": ".res.mjs",
+	"compiler-flags": []
+}

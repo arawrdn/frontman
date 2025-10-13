@@ -1,0 +1,273 @@
+import { type ChildProcess, spawn } from "node:child_process";
+import { join } from "node:path";
+import { afterEach, describe, expect, test } from "vitest";
+
+describe("STDIO Transport Integration", () => {
+	let subprocess: ChildProcess | null = null;
+
+	// Clean up subprocess after each test
+	afterEach(() => {
+		if (subprocess) {
+			subprocess.kill();
+			subprocess = null;
+		}
+	});
+
+	// Helper to spawn the compiled ReScript fixture
+	const spawnFixture = (fixtureName: string): ChildProcess => {
+		const fixturePath = join(
+			__dirname,
+			"../../lib/bs/test/integration/fixtures",
+			`${fixtureName}.res.mjs`,
+		);
+
+		return spawn("node", [fixturePath], {
+			stdio: ["pipe", "pipe", "inherit"],
+		});
+	};
+
+	// Helper to collect messages from subprocess
+	const collectMessages = (proc: ChildProcess): string[] => {
+		const messages: string[] = [];
+		proc.stdout?.on("data", (chunk) => {
+			const lines = chunk
+				.toString()
+				.split("\n")
+				.filter((l) => l.trim());
+			messages.push(...lines);
+		});
+		return messages;
+	};
+
+	// Helper to wait
+	const wait = (ms: number) =>
+		new Promise((resolve) => setTimeout(resolve, ms));
+
+	describe("Basic Communication", () => {
+		test("should send and receive messages through public API", async () => {
+			subprocess = spawnFixture("EchoSubprocess");
+			const messages = collectMessages(subprocess);
+
+			// Wait for subprocess to initialize
+			await wait(100);
+
+			// Send test message (using envelope format)
+			const envelope = {
+				id: "test-1",
+				timestamp: Date.now(),
+				eventName: "test.ping",
+				data: { message: "Hello from test!" },
+			};
+			subprocess.stdin?.write(JSON.stringify(envelope) + "\n");
+
+			// Wait for response
+			await wait(200);
+
+			// Assert we got a response
+			expect(messages.length).toBeGreaterThan(0);
+
+			const response = JSON.parse(messages[0]);
+			expect(response).toHaveProperty("id");
+			expect(response).toHaveProperty("timestamp");
+			expect(response).toHaveProperty("eventName", "test.pong");
+			expect(response.data).toHaveProperty("message");
+			expect(response.data.message).toContain("Echo:");
+		});
+
+		test("should preserve message data through serialization", async () => {
+			subprocess = spawnFixture("EchoSubprocess");
+			const messages = collectMessages(subprocess);
+
+			await wait(100);
+
+			const testMessage = "Test message with special chars: !@#$%^&*()";
+			const envelope = {
+				id: "test-special",
+				timestamp: Date.now(),
+				eventName: "test.ping",
+				data: { message: testMessage },
+			};
+			subprocess.stdin?.write(JSON.stringify(envelope) + "\n");
+
+			await wait(200);
+
+			expect(messages.length).toBeGreaterThan(0);
+			const response = JSON.parse(messages[0]);
+			expect(response.data.originalMessage).toBe(testMessage);
+		});
+	});
+
+	describe("Buffer Management", () => {
+		test("should handle chunked messages (partial reads)", async () => {
+			subprocess = spawnFixture("EchoSubprocess");
+			const messages = collectMessages(subprocess);
+
+			await wait(100);
+
+			// Send message in chunks (tests buffer management)
+			const envelope = {
+				id: "test-chunked",
+				timestamp: Date.now(),
+				eventName: "test.ping",
+				data: { message: "Chunked message test" },
+			};
+			const fullMessage = JSON.stringify(envelope) + "\n";
+
+			// Split into 3 chunks
+			const chunkSize = Math.ceil(fullMessage.length / 3);
+			subprocess.stdin?.write(fullMessage.slice(0, chunkSize));
+			await wait(10);
+			subprocess.stdin?.write(fullMessage.slice(chunkSize, chunkSize * 2));
+			await wait(10);
+			subprocess.stdin?.write(fullMessage.slice(chunkSize * 2));
+
+			await wait(200);
+
+			// Should receive 1 complete response despite chunked input
+			expect(messages.length).toBeGreaterThanOrEqual(1);
+			const response = JSON.parse(messages[0]);
+			expect(response.eventName).toBe("test.pong");
+			expect(response.data.message).toContain("Chunked message test");
+		});
+
+		test("should handle multiple messages in single chunk", async () => {
+			subprocess = spawnFixture("EchoSubprocess");
+			const messages = collectMessages(subprocess);
+
+			await wait(100);
+
+			// Send 3 messages in a single write
+			const envelopes = [
+				{
+					id: "batch-1",
+					timestamp: Date.now(),
+					eventName: "test.ping",
+					data: { message: "First" },
+				},
+				{
+					id: "batch-2",
+					timestamp: Date.now(),
+					eventName: "test.ping",
+					data: { message: "Second" },
+				},
+				{
+					id: "batch-3",
+					timestamp: Date.now(),
+					eventName: "test.ping",
+					data: { message: "Third" },
+				},
+			];
+			const batch = envelopes.map((e) => JSON.stringify(e)).join("\n") + "\n";
+			subprocess.stdin?.write(batch);
+
+			await wait(300);
+
+			// Should receive 3 responses
+			expect(messages.length).toBeGreaterThanOrEqual(3);
+
+			// Verify all responses are valid
+			for (let i = 0; i < 3; i++) {
+				const response = JSON.parse(messages[i]);
+				expect(response.eventName).toBe("test.pong");
+				expect(response.data.message).toMatch(/First|Second|Third/);
+			}
+		});
+	});
+
+	describe("Sequential Communication", () => {
+		test("should handle multiple sequential messages", async () => {
+			subprocess = spawnFixture("EchoSubprocess");
+			const messages = collectMessages(subprocess);
+
+			await wait(100);
+
+			// Send 5 messages in sequence
+			for (let i = 0; i < 5; i++) {
+				const envelope = {
+					id: `test-${i}`,
+					timestamp: Date.now(),
+					eventName: "test.ping",
+					data: { message: `Message ${i}` },
+				};
+				subprocess.stdin?.write(JSON.stringify(envelope) + "\n");
+				await wait(50); // Small delay between messages
+			}
+
+			await wait(300);
+
+			// Should receive 5 responses
+			expect(messages.length).toBeGreaterThanOrEqual(5);
+
+			// Verify each response
+			for (let i = 0; i < 5; i++) {
+				const response = JSON.parse(messages[i]);
+				expect(response.eventName).toBe("test.pong");
+				expect(response.data).toHaveProperty("message");
+				expect(response.data).toHaveProperty("originalMessage");
+			}
+		});
+
+		test("should maintain message order", async () => {
+			subprocess = spawnFixture("EchoSubprocess");
+			const messages = collectMessages(subprocess);
+
+			await wait(100);
+
+			// Send messages with identifiable content
+			const testMessages = ["First", "Second", "Third"];
+			for (const msg of testMessages) {
+				const envelope = {
+					id: `test-${msg}`,
+					timestamp: Date.now(),
+					eventName: "test.ping",
+					data: { message: msg },
+				};
+				subprocess.stdin?.write(JSON.stringify(envelope) + "\n");
+			}
+
+			await wait(300);
+
+			expect(messages.length).toBeGreaterThanOrEqual(3);
+
+			// Verify order is preserved
+			const receivedMessages = messages.slice(0, 3).map((m) => {
+				const response = JSON.parse(m);
+				return response.data.originalMessage;
+			});
+
+			expect(receivedMessages).toEqual(["First", "Second", "Third"]);
+		});
+	});
+
+	describe("Public API Contract", () => {
+		test("should emit correct envelope structure", async () => {
+			subprocess = spawnFixture("EchoSubprocess");
+			const messages = collectMessages(subprocess);
+
+			await wait(100);
+
+			const envelope = {
+				id: "test-envelope",
+				timestamp: Date.now(),
+				eventName: "test.ping",
+				data: { message: "Envelope test" },
+			};
+			subprocess.stdin?.write(JSON.stringify(envelope) + "\n");
+
+			await wait(200);
+
+			expect(messages.length).toBeGreaterThan(0);
+			const response = JSON.parse(messages[0]);
+
+			// Verify envelope structure
+			expect(response).toHaveProperty("id");
+			expect(typeof response.id).toBe("string");
+			expect(response).toHaveProperty("timestamp");
+			expect(typeof response.timestamp).toBe("number");
+			expect(response).toHaveProperty("eventName");
+			expect(typeof response.eventName).toBe("string");
+			expect(response).toHaveProperty("data");
+			expect(typeof response.data).toBe("object");
+		});
+	});
+});
