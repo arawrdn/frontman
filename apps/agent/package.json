@@ -3,7 +3,8 @@
 	"version": "0.1.0",
 	"type": "module",
 	"dependencies": {
-		"openai": "^6.3.0",
+		"@ai-sdk/anthropic": "^1.1.27",
+		"ai": "^4.0.38",
 		"sury": "catalog:"
 	},
 	"devDependencies": {
@@ -12,7 +13,7 @@
 	"keywords": [
 		"rescript",
 		"agent",
-		"openai"
+		"ai"
 	],
 	"author": "",
 	"license": "MIT"
