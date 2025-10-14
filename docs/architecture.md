@@ -82,6 +82,12 @@ The system consists of two primary components:
 
 **State Model:** Stateful - maintains current framework state, error history, logs, and other context.
 
+### 3.3 Bindings Library
+
+**Location:** `libs/bindings`
+
+**Purpose:** Shared ReScript bindings for Node.js APIs (fs, path, process, child_process, streams). Eliminates duplication across apps/libs.
+
 ## 4. Communication Architecture
 
 ### 4.1 Inter-Process Communication
@@ -166,6 +172,8 @@ ask-the-llm/
 ├── apps/
 │   └── agent/              # Agent core executable
 ├── libs/
+│   ├── bindings/           # Shared Node.js bindings
+│   ├── event-bus/          # Event bus communication library
 │   └── nextjs-plugin/      # Next.js integration library
 └── examples/
     └── nextjs/             # Development/testing Next.js app

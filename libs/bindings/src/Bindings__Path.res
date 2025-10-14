@@ -1,16 +1,15 @@
-// Node.js path module bindings
-
-@module("path") @variadic
+// Path module bindings using node: prefix
+@module("node:path") @variadic
 external join: array<string> => string = "join"
 
-@module("path")
+@module("node:path")
 external dirname: string => string = "dirname"
 
-@module("path")
+@module("node:path")
 external basename: string => string = "basename"
 
-@module("path")
+@module("node:path")
 external extname: string => string = "extname"
 
-@module("path")
+@module("node:path")
 external resolve: string => string = "resolve"

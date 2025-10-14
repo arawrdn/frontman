@@ -3,7 +3,7 @@ open Vitest
 module Helpers = Integration__Helpers
 
 // Test state - mutable ref to hold subprocess
-let subprocess: ref<option<EventBus__Bindings__ChildProcess.childProcess>> = ref(None)
+let subprocess: ref<option<Bindings__ChildProcess.childProcess>> = ref(None)
 module TestBus = EventBus.RemoteBus.Make(Fixtures__Events, EventBus.SubprocessTransport)
 let testBus: ref<option<TestBus.t>> = ref(None)
 describe("STDIO Transport Integration", () => {
@@ -17,7 +17,7 @@ describe("STDIO Transport Integration", () => {
   afterEach(() => {
     switch subprocess.contents {
     | Some(proc) => {
-        let _ = EventBus__Bindings__ChildProcess.kill(proc)
+        let _ = Bindings__ChildProcess.kill(proc)
         subprocess := None
       }
     | None => ()
@@ -307,7 +307,7 @@ describe("STDIO Transport Integration", () => {
         }
 
         // Cleanup
-        let _ = EventBus__Bindings__ChildProcess.kill(proc)
+        let _ = Bindings__ChildProcess.kill(proc)
       },
       ~timeout=5000,
     )

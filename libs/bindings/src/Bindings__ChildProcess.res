@@ -1,5 +1,4 @@
 // Bindings for Node.js child_process module
-// Follows the pattern established in EventBus__Bindings__NodeStreams.res
 
 type childProcess
 
@@ -13,10 +12,10 @@ type spawnOptions = {
 @module("node:child_process")
 external spawn: (string, array<string>, spawnOptions) => childProcess = "spawn"
 
-// ChildProcess properties
-@get external stdin: childProcess => option<EventBus__Bindings__NodeStreams.writable> = "stdin"
-@get external stdout: childProcess => option<EventBus__Bindings__NodeStreams.readable> = "stdout"
-@get external stderr: childProcess => option<EventBus__Bindings__NodeStreams.readable> = "stderr"
+// ChildProcess properties - now reference Bindings__NodeStreams
+@get external stdin: childProcess => option<Bindings__NodeStreams.writable> = "stdin"
+@get external stdout: childProcess => option<Bindings__NodeStreams.readable> = "stdout"
+@get external stderr: childProcess => option<Bindings__NodeStreams.readable> = "stderr"
 
 // ChildProcess methods
 @send external kill: (childProcess, ~signal: string=?) => bool = "kill"

@@ -1,13 +1,9 @@
 {
-	"name": "@ask-the-llm/event-bus",
+	"name": "@ask-the-llm/bindings",
 	"sources": [
 		{
 			"dir": "src",
-			"subdirs": true
-		},
-		{
-			"dir": "test",
-			"subdirs": true
+			"subdirs": false
 		}
 	],
 	"package-specs": [
@@ -17,6 +13,6 @@
 			"suffix": ".res.mjs"
 		}
 	],
-	"dependencies": ["@ask-the-llm/bindings", "sury", "rescript-vitest"],
+	"dependencies": [],
 	"compiler-flags": []
 }

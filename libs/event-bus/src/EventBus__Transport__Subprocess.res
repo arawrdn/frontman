@@ -3,10 +3,10 @@
 // - StdioTransport: Use when your code runs INSIDE a subprocess
 // - SubprocessTransport: Use when your code controls a subprocess
 
-type config = EventBus__Bindings__ChildProcess.childProcess
+type config = Bindings__ChildProcess.childProcess
 
 type t = {
-  proc: EventBus__Bindings__ChildProcess.childProcess,
+  proc: Bindings__ChildProcess.childProcess,
   messageHandlers: array<string => unit>,
   errorHandlers: array<JsError.t => unit>,
   buffer: ref<string>,
@@ -22,9 +22,9 @@ let send = async (transport, message) => {
     let _ = transport.messageBuffer.contents->Array.push(message)
   } else {
     // Send immediately if ready
-    let stdin = EventBus__Bindings__ChildProcess.stdin(transport.proc)->Option.getOrThrow
+    let stdin = Bindings__ChildProcess.stdin(transport.proc)->Option.getOrThrow
     let fullMessage = message ++ "\n"
-    let _ = EventBus__Bindings__NodeStreams.write(stdin, fullMessage)
+    let _ = Bindings__NodeStreams.write(stdin, fullMessage)
   }
 }
 let make = proc => {
@@ -40,9 +40,9 @@ let make = proc => {
   }
 
   // Setup stdout listener for receiving messages from subprocess
-  switch EventBus__Bindings__ChildProcess.stdout(proc) {
+  switch Bindings__ChildProcess.stdout(proc) {
   | Some(stdout) =>
-    EventBus__Bindings__NodeStreams.on(
+    Bindings__NodeStreams.on(
       stdout,
       #data(
         chunk => {
@@ -76,7 +76,7 @@ let make = proc => {
 
                   // Flush buffered messages by sending them
                   let _stdin =
-                    EventBus__Bindings__ChildProcess.stdin(transport.proc)->Option.getOrThrow
+                    Bindings__ChildProcess.stdin(transport.proc)->Option.getOrThrow
                   transport.messageBuffer.contents->Array.forEach(bufferedMsg => {
                     let _: promise<unit> = send(transport, bufferedMsg)
                   })
@@ -96,7 +96,7 @@ let make = proc => {
       ),
     )
 
-    EventBus__Bindings__NodeStreams.on(
+    Bindings__NodeStreams.on(
       stdout,
       #error(
         error => {
@@ -108,7 +108,7 @@ let make = proc => {
   }
 
   // Listen for subprocess exit/error to reject ready promise if not ready yet
-  EventBus__Bindings__ChildProcess.on(
+  Bindings__ChildProcess.on(
     proc,
     #exit(
       (code, signal) => {
@@ -131,7 +131,7 @@ let make = proc => {
     ),
   )
 
-  EventBus__Bindings__ChildProcess.on(
+  Bindings__ChildProcess.on(
     proc,
     #error(
       error => {

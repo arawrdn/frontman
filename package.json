@@ -4,7 +4,8 @@
 	"enableGlobalCache": false,
 	"workspaces": [
 		"apps/agent",
-		"libs/event-bus"
+		"libs/event-bus",
+		"libs/bindings"
 	],
 	"dependencies": {
 		"rescript": "catalog:"

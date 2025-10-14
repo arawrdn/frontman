@@ -81,6 +81,12 @@ __metadata:
   languageName: unknown
   linkType: soft
 
+"@ask-the-llm/bindings@workspace:libs/bindings":
+  version: 0.0.0-use.local
+  resolution: "@ask-the-llm/bindings@workspace:libs/bindings"
+  languageName: unknown
+  linkType: soft
+
 "@ask-the-llm/event-bus@workspace:libs/event-bus":
   version: 0.0.0-use.local
   resolution: "@ask-the-llm/event-bus@workspace:libs/event-bus"

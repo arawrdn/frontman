@@ -13,6 +13,6 @@
 			"suffix": ".res.mjs"
 		}
 	],
-	"dependencies": ["@ask-the-llm/event-bus", "sury"],
+	"dependencies": ["@ask-the-llm/event-bus", "@ask-the-llm/bindings", "sury"],
 	"compiler-flags": []
 }

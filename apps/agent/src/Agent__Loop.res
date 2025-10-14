@@ -29,7 +29,7 @@ ${contextStr}`
 }
 
 let processRequest = async (
-  projectRoot: string,
+  _projectRoot: string,
   model: Agent__Bindings__VercelAI.languageModel,
   tools: Dict.t<Agent__Bindings__VercelAI.toolDef>,
   request: Agent__Events.UserRequest.t,
@@ -75,11 +75,7 @@ let processRequest = async (
     })
 
     // Process stream
-    let result = await Agent__StreamProcessor.process(
-      state.requestId,
-      stream,
-      onStatus,
-    )
+    let result = await Agent__StreamProcessor.process(state.requestId, stream, onStatus)
 
     // Save accumulated text
     let text = result["text"]
@@ -107,10 +103,9 @@ let processRequest = async (
         Console.error("Response exceeded maximum length")
         continueLoop := false
       }
-    | _ => {
-        // Continue for tool-calls or other reasons
-        Console.log("Continuing loop...")
-      }
+    | _ =>
+      // Continue for tool-calls or other reasons
+      Console.log("Continuing loop...")
     }
   }
 

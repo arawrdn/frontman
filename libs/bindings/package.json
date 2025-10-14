@@ -1,0 +1,9 @@
+{
+	"name": "@ask-the-llm/bindings",
+	"version": "0.1.0",
+	"private": true,
+	"type": "module",
+	"exports": {
+		"./*": "./*.res.mjs"
+	}
+}

@@ -2,7 +2,7 @@
 type readable
 type writable
 
-// Process bindings
+// Process stdio streams
 @module("process") @val
 external stdin: readable = "stdin"
 

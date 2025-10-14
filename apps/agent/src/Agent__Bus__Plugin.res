@@ -3,30 +3,30 @@
 // All events for plugin communication
 type event =
   | UserRequest(Agent__Events.UserRequest.t)
-  | ContextResponse(Agent__Events.ContextResponse.t)
-  | StatusUpdate(Agent__Events.StatusUpdate.t)
-  | ContextRequest(Agent__Events.ContextRequest.t)
   | AgentResponse(Agent__Events.AgentResponse.t)
   | AgentError(Agent__Events.AgentError.t)
+  | ContextRequest(Agent__Events.ContextRequest.t)
+  | ContextResponse(Agent__Events.ContextResponse.t)
+  | StatusUpdate(Agent__Events.StatusUpdate.t)
 
 let eventName = event =>
   switch event {
   | UserRequest(_) => Agent__Events.UserRequest.name
-  | ContextResponse(_) => Agent__Events.ContextResponse.name
-  | StatusUpdate(_) => Agent__Events.StatusUpdate.name
-  | ContextRequest(_) => Agent__Events.ContextRequest.name
   | AgentResponse(_) => Agent__Events.AgentResponse.name
   | AgentError(_) => Agent__Events.AgentError.name
+  | ContextRequest(_) => Agent__Events.ContextRequest.name
+  | ContextResponse(_) => Agent__Events.ContextResponse.name
+  | StatusUpdate(_) => Agent__Events.StatusUpdate.name
   }
 
 let toJson = event =>
   switch event {
   | UserRequest(e) => Agent__Events.UserRequest.toJson(e)
-  | ContextResponse(e) => Agent__Events.ContextResponse.toJson(e)
-  | StatusUpdate(e) => Agent__Events.StatusUpdate.toJson(e)
-  | ContextRequest(e) => Agent__Events.ContextRequest.toJson(e)
   | AgentResponse(e) => Agent__Events.AgentResponse.toJson(e)
   | AgentError(e) => Agent__Events.AgentError.toJson(e)
+  | ContextRequest(e) => Agent__Events.ContextRequest.toJson(e)
+  | ContextResponse(e) => Agent__Events.ContextResponse.toJson(e)
+  | StatusUpdate(e) => Agent__Events.StatusUpdate.toJson(e)
   }
 
 let fromJson = (name, json) => {
