@@ -1,0 +1,1 @@
+- For rescript code, never use mutable - use ref instead
