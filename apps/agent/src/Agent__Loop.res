@@ -92,11 +92,11 @@ let processRequest = async (
     // Check termination
     let finishReason = await stream->Agent__Bindings__VercelAI.finishReason
 
-    Console.log2("Finish reason:", finishReason)
+    Console.error2("Finish reason:", finishReason)
 
     switch finishReason {
     | "stop" => {
-        Console.log("Loop complete - no more tool calls")
+        Console.error("Loop complete - no more tool calls")
         continueLoop := false
       }
     | "length" => {
@@ -105,7 +105,7 @@ let processRequest = async (
       }
     | _ =>
       // Continue for tool-calls or other reasons
-      Console.log("Continuing loop...")
+      Console.error("Continuing loop...")
     }
   }
 

@@ -1,5 +1,8 @@
 // Event schemas for Agent <-> Plugin communication
 
+// Enable Sury JSON schema support
+S.enableJson()
+
 // ============ Plugin -> Agent Events ============
 
 // User request with bundled context
@@ -54,6 +57,7 @@ module UserRequestConfig = {
     context: s.field("context", contextSchema),
   })
 }
+module EventBus = AskTheLlmEventBus.EventBus
 module UserRequest = EventBus.Event.Make(UserRequestConfig)
 
 // Context response (plugin responds to agent's request)

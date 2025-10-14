@@ -1,5 +1,6 @@
 {
 	"name": "@ask-the-llm/bindings",
+	"namespace": true,
 	"sources": [
 		{
 			"dir": "src",

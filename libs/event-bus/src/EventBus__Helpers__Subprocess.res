@@ -4,8 +4,9 @@
 // - stdin: pipe (for sending messages)
 // - stdout: pipe (for receiving messages)
 // - stderr: inherit (for logging)
-let spawn = (scriptPath: string): Bindings__ChildProcess.childProcess => {
-  Bindings__ChildProcess.spawn(
+module Bindings = AskTheLlmBindings
+let spawn = (scriptPath: string): Bindings.ChildProcess.childProcess => {
+  Bindings.ChildProcess.spawn(
     "node",
     [scriptPath],
     {
@@ -15,6 +16,6 @@ let spawn = (scriptPath: string): Bindings__ChildProcess.childProcess => {
 }
 
 // Kill a subprocess
-let kill = (proc: Bindings__ChildProcess.childProcess): bool => {
-  Bindings__ChildProcess.kill(proc)
+let kill = (proc: Bindings.ChildProcess.childProcess): bool => {
+  Bindings.ChildProcess.kill(proc)
 }

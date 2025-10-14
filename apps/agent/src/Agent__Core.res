@@ -10,11 +10,16 @@ type t = {
 let initialize = async (projectRoot: string) => {
   Console.error(`Initializing agent for project: ${projectRoot}`)
   let pluginBus = await Agent__Bus__Plugin.make()
-  let model = Agent__Bindings__VercelAI.Anthropic.claude3Sonnet()
+
+  // Verify OpenAI API key is set
+  let _apiKey = AskTheLlmBindings.Dotenv.getExn("OPENAI_API_KEY")
+  let model = Agent__Bindings__VercelAI.OpenAI.gpt4o()
+
   let toolRegistry = Agent__Tools__Registry.make(projectRoot)
   let tools = Agent__Tools__Registry.toVercelTools(toolRegistry)
 
-  Console.debug(`Agent initialized with ${tools->Dict.size->Int.toString} tools`)
+  // Note: Don't use Console.debug/log here - stdout is used for IPC
+  Console.error(`Agent initialized with ${tools->Dict.size->Int.toString} tools`)
 
   {
     projectRoot,
@@ -25,7 +30,7 @@ let initialize = async (projectRoot: string) => {
 }
 
 let handleUserRequest = async (agent: t, request: Agent__Events.UserRequest.t) => {
-  Console.debug2("Received user request:", request.requestId)
+  Console.error2("Received user request:", request.requestId)
 
   let result = await Agent__Loop.processRequest(
     agent.projectRoot,

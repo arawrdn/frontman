@@ -1,13 +1,13 @@
 // Filesystem tools for agent
 
 type toolResult<'a> = result<'a, string>
-
+module Bindings = AskTheLlmBindings
 // Read file contents
 let readFile = async (projectRoot: string, relativePath: string): toolResult<string> => {
-  let fullPath = Bindings__Path.join([projectRoot, relativePath])
+  let fullPath = Bindings.Path.join([projectRoot, relativePath])
 
   try {
-    let content = await Bindings__Fs.Promises.readFile(fullPath)
+    let content = await Bindings.Fs.Promises.readFile(fullPath)
     Ok(content)
   } catch {
   | exn => {
@@ -25,10 +25,10 @@ let readFile = async (projectRoot: string, relativePath: string): toolResult<str
 let writeFile = async (projectRoot: string, relativePath: string, content: string): toolResult<
   unit,
 > => {
-  let fullPath = Bindings__Path.join([projectRoot, relativePath])
+  let fullPath = Bindings.Path.join([projectRoot, relativePath])
 
   try {
-    await Bindings__Fs.Promises.writeFile(fullPath, content)
+    await Bindings.Fs.Promises.writeFile(fullPath, content)
     Ok()
   } catch {
   | exn => {
@@ -51,22 +51,22 @@ type fileEntry = {
 
 // List files in directory
 let listFiles = async (projectRoot: string, relativePath: string): toolResult<array<fileEntry>> => {
-  let fullPath = Bindings__Path.join([projectRoot, relativePath])
+  let fullPath = Bindings.Path.join([projectRoot, relativePath])
 
   try {
-    let entries = await Bindings__Fs.Promises.readdir(fullPath)
+    let entries = await Bindings.Fs.Promises.readdir(fullPath)
 
     // Get stats for each entry
     let entriesWithStats = await entries
     ->Array.map(async name => {
-      let entryPath = Bindings__Path.join([fullPath, name])
-      let stats = await Bindings__Fs.Promises.stat(entryPath)
+      let entryPath = Bindings.Path.join([fullPath, name])
+      let stats = await Bindings.Fs.Promises.stat(entryPath)
 
       {
         name,
-        path: Bindings__Path.join([relativePath, name]),
-        isFile: Bindings__Fs.isFile(stats),
-        isDirectory: Bindings__Fs.isDirectory(stats),
+        path: Bindings.Path.join([relativePath, name]),
+        isFile: Bindings.Fs.isFile(stats),
+        isDirectory: Bindings.Fs.isDirectory(stats),
       }
     })
     ->Promise.all
@@ -86,10 +86,10 @@ let listFiles = async (projectRoot: string, relativePath: string): toolResult<ar
 
 // Check if file exists
 let fileExists = async (projectRoot: string, relativePath: string): bool => {
-  let fullPath = Bindings__Path.join([projectRoot, relativePath])
+  let fullPath = Bindings.Path.join([projectRoot, relativePath])
 
   try {
-    await Bindings__Fs.Promises.access(fullPath, Bindings__Fs.f_OK)
+    await Bindings.Fs.Promises.access(fullPath, Bindings.Fs.f_OK)
     true
   } catch {
   | _ => false

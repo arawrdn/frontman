@@ -1,5 +1,6 @@
 {
 	"name": "@ask-the-llm/event-bus",
+	"namespace": true,
 	"sources": [
 		{
 			"dir": "src",

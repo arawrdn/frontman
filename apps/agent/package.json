@@ -4,11 +4,23 @@
 	"type": "module",
 	"dependencies": {
 		"@ai-sdk/anthropic": "^1.1.27",
+		"@rescript/webapi": "0.1.0-experimental-9c3deb4",
 		"ai": "^4.0.38",
-		"sury": "catalog:"
+		"dotenv": "catalog:",
+		"react": "^19.2.0",
+		"sury": "catalog:",
+		"zod": "^3.24.1"
 	},
 	"devDependencies": {
-		"rescript": "catalog:"
+		"rescript": "catalog:",
+		"rescript-vitest": "^2.1.1",
+		"vite": "^7.1.9",
+		"vitest": "^3.2.4"
+	},
+	"scripts": {
+		"test": "vitest run",
+		"test:watch": "vitest",
+		"test:ui": "vitest --ui"
 	},
 	"keywords": [
 		"rescript",

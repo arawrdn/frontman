@@ -80,6 +80,22 @@ make build
 make dev  # or: node src/Agent.res.mjs --project-root=.
 ```
 
+## Testing
+
+Standalone integration tests that spawn the agent as a subprocess. Tests use real LLM calls (no mocking) to catch prompt/integration issues.
+
+```bash
+make test              # Run all tests
+make test-watch        # Watch mode
+export ANTHROPIC_API_KEY=sk-ant-...  # Required
+```
+
+**Why subprocess testing?** Matches production environment and enables testing as if running in a different codebase.
+
+**Test fixtures:** Committed sample projects in `test/fixtures/` - see `test/fixtures/README.md`
+
+**Adding tests:** Follow patterns in `test/Integration__AgentCore.test.res`
+
 ## Environment Variables
 
 - `ANTHROPIC_API_KEY` - Required for Claude API access

@@ -1,5 +1,6 @@
 {
 	"name": "ask-the-llm",
+	"namespace": true,
 	"dependencies": ["@ask-the-llm/event-bus", "@ask-the-llm/agent", "@ask-the-llm/bindings"],
 	"package-specs": {
 		"module": "esmodule",

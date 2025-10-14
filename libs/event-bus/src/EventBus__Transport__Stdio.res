@@ -1,5 +1,6 @@
 type config = unit
 
+module Bindings = AskTheLlmBindings
 type t = {
   messageHandlers: array<string => unit>,
   errorHandlers: array<JsError.t => unit>,
@@ -13,9 +14,8 @@ let make = () => {
     buffer: ref(""),
   }
 
-  Bindings__NodeStreams.stdin->Bindings__NodeStreams.setEncoding("utf8")
-
-  Bindings__NodeStreams.stdin->Bindings__NodeStreams.on(
+  Bindings.NodeStreams.stdin->Bindings.NodeStreams.setEncoding("utf8")
+  Bindings.NodeStreams.stdin->Bindings.NodeStreams.on(
     #data(
       chunk => {
         transport.buffer := transport.buffer.contents ++ chunk
@@ -40,7 +40,7 @@ let make = () => {
   )
 
   // Handle stdin errors
-  Bindings__NodeStreams.stdin->Bindings__NodeStreams.on(
+  Bindings.NodeStreams.stdin->Bindings.NodeStreams.on(
     #error(
       error => {
         transport.errorHandlers->Array.forEach(handler => handler(error))
@@ -53,7 +53,7 @@ let make = () => {
 
 let send = async (_transport, message) => {
   let line = message ++ "\n"
-  let _ = Bindings__NodeStreams.stdout->Bindings__NodeStreams.write(line)
+  let _ = Bindings.NodeStreams.stdout->Bindings.NodeStreams.write(line)
 }
 
 let onMessage = (transport, handler) => {

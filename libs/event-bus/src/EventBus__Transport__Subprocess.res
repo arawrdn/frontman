@@ -2,11 +2,11 @@
 // This is the counterpart to StdioTransport:
 // - StdioTransport: Use when your code runs INSIDE a subprocess
 // - SubprocessTransport: Use when your code controls a subprocess
-
-type config = Bindings__ChildProcess.childProcess
+module Bindings = AskTheLlmBindings
+type config = Bindings.ChildProcess.childProcess
 
 type t = {
-  proc: Bindings__ChildProcess.childProcess,
+  proc: Bindings.ChildProcess.childProcess,
   messageHandlers: array<string => unit>,
   errorHandlers: array<JsError.t => unit>,
   buffer: ref<string>,
@@ -22,9 +22,9 @@ let send = async (transport, message) => {
     let _ = transport.messageBuffer.contents->Array.push(message)
   } else {
     // Send immediately if ready
-    let stdin = Bindings__ChildProcess.stdin(transport.proc)->Option.getOrThrow
+    let stdin = Bindings.ChildProcess.stdin(transport.proc)->Option.getOrThrow
     let fullMessage = message ++ "\n"
-    let _ = Bindings__NodeStreams.write(stdin, fullMessage)
+    let _ = Bindings.NodeStreams.write(stdin, fullMessage)
   }
 }
 let make = proc => {
@@ -40,9 +40,9 @@ let make = proc => {
   }
 
   // Setup stdout listener for receiving messages from subprocess
-  switch Bindings__ChildProcess.stdout(proc) {
+  switch Bindings.ChildProcess.stdout(proc) {
   | Some(stdout) =>
-    Bindings__NodeStreams.on(
+    Bindings.NodeStreams.on(
       stdout,
       #data(
         chunk => {
@@ -75,8 +75,7 @@ let make = proc => {
                   transport.readyResolve := None
 
                   // Flush buffered messages by sending them
-                  let _stdin =
-                    Bindings__ChildProcess.stdin(transport.proc)->Option.getOrThrow
+                  let _stdin = Bindings.ChildProcess.stdin(transport.proc)->Option.getOrThrow
                   transport.messageBuffer.contents->Array.forEach(bufferedMsg => {
                     let _: promise<unit> = send(transport, bufferedMsg)
                   })
@@ -96,7 +95,7 @@ let make = proc => {
       ),
     )
 
-    Bindings__NodeStreams.on(
+    Bindings.NodeStreams.on(
       stdout,
       #error(
         error => {
@@ -108,7 +107,7 @@ let make = proc => {
   }
 
   // Listen for subprocess exit/error to reject ready promise if not ready yet
-  Bindings__ChildProcess.on(
+  Bindings.ChildProcess.on(
     proc,
     #exit(
       (code, signal) => {
@@ -131,7 +130,7 @@ let make = proc => {
     ),
   )
 
-  Bindings__ChildProcess.on(
+  Bindings.ChildProcess.on(
     proc,
     #error(
       error => {

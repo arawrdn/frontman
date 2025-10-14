@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help install build dev clean test lint format run
+.PHONY: help install build dev clean test test-watch test-e2e lint format run env
 
 # Colors for output
 CYAN := \033[36m
@@ -34,7 +34,11 @@ clean: ## Clean build artifacts
 
 test: build ## Run tests
 	@printf "$(YELLOW)Running tests...$(RESET)\n"
-	# Add test commands when tests are implemented
+	yarn vitest run
+
+test-watch: build ## Run tests in watch mode
+	@printf "$(YELLOW)Starting test watcher...$(RESET)\n"
+	yarn vitest
 
 lint: ## Check code formatting
 	@printf "$(YELLOW)Checking code formatting...$(RESET)\n"

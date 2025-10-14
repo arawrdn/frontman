@@ -75,9 +75,16 @@ __metadata:
   resolution: "@ask-the-llm/agent@workspace:apps/agent"
   dependencies:
     "@ai-sdk/anthropic": "npm:^1.1.27"
+    "@rescript/webapi": "npm:0.1.0-experimental-9c3deb4"
     ai: "npm:^4.0.38"
+    dotenv: "catalog:"
+    react: "npm:^19.2.0"
     rescript: "catalog:"
+    rescript-vitest: "npm:^2.1.1"
     sury: "catalog:"
+    vite: "npm:^7.1.9"
+    vitest: "npm:^3.2.4"
+    zod: "npm:^3.24.1"
   languageName: unknown
   linkType: soft
 
@@ -354,9 +361,23 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@rescript/darwin-arm64@npm:12.0.0-rc.1":
+  version: 12.0.0-rc.1
+  resolution: "@rescript/darwin-arm64@npm:12.0.0-rc.1"
+  conditions: os=darwin & cpu=arm64
+  languageName: node
+  linkType: hard
+
 "@rescript/darwin-x64@npm:12.0.0-beta.14":
   version: 12.0.0-beta.14
   resolution: "@rescript/darwin-x64@npm:12.0.0-beta.14"
+  conditions: os=darwin & cpu=x64
+  languageName: node
+  linkType: hard
+
+"@rescript/darwin-x64@npm:12.0.0-rc.1":
+  version: 12.0.0-rc.1
+  resolution: "@rescript/darwin-x64@npm:12.0.0-rc.1"
   conditions: os=darwin & cpu=x64
   languageName: node
   linkType: hard
@@ -368,9 +389,23 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@rescript/linux-arm64@npm:12.0.0-rc.1":
+  version: 12.0.0-rc.1
+  resolution: "@rescript/linux-arm64@npm:12.0.0-rc.1"
+  conditions: os=linux & cpu=arm64
+  languageName: node
+  linkType: hard
+
 "@rescript/linux-x64@npm:12.0.0-beta.14":
   version: 12.0.0-beta.14
   resolution: "@rescript/linux-x64@npm:12.0.0-beta.14"
+  conditions: os=linux & cpu=x64
+  languageName: node
+  linkType: hard
+
+"@rescript/linux-x64@npm:12.0.0-rc.1":
+  version: 12.0.0-rc.1
+  resolution: "@rescript/linux-x64@npm:12.0.0-rc.1"
   conditions: os=linux & cpu=x64
   languageName: node
   linkType: hard
@@ -382,9 +417,32 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@rescript/runtime@npm:12.0.0-rc.1":
+  version: 12.0.0-rc.1
+  resolution: "@rescript/runtime@npm:12.0.0-rc.1"
+  checksum: 10c0/bc6eaca3aae9eef21fb160617b19a8eca5191c02370ff0c48acf62afcaac3d53684f13a878a24951115d450631ab0d54ef6ff0413e1a2e837dd55b89039ec9fa
+  languageName: node
+  linkType: hard
+
+"@rescript/webapi@npm:0.1.0-experimental-9c3deb4":
+  version: 0.1.0-experimental-9c3deb4
+  resolution: "@rescript/webapi@npm:0.1.0-experimental-9c3deb4"
+  dependencies:
+    rescript: "npm:^12.0.0-beta.3"
+  checksum: 10c0/09b31518eb5a5eab265835a5d3990d3959e6f5453bc76161713d39af88e226c23690f963437839b10533e37478aee2a6c10bbc4cfd89a9ac3a7b3ee5a8d8c692
+  languageName: node
+  linkType: hard
+
 "@rescript/win32-x64@npm:12.0.0-beta.14":
   version: 12.0.0-beta.14
   resolution: "@rescript/win32-x64@npm:12.0.0-beta.14"
+  conditions: os=win32 & cpu=x64
+  languageName: node
+  linkType: hard
+
+"@rescript/win32-x64@npm:12.0.0-rc.1":
+  version: 12.0.0-rc.1
+  resolution: "@rescript/win32-x64@npm:12.0.0-rc.1"
   conditions: os=win32 & cpu=x64
   languageName: node
   linkType: hard
@@ -869,6 +927,13 @@ __metadata:
   version: 1.0.5
   resolution: "diff-match-patch@npm:1.0.5"
   checksum: 10c0/142b6fad627b9ef309d11bd935e82b84c814165a02500f046e2773f4ea894d10ed3017ac20454900d79d4a0322079f5b713cf0986aaf15fce0ec4a2479980c86
+  languageName: node
+  linkType: hard
+
+"dotenv@npm:17.2.3":
+  version: 17.2.3
+  resolution: "dotenv@npm:17.2.3"
+  checksum: 10c0/c884403209f713214a1b64d4d1defa4934c2aa5b0002f5a670ae298a51e3c3ad3ba79dfee2f8df49f01ae74290fcd9acdb1ab1d09c7bfb42b539036108bb2ba0
   languageName: node
   linkType: hard
 
@@ -1487,6 +1552,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"react@npm:^19.2.0":
+  version: 19.2.0
+  resolution: "react@npm:19.2.0"
+  checksum: 10c0/1b6d64eacb9324725bfe1e7860cb7a6b8a34bc89a482920765ebff5c10578eb487e6b46b2f0df263bd27a25edbdae2c45e5ea5d81ae61404301c1a7192c38330
+  languageName: node
+  linkType: hard
+
 "rescript-vitest@npm:^2.1.1":
   version: 2.1.1
   resolution: "rescript-vitest@npm:2.1.1"
@@ -1527,6 +1599,37 @@ __metadata:
     rescript-legacy: cli/rescript-legacy.js
     rescript-tools: cli/rescript-tools.js
   checksum: 10c0/5701a64daf4e7c21625bb6d695f456c2fa6f7ef59b970565e0439aea592c69518d681d0e276c68d29fe9a006ae1c0f916482730270d9f15fc89fd4fd8f9866f0
+  languageName: node
+  linkType: hard
+
+"rescript@npm:^12.0.0-beta.3":
+  version: 12.0.0-rc.1
+  resolution: "rescript@npm:12.0.0-rc.1"
+  dependencies:
+    "@rescript/darwin-arm64": "npm:12.0.0-rc.1"
+    "@rescript/darwin-x64": "npm:12.0.0-rc.1"
+    "@rescript/linux-arm64": "npm:12.0.0-rc.1"
+    "@rescript/linux-x64": "npm:12.0.0-rc.1"
+    "@rescript/runtime": "npm:12.0.0-rc.1"
+    "@rescript/win32-x64": "npm:12.0.0-rc.1"
+  dependenciesMeta:
+    "@rescript/darwin-arm64":
+      optional: true
+    "@rescript/darwin-x64":
+      optional: true
+    "@rescript/linux-arm64":
+      optional: true
+    "@rescript/linux-x64":
+      optional: true
+    "@rescript/win32-x64":
+      optional: true
+  bin:
+    bsc: cli/bsc.js
+    bstracing: cli/bstracing.js
+    rescript: cli/rescript.js
+    rescript-legacy: cli/rescript-legacy.js
+    rescript-tools: cli/rescript-tools.js
+  checksum: 10c0/063bb291f237768641b632f2774c0eb52abb7c1c08099c29f0e364a4891a3908ab101c8e10a5a00f64123ef4e9234d72408d275da0312bc8c23848c2b8bed559
   languageName: node
   linkType: hard
 
@@ -2096,5 +2199,12 @@ __metadata:
   peerDependencies:
     zod: ^3.24.1
   checksum: 10c0/b907ab6d057100bd25a37e5545bf5f0efa5902cd84d3c3ec05c2e51541431a47bd9bf1e5e151a244273409b45f5986d55b26e5d207f98abc5200702f733eb368
+  languageName: node
+  linkType: hard
+
+"zod@npm:^3.24.1":
+  version: 3.25.76
+  resolution: "zod@npm:3.25.76"
+  checksum: 10c0/5718ec35e3c40b600316c5b4c5e4976f7fee68151bc8f8d90ec18a469be9571f072e1bbaace10f1e85cf8892ea12d90821b200e980ab46916a6166a4260a983c
   languageName: node
   linkType: hard

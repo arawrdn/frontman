@@ -10,19 +10,19 @@ type toolPart = {
   id: string,
   toolCallId: string,
   toolName: string,
-  mutable status: toolStatus,
-  mutable input: option<JSON.t>,
-  mutable output: option<string>,
-  mutable error: option<string>,
-  mutable startTime: option<float>,
-  mutable endTime: option<float>,
+  status: ref<toolStatus>,
+  input: ref<option<JSON.t>>,
+  output: ref<option<string>>,
+  error: ref<option<string>>,
+  startTime: ref<option<float>>,
+  endTime: ref<option<float>>,
 }
 
 let rec processAsyncIterator = async (
-  iterator: Agent__Bindings__VercelAI.asyncIterator<'a>,
+  iterator: AsyncIterator.t<'a>,
   handler: 'a => promise<unit>,
 ) => {
-  let result = await iterator->Agent__Bindings__VercelAI.next
+  let result = await iterator->AsyncIterator.next
 
   switch result.done {
   | true => ()
@@ -46,25 +46,28 @@ let process = async (
   let toolParts = Dict.make()
   let textBuffer = ref("")
 
-  let iterator = stream->Agent__Bindings__VercelAI.fullStream
+  let iterator =
+    stream
+    ->Agent__Bindings__VercelAI.fullStream
+    ->Agent__Bindings__VercelAI.AsyncIterableStream.toAsyncIterator
 
   await processAsyncIterator(iterator, async event => {
     switch event {
     | TextDelta({textDelta}) => textBuffer := textBuffer.contents ++ textDelta
 
     | ToolCall({toolCallId, toolName, args}) => {
-        Console.log2("Tool call:", toolName)
+        Console.error2("Tool call:", toolName)
 
         let toolPart = {
           id: toolCallId,
           toolCallId,
           toolName,
-          status: Running,
-          input: Some(args),
-          output: None,
-          error: None,
-          startTime: Some(Date.now()),
-          endTime: None,
+          status: ref(Running),
+          input: ref(Some(args)),
+          output: ref(None),
+          error: ref(None),
+          startTime: ref(Some(Date.now())),
+          endTime: ref(None),
         }
 
         toolParts->Dict.set(toolCallId, toolPart)
@@ -72,21 +75,21 @@ let process = async (
       }
 
     | ToolResult({toolCallId, toolName, result}) => {
-        Console.log2("Tool result:", toolName)
+        Console.error2("Tool result:", toolName)
 
         switch toolParts->Dict.get(toolCallId) {
         | Some(part) => {
-            part.status = Completed
-            part.output = Some(result->JSON.stringify)
-            part.endTime = Some(Date.now())
+            part.status := Completed
+            part.output := Some(result->JSON.stringify)
+            part.endTime := Some(Date.now())
           }
         | None => Console.error("Tool result without matching call")
         }
       }
 
-    | FinishStep({finishReason, usage}) => Console.log3("Step finished:", finishReason, usage)
+    | FinishStep({finishReason, usage}) => Console.error3("Step finished:", finishReason, usage)
 
-    | Finish => Console.log("Stream finished")
+    | Finish => Console.error("Stream finished")
     }
   })
 

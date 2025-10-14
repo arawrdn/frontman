@@ -3,6 +3,7 @@
 // For now, we'll use a simple LocalBus for internal events
 // This can be extended later with internal event types as needed
 
+module EventBus = AskTheLlmEventBus.EventBus
 type t = EventBus.LocalBus.t<unit>
 
 let make = () => {

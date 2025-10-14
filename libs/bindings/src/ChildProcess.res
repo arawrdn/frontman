@@ -13,9 +13,9 @@ type spawnOptions = {
 external spawn: (string, array<string>, spawnOptions) => childProcess = "spawn"
 
 // ChildProcess properties - now reference Bindings__NodeStreams
-@get external stdin: childProcess => option<Bindings__NodeStreams.writable> = "stdin"
-@get external stdout: childProcess => option<Bindings__NodeStreams.readable> = "stdout"
-@get external stderr: childProcess => option<Bindings__NodeStreams.readable> = "stderr"
+@get external stdin: childProcess => option<NodeStreams.writable> = "stdin"
+@get external stdout: childProcess => option<NodeStreams.readable> = "stdout"
+@get external stderr: childProcess => option<NodeStreams.readable> = "stderr"
 
 // ChildProcess methods
 @send external kill: (childProcess, ~signal: string=?) => bool = "kill"

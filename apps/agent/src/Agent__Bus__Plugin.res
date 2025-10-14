@@ -47,14 +47,14 @@ let fromJson = (name, json) => {
   }
 }
 
-module Bus = EventBus.RemoteBus.Make(
+module Bus = AskTheLlmEventBus.EventBus.RemoteBus.Make(
   {
     type t = event
     let eventName = eventName
     let toJson = toJson
     let fromJson = fromJson
   },
-  EventBus.StdioTransport,
+  AskTheLlmEventBus.EventBus.StdioTransport,
 )
 
 type t = Bus.t
