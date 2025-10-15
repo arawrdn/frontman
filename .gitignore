@@ -11,6 +11,10 @@ lib/
 # Node
 node_modules/
 
+# Environment variables
+.env
+.env.local
+
 # Yarn
 .yarn/*
 !.yarn/patches
@@ -30,3 +34,5 @@ yarn-error.log
 # OS
 .DS_Store
 Thumbs.db
+.claude/settings.local.json
+thoughts/shared

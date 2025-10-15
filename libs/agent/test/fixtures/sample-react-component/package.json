@@ -1,0 +1,13 @@
+{
+  "name": "sample-react-component",
+  "version": "1.0.0",
+  "description": "Simple React component fixture for agent testing",
+  "type": "module",
+  "dependencies": {
+    "react": "^18.2.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.0",
+    "typescript": "^5.0.0"
+  }
+}

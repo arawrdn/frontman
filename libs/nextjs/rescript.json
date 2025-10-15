@@ -1,0 +1,29 @@
+{
+	"name": "@ask-the-llm/nextjs",
+	"namespace": true,
+	"sources": [
+		{
+			"dir": "src",
+			"subdirs": true
+		},
+		{
+			"dir": "test",
+			"subdirs": true
+		}
+	],
+	"package-specs": [
+		{
+			"module": "esmodule",
+			"in-source": true,
+			"suffix": ".res.mjs"
+		}
+	],
+	"dependencies": [
+		"@ask-the-llm/agent",
+		"@ask-the-llm/bindings",
+		"sury",
+		"@rescript/webapi",
+		"rescript-vitest"
+	],
+	"compiler-flags": []
+}

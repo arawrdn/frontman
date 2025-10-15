@@ -3,8 +3,10 @@
 	"packageManager": "yarn@4.9.4",
 	"enableGlobalCache": false,
 	"workspaces": [
-		"apps/cli",
-		"libs/event-bus"
+		"libs/agent",
+		"libs/nextjs",
+		"libs/bindings",
+		"test/examples/blog-starter"
 	],
 	"dependencies": {
 		"rescript": "catalog:"
