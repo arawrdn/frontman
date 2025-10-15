@@ -1,0 +1,26 @@
+{
+	"name": "@ask-the-llm/nextjs",
+	"version": "0.1.0",
+	"type": "module",
+	"dependencies": {
+		"@ask-the-llm/agent": "*",
+		"@rescript/webapi": "experimental",
+		"dotenv": "catalog:",
+		"next": "^15.1.6",
+		"react": "^19.2.0",
+		"react-dom": "^19.2.0",
+		"sury": "catalog:"
+	},
+	"devDependencies": {
+		"@vitest/ui": "catalog:",
+		"rescript": "catalog:",
+		"rescript-vitest": "catalog:",
+		"vite": "catalog:",
+		"vitest": "catalog:"
+	},
+	"keywords": [
+		"rescript"
+	],
+	"author": "",
+	"license": "MIT"
+}

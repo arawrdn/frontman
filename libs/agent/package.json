@@ -1,0 +1,29 @@
+{
+	"name": "@ask-the-llm/agent",
+	"version": "0.1.0",
+	"type": "module",
+	"dependencies": {
+		"@ai-sdk/anthropic": "^2.0.29",
+		"@ai-sdk/openai": "^2.0.52",
+		"@rescript/webapi": "0.1.0-experimental-ffc94c8",
+		"ai": "^5.0.71",
+		"dotenv": "catalog:",
+		"react": "^19.2.0",
+		"sury": "catalog:",
+		"zod": "^4.1.12"
+	},
+	"devDependencies": {
+		"@vitest/ui": "catalog:",
+		"rescript": "catalog:",
+		"rescript-vitest": "catalog:",
+		"vite": "catalog:",
+		"vitest": "catalog:"
+	},
+	"keywords": [
+		"rescript",
+		"agent",
+		"ai"
+	],
+	"author": "",
+	"license": "MIT"
+}
