@@ -8,7 +8,7 @@ type configOptions = {
 
 type configResult = {
   parsed: option<Dict.t<string>>,
-  error: option<Exn.t>,
+  error: option<JsExn.t>,
 }
 
 // Main config function with options
