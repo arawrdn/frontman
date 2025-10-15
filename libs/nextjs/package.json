@@ -4,7 +4,7 @@
 	"type": "module",
 	"dependencies": {
 		"@ask-the-llm/agent": "*",
-		"@rescript/webapi": "experimental",
+		"@rescript/webapi": "catalog:",
 		"dotenv": "catalog:",
 		"next": "^15.1.6",
 		"react": "^19.2.0",

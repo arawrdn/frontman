@@ -39,7 +39,6 @@ module Config = {
 // Middleware handler type
 type handler = Request.t => promise<Response.t>
 
-// Helper to extract pathname from URL
 let getPathname = (url: string): string => {
   let urlObj = WebAPI.URL.make(~url)
   urlObj.pathname

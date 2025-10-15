@@ -77,7 +77,7 @@ __metadata:
   dependencies:
     "@ai-sdk/anthropic": "npm:^2.0.29"
     "@ai-sdk/openai": "npm:^2.0.52"
-    "@rescript/webapi": "npm:0.1.0-experimental-ffc94c8"
+    "@rescript/webapi": "catalog:"
     "@vitest/ui": "catalog:"
     ai: "npm:^5.0.71"
     dotenv: "catalog:"
@@ -102,7 +102,7 @@ __metadata:
   resolution: "@ask-the-llm/nextjs@workspace:libs/nextjs"
   dependencies:
     "@ask-the-llm/agent": "npm:*"
-    "@rescript/webapi": "npm:experimental"
+    "@rescript/webapi": "catalog:"
     "@vitest/ui": "catalog:"
     dotenv: "catalog:"
     next: "npm:^15.1.6"
@@ -1010,15 +1010,6 @@ __metadata:
   version: 12.0.0-rc.1
   resolution: "@rescript/runtime@npm:12.0.0-rc.1"
   checksum: 10c0/bc6eaca3aae9eef21fb160617b19a8eca5191c02370ff0c48acf62afcaac3d53684f13a878a24951115d450631ab0d54ef6ff0413e1a2e837dd55b89039ec9fa
-  languageName: node
-  linkType: hard
-
-"@rescript/webapi@npm:0.1.0-experimental-ffc94c8":
-  version: 0.1.0-experimental-ffc94c8
-  resolution: "@rescript/webapi@npm:0.1.0-experimental-ffc94c8"
-  dependencies:
-    rescript: "npm:^12.0.0-alpha.5"
-  checksum: 10c0/2a615ea601c8e781f1bd08a3869a647d80ffc7688cead3b820d8d30da5b4019bbbbc0d823d8bf37de9f366ebf4cfc4f0aed446f15d735050cd473a63aa3cfcd9
   languageName: node
   linkType: hard
 
@@ -3625,7 +3616,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"rescript@npm:^12.0.0-alpha.5, rescript@npm:^12.0.0-beta.3":
+"rescript@npm:^12.0.0-beta.3":
   version: 12.0.0-rc.1
   resolution: "rescript@npm:12.0.0-rc.1"
   dependencies:
