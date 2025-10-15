@@ -4,6 +4,7 @@
 	"type": "module",
 	"dependencies": {
 		"@ai-sdk/anthropic": "^1.1.27",
+		"@ai-sdk/openai": "^2.0.52",
 		"@rescript/webapi": "0.1.0-experimental-9c3deb4",
 		"ai": "^4.0.38",
 		"dotenv": "catalog:",
