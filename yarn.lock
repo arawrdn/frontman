@@ -1590,9 +1590,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"blog-starter-c2c7ca@workspace:test/examples/blog-starter":
+"blog-starter-a8d520@workspace:test/sites/blog-starter":
   version: 0.0.0-use.local
-  resolution: "blog-starter-c2c7ca@workspace:test/examples/blog-starter"
+  resolution: "blog-starter-a8d520@workspace:test/sites/blog-starter"
   dependencies:
     "@ask-the-llm/nextjs": "npm:*"
     "@types/node": "npm:^20.14.8"

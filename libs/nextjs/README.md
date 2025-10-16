@@ -14,35 +14,7 @@ yarn install
 
 ## Usage
 
-### Basic Middleware
-
-```rescript
-// middleware.res
-open Nextjs
-
-let middleware = (req: Middleware.Request.t): promise<Middleware.Response.t> => {
-  // Your middleware logic here
-  Middleware.Response.next()->Promise.resolve
-}
-
-// Configure which routes to match
-let config = Middleware.config(~paths=["/api/:path*"])
-```
-
-### Example: API Route Protection
-
-```rescript
-let middleware = async (req: Middleware.Request.t): promise<Middleware.Response.t> => {
-  let url = Middleware.Request.url(req)
-  let headers = Middleware.Request.headers(req)
-
-  // Check authentication
-  switch headers->Webapi.Headers.get("authorization") {
-  | Some(_token) => Middleware.Response.next()
-  | None => Middleware.Response.json({"error": "Unauthorized"})
-  }
-}
-```
+For detailed usage instructions, including TypeScript/JavaScript examples, see [MIDDLEWARE.md](./MIDDLEWARE.md).
 
 ## Development
 

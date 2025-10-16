@@ -6,7 +6,7 @@
 		"libs/agent",
 		"libs/nextjs",
 		"libs/bindings",
-		"test/examples/blog-starter"
+		"test/sites/blog-starter"
 	],
 	"dependencies": {
 		"rescript": "catalog:"
