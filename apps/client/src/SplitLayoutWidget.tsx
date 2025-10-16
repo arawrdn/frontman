@@ -50,7 +50,7 @@ interface ChatMessage {
 
 // API request types
 interface ChatRequest {
-	messages: string[];
+	message: string;
 	selectedElement?: {
 		sourceLocation?: {
 			file: string;
@@ -104,7 +104,7 @@ const SplitLayoutWidget: React.FC = () => {
 		try {
 			// Prepare the API request
 			const chatRequest: ChatRequest = {
-				messages: [...messages.map((m) => m.content), message],
+				message: message,
 			};
 
 			// Add selected element if available

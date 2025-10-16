@@ -1,11 +1,18 @@
 // Next.js Middleware Module
 // This module provides middleware functionality for Next.js applications
+
+// Helper to get the current working directory (project root)
+module Agent = AskTheLlmAgent.Agent
+
+@val @scope("process") external cwd: unit => string = "cwd"
+
 module Request = {
   type t
 
   @get external url: t => string = "url"
   @get external method: t => string = "method"
   @get external headers: t => WebAPI.FetchAPI.headers = "headers"
+  @send external json: t => promise<Js.Json.t> = "json"
 }
 
 module Response = {
@@ -68,12 +75,16 @@ let getPathname = (url: string): string => {
 }
 
 let createMiddleware = (isDev: bool) => {
-  let middleware: handler = req => {
+  let projectRoot = cwd()
+  let agent = Agent.make(projectRoot)
+  let _shutdown = Agent.run(agent)
+
+  let middleware: handler = async req => {
     let pathname = getPathname(Request.url(req))
 
     switch pathname {
     | "/ask-the-llm" =>
-      let askTheLlmHtml = `!DOCTYPE html>
+      let askTheLlmHtml = `<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -84,7 +95,7 @@ let createMiddleware = (isDev: bool) => {
     <div id="root"></div>
     <script type="module" src="${Nextjs__Config.askTheLlmClientJsUrl(isDev)}"></script>
 </body>
-</html>>`
+</html>`
 
       let requestHeaders = Request.headers(req)
       // Convert headers to dictionary using Object.fromEntries
@@ -92,10 +103,42 @@ let createMiddleware = (isDev: bool) => {
         requestHeaders,
       )
 
-      Response.html(~content=askTheLlmHtml, ~status=200, ~headers=headersDict, ())->Promise.resolve
-    //TODO(Itay): Integrate to the agent here
-    | "/ask-the-llm/chat" => Response.next()->Promise.resolve
-    | _ => Response.next()->Promise.resolve
+      Response.html(~content=askTheLlmHtml, ~status=200, ~headers=headersDict, ())
+    | "/ask-the-llm/chat" =>
+      let method = Request.method(req)
+      if method !== "POST" {
+        Response.next()
+      } else {
+        let json = await Request.json(req)
+        switch Js.Json.decodeObject(json) {
+        | Some(obj) =>
+          switch Js.Dict.get(obj, "message") {
+          | Some(messageJson) =>
+            switch Js.Json.decodeString(messageJson) {
+            | Some(str) =>
+              if str === "" {
+                Response.json({"error": "Message cannot be empty"})
+              } else {
+                let message = Agent.sendMessage(
+                  agent,
+                  Agent.Message.make(
+                    ~role=User,
+                    ~parts=[Agent.Part.text(~text=str)],
+                  ),
+                )
+                switch message {
+                | Ok((messageId, _task)) => Response.json({"messageId": messageId})
+                | Error(error) => Response.json({"error": error})
+                }
+              }
+            | None => Response.json({"error": "Message field must be a string"})
+            }
+          | None => Response.json({"error": "Missing required field: message"})
+          }
+        | None => Response.json({"error": "Invalid JSON body"})
+        }
+      }
+    | _ => Response.next()
     }
   }
   middleware
@@ -104,4 +147,4 @@ let createMiddleware = (isDev: bool) => {
 // Main middleware that handles /ask-the-llm route
 
 // Configuration that matches the /ask-the-llm route
-let config = Config.make(~matcher=Array(["/ask-the-llm"]))
+let config = Config.make(~matcher=Array(["/ask-the-llm", "/ask-the-llm/chat"]))

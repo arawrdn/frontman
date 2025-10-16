@@ -5,6 +5,10 @@ let _ = AskTheLlmBindings.Dotenv.config()
 
 module Bindings = AskTheLlmBindings
 
+let make = (projectRoot) => {
+  Agent__Types.Agent.make(projectRoot)
+}
+
 let run = (agent: Agent__Types.Agent.t) => {
   let shutdown = agent.eventBus->Agent__EventBus.on((event: Agent__EventBus.events) => {
     switch event {
