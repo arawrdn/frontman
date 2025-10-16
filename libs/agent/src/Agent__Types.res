@@ -1,9 +1,13 @@
+// ============ Agent ============
+
 module Agent = {
   type t = {
     projectRoot: string,
     model: Agent__Bindings__VercelAI.languageModel,
     tools: Dict.t<Agent__Bindings__VercelAI.toolDef>,
     eventBus: Agent__EventBus.t,
+    tasks: ref<Dict.t<Agent__Task.t>>,
+    llm: Agent__LLM.t,
   }
 
   let make = (projectRoot: string) => {
@@ -27,11 +31,15 @@ module Agent = {
     // Note: Don't use Console.debug/log here - stdout is used for IPC
     Console.log(`Agent initialized with ${tools->Dict.size->Int.toString} tools`)
 
+    let llm = Agent__LLM.make(~model, ~tools)
+
     {
       projectRoot,
       model,
       tools,
       eventBus,
+      tasks: ref(Dict.make()),
+      llm,
     }
   }
 }

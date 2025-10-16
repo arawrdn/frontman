@@ -1,1 +1,2 @@
 - For rescript code, never use mutable - use ref instead
+- We use Makefile as our sole task runner. no yarn or anything language specific. if you want to run something, use make

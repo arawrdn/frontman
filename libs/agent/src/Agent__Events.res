@@ -1,6 +1,4 @@
-// Event schemas for Agent <-> Plugin communication
-
-// ============ Plugin -> Agent Events ============
+// Event schemas for Agent communication
 
 // User request with bundled context
 module UserRequestConfig = {
@@ -28,7 +26,6 @@ module UserRequestConfig = {
     context: context,
   }
 }
-module EventBus = Agent__EventBus
 
 // // Context response (plugin responds to agent's request)
 // module ContextResponseConfig = {
