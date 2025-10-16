@@ -15,7 +15,6 @@ let processMessage = (
     Console.error("Task not found, creating new task")
     let newTask = Agent__Task.makeWithId(~id=taskId, ~contextId)
     Agent__Tasks.add(tasks, newTask)
-    Agent__EventBus.emit(eventBus, TaskStateChanged(newTask))
     (newTask, true)
   }
 
@@ -25,7 +24,6 @@ let processMessage = (
   if isNewTask {
     Agent__EventBus.emit(eventBus, TaskMessageAdded({task: updatedTask, message}))
   }
-  Agent__EventBus.emit(eventBus, TaskStateChanged(updatedTask))
 
   let finalTask = switch Agent__Task.getStatus(updatedTask) {
   | InputRequired(_) =>
@@ -38,6 +36,9 @@ let processMessage = (
     }
   | _ => updatedTask
   }
+
+  // Emit TaskStateChanged once at the end with final task state
+  Agent__EventBus.emit(eventBus, TaskStateChanged(finalTask))
 
   // Return the task so the caller can start the agentic loop
   finalTask
