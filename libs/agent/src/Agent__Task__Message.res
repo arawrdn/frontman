@@ -1,21 +1,20 @@
 // Message - opaque type with safe construction
 
 type role = User | Agent
-
 type t = {
   role: role,
   parts: array<Agent__Part.t>,
   messageId: Agent__Id.t,
-  taskId: option<Agent__Id.t>,
-  contextId: option<Agent__Id.t>,
+  taskId: option<Agent__Task__Id.t>,
+  contextId: option<Agent__Context__Id.t>,
   metadata: option<Dict.t<JSON.t>>,
 }
 
 let make = (
   ~role: role,
   ~parts: array<Agent__Part.t>,
-  ~taskId: option<Agent__Id.t>=None,
-  ~contextId: option<Agent__Id.t>=None,
+  ~taskId: option<Agent__Task__Id.t>=None,
+  ~contextId: option<Agent__Context__Id.t>=None,
   ~metadata: option<Dict.t<JSON.t>>=None,
 ): t => {
   {
@@ -32,4 +31,4 @@ let make = (
 let getParts = (msg: t): array<Agent__Part.t> => msg.parts
 let getRole = (msg: t): role => msg.role
 let getMetadata = (msg: t): option<Dict.t<JSON.t>> => msg.metadata
-let getTaskId = (msg: t): option<Agent__Id.t> => msg.taskId
+let getTaskId = (msg: t): option<Agent__Task__Id.t> => msg.taskId

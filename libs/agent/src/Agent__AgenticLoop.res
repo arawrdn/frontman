@@ -3,41 +3,36 @@
 // https://ai-sdk.dev/cookbook/node/manual-agent-loop
 
 // Execute a single tool call
-let executeTool = async (agent: Agent__Types.Agent.t, toolName: string, args: JSON.t): result<
+let executeTool = async (llm: Agent__Adapters__Vercel.t, toolName: string, args: JSON.t): result<
   string,
   string,
 > => {
-  // Look up tool in registry
-  switch agent.tools->Dict.get(toolName) {
-  | Some(toolDef) =>
-    try {
-      let result = await toolDef.execute(args)
-      Ok(result->JSON.stringify)
-    } catch {
-    | exn => {
-        let message =
-          exn
-          ->JsExn.fromException
-          ->Option.flatMap(JsExn.message)
-          ->Option.getOr("Unknown error")
-        Error(`Tool execution failed: ${message}`)
-      }
-    }
-  | None => Error(`Tool ${toolName} not found in registry`)
-  }
+  await Agent__Adapters__Vercel.executeTool(llm, ~toolName, ~args)
 }
 
 // Main agentic loop: keep calling LLM while it needs tool calls
-let run = async (agent: Agent__Types.Agent.t, task: Agent__Types.Task.t) => {
+let run = async (
+  llm: Agent__Adapters__Vercel.t,
+  tasks: Agent__Tasks.t,
+  eventBus: Agent__EventBus.t,
+  task: Agent__Task.t,
+) => {
   Console.log("=== Starting agentic loop")
-  
+
   // Transition task to Working status to prevent re-triggering
-  let _ = task->Agent__Task.transition(agent, Agent__Types.Status.StartProcessing(None))
-  
+  let workingTask = switch Agent__Task.transition(task, Agent__Task__Status.StartProcessing(None)) {
+  | Ok(t) => {
+      Agent__Tasks.update(tasks, t)
+      Agent__EventBus.emit(eventBus, TaskStateChanged(t))
+      t
+    }
+  | Error(_) => task
+  }
+
   // Get current message history and convert to Vercel format
-  let history = task->Agent__Task.getHistory
+  let history = workingTask->Agent__Task.getHistory
   let userMessages = Agent__Adapters__Vercel.messagesToVercel(history)
-  
+
   // Prepend system message with project context (only for new tasks)
   // A new task has only 1 user message in history
   let messages = if history->Array.length == 1 {
@@ -45,7 +40,6 @@ let run = async (agent: Agent__Types.Agent.t, task: Agent__Types.Task.t) => {
       role: "system",
       content: JSON.Encode.string(
         "You are an AI coding assistant helping with a Next.js project. " ++
-        "The project is located at: " ++ agent.projectRoot ++ ". " ++
         "The project uses TypeScript, React, and Tailwind CSS. " ++
         "\n\nIMPORTANT Tool Usage Guidelines:\n" ++
         "- All file paths must be RELATIVE to the project root (e.g., 'src/components/Button.tsx', not '/full/path/...')\n" ++
@@ -60,20 +54,25 @@ let run = async (agent: Agent__Types.Agent.t, task: Agent__Types.Task.t) => {
   } else {
     ref(userMessages)
   }
-  
+
   Console.log2("Initial message history length:", messages.contents->Array.length)
 
   // Start the agent loop
-  let rec loop = async (vercelMessages: array<Agent__Bindings__VercelAI.message>) => {
-    Console.log(`=== Loop iteration starting with ${vercelMessages->Array.length->Int.toString} messages`)
-    
+  let rec loop = async (
+    vercelMessages: array<Agent__Bindings__VercelAI.message>,
+    currentTask: Agent__Task.t,
+  ) => {
+    Console.log(
+      `=== Loop iteration starting with ${vercelMessages->Array.length->Int.toString} messages`,
+    )
+
     // Call LLM with current message history
-    let result = await agent.llm->Agent__LLM.streamTextWithVercelMessages(vercelMessages)
+    let result = await Agent__Adapters__Vercel.streamTextWithVercelMessages(llm, vercelMessages)
 
     // Stream the response (for user updates - optional but recommended)
     let stream = result->Agent__Bindings__VercelAI.fullStream
 
-    await Agent__StreamProcessor.processAsyncIterable(stream, async event => {
+    await Agent__Adapters__Vercel.processAsyncIterable(stream, async event => {
       switch event {
       | TextDelta({textDelta}) => Console.log(textDelta)
       | ToolCall({toolName, _}) => Console.log(`\nCalling tool: ${toolName}`)
@@ -101,41 +100,38 @@ let run = async (agent: Agent__Types.Agent.t, task: Agent__Types.Task.t) => {
       Console.log("Processing tool calls...")
 
       // Execute all tool calls and collect results
-      let toolResultMessages = await toolCalls
-      ->Array.map(async toolCall => {
-        let toolName = toolCall.toolName
-        let args = toolCall.args
-        Console.log2(`Executing tool: ${toolName}`, args)
+      let toolResultMessages =
+        await toolCalls
+        ->Array.map(async toolCall => {
+          let toolName = toolCall.toolName
+          let args = toolCall.args
+          Console.log2(`Executing tool: ${toolName}`, args)
 
-        let toolResult = await executeTool(agent, toolName, args)
+          let toolResult = await executeTool(llm, toolName, args)
 
-        switch toolResult {
-        | Ok(output) => {
-            Console.error2(`Tool ${toolName} succeeded:`, output)
+          switch toolResult {
+          | Ok(output) => {
+              Console.error2(`Tool ${toolName} succeeded:`, output)
 
-            // Create tool result message in Vercel format
-            Some(
-              Agent__Adapters__Vercel.makeToolResultMessage(
-                toolCall.toolCallId,
-                toolName,
-                output,
-              ),
-            )
+              // Create tool result message in Vercel format
+              Some(
+                Agent__Adapters__Vercel.makeToolResultMessage(toolCall.toolCallId, toolName, output),
+              )
+            }
+          | Error(err) => {
+              Console.error2(`Tool ${toolName} failed:`, err)
+              // Still need to return a result message for the LLM
+              Some(
+                Agent__Adapters__Vercel.makeToolResultMessage(
+                  toolCall.toolCallId,
+                  toolName,
+                  `Error: ${err}`,
+                ),
+              )
+            }
           }
-        | Error(err) => {
-            Console.error2(`Tool ${toolName} failed:`, err)
-            // Still need to return a result message for the LLM
-            Some(
-              Agent__Adapters__Vercel.makeToolResultMessage(
-                toolCall.toolCallId,
-                toolName,
-                `Error: ${err}`,
-              ),
-            )
-          }
-        }
-      })
-      ->Promise.all
+        })
+        ->Promise.all
 
       // Add tool result messages to history
       let validToolResults = toolResultMessages->Array.filterMap(x => x)
@@ -143,7 +139,7 @@ let run = async (agent: Agent__Types.Agent.t, task: Agent__Types.Task.t) => {
 
       // Continue the loop with updated messages
       Console.log("=== Continuing loop with tool results")
-      await loop(messages.contents)
+      await loop(messages.contents, currentTask)
     } else {
       // No more tool calls - task is complete
       Console.log2("=== No tool calls, completing task. Finish reason was:", finishReason)
@@ -152,23 +148,28 @@ let run = async (agent: Agent__Types.Agent.t, task: Agent__Types.Task.t) => {
       let finalText = await result->Agent__Bindings__VercelAI.text
 
       // Add final agent message to our internal history
-      let agentMessage = Agent__Message.make(
+      let agentMessage = Agent__Task__Message.make(
         ~role=Agent,
         ~parts=[Agent__Part.text(~text=finalText)],
-        ~taskId=Some(task.id),
-        ~contextId=task.contextId,
+        ~taskId=Some(currentTask.id),
+        ~contextId=currentTask.contextId,
       )
-      task->Agent__Task.addMessage(agent, agentMessage, false)
+      let taskWithMessage = Agent__Task.addMessage(currentTask, agentMessage)
+      Agent__Tasks.update(tasks, taskWithMessage)
 
       // Transition task to complete
-      let _ = task->Agent__Task.transition(agent, Complete(Some(agentMessage)))
-      
+      let _ = Agent__Task.transition(taskWithMessage, Complete(Some(agentMessage)))
+      ->Result.map(completedTask => {
+        Agent__Tasks.update(tasks, completedTask)
+        Agent__EventBus.emit(eventBus, TaskStateChanged(completedTask))
+      })
+
       Console.log("=== Agentic loop completed successfully")
     }
   }
 
   // Start the loop with initial messages
   Console.log("=== Calling loop for the first time")
-  await loop(messages.contents)
+  await loop(messages.contents, workingTask)
   Console.log("=== Agentic loop finished")
 }

@@ -28,7 +28,7 @@ module ApiResponse = {
 type apiHandler = (ApiRequest.t, ApiResponse.t) => promise<unit>
 
 // Singleton agent instance
-let agentInstance: ref<option<AskTheLlmAgent.Agent__Types.Agent.t>> = ref(None)
+let agentInstance: ref<option<AskTheLlmAgent.Agent.t>> = ref(None)
 
 let getOrCreateAgent = () => {
   switch agentInstance.contents {
@@ -85,7 +85,7 @@ let createChatHandler = (): apiHandler => {
               let agent = getOrCreateAgent()
               let message = Agent.sendMessage(
                 agent,
-                Agent.Message.make(~role=User, ~parts=[Agent.Part.text(~text=str)]),
+                Agent.TaskMessage.make(~role=User, ~parts=[Agent.Part.text(~text=str)]),
               )
               switch message {
               | Ok((messageId, _task)) =>

@@ -1,48 +1,58 @@
-// Task module - state machine and task entity
-module Agent = Agent__Types.Agent
-module Task = Agent__Types.Task
-module Status = Agent__Types.Status
+// Task aggregate root - immutable
+module Status = Agent__Task__Status
 
-let transition = (task: Task.t, agent: Agent.t, event: Status.event): result<unit, string> => {
-  switch Status.transition(task.status.contents, event) {
-  | Ok(newStatus) => {
-      task.status := newStatus
-      Agent__EventBus.emit(agent.eventBus, TaskStateChanged(task))
-      Ok()
-    }
-  | Error(msg) => Error(msg)
+// Domain-specific ID type alias
+type taskId = Agent__Task__Id.t
+
+type t = {
+  id: taskId,
+  contextId: option<Agent__Context__Id.t>,
+  status: Status.t,
+  history: array<Agent__Task__Message.t>,
+  artifacts: array<Agent__Artifact.t>,
+  metadata: option<Dict.t<JSON.t>>,
+}
+
+// Constructors
+let make = (~contextId=None, ~metadata=None): t => {
+  {
+    id: Agent__Id.make(),
+    contextId,
+    status: Status.initial(),
+    history: [],
+    artifacts: [],
+    metadata,
   }
+}
+
+let makeWithId = (~id, ~contextId=None, ~metadata=None): t => {
+  {
+    id,
+    contextId,
+    status: Status.initial(),
+    history: [],
+    artifacts: [],
+    metadata,
+  }
+}
+
+// State transitions - return new Task
+let transition = (task: t, event: Status.event): result<t, string> => {
+  Status.transition(task.status, event)->Result.map(newStatus => {...task, status: newStatus})
+}
+
+// Mutations - return new Task
+let addMessage = (task: t, message: Agent__Task__Message.t): t => {
+  {...task, history: Array.concat(task.history, [message])}
+}
+
+let addArtifact = (task: t, artifact: Agent__Artifact.t): t => {
+  {...task, artifacts: Array.concat(task.artifacts, [artifact])}
 }
 
 // Queries
-let isTerminal = (task: Task.t): bool => Status.isTerminal(task.status.contents)
-let getStatus = (task: Task.t): Status.t => task.status.contents
-let getId = (task: Task.t): Agent__Id.t => task.id
-let getHistory = (task: Task.t): array<Agent__Message.t> => task.history.contents
-let getArtifacts = (task: Task.t): array<Agent__Artifact.t> => task.artifacts.contents
-
-// Mutations
-let addMessage = (
-  task: Task.t,
-  agent: Agent.t,
-  message: Agent__Message.t,
-  isNewTask: bool,
-): unit => {
-  task.history.contents->Array.push(message)->ignore
-  switch isNewTask {
-  | true =>
-    agent.tasks.contents->Dict.set(Agent__Id.toString(task.id), task)
-    agent.eventBus->Agent__EventBus.emit(
-      TaskMessageAdded({
-        task,
-        message,
-      }),
-    )
-  | false => ()
-  }
-  agent.eventBus->Agent__EventBus.emit(TaskStateChanged(task))
-}
-
-let addArtifact = (task: Task.t, artifact: Agent__Artifact.t): unit => {
-  task.artifacts.contents->Array.push(artifact)->ignore
-}
+let isTerminal = (task: t): bool => Status.isTerminal(task.status)
+let getStatus = (task: t): Status.t => task.status
+let getId = (task: t): taskId => task.id
+let getHistory = (task: t): array<Agent__Task__Message.t> => task.history
+let getArtifacts = (task: t): array<Agent__Artifact.t> => task.artifacts

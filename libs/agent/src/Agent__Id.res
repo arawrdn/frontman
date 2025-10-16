@@ -1,5 +1,3 @@
-// Unified ID system - opaque type for type safety
-
 type t = Id(string)
 
 let make = (): t => {
