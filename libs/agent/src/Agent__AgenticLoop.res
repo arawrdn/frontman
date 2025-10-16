@@ -29,12 +29,20 @@ let executeTool = async (agent: Agent__Types.Agent.t, toolName: string, args: JS
 
 // Main agentic loop: keep calling LLM while it needs tool calls
 let run = async (agent: Agent__Types.Agent.t, task: Agent__Types.Task.t) => {
+  Console.log("=== Starting agentic loop")
+  
+  // Transition task to Working status to prevent re-triggering
+  let _ = task->Agent__Task.transition(agent, Agent__Types.Status.StartProcessing(None))
+  
   // Get current message history and convert to Vercel format
   let history = task->Agent__Task.getHistory
   let messages = ref(Agent__Adapters__Vercel.messagesToVercel(history))
+  Console.log2("Initial message history length:", messages.contents->Array.length)
 
   // Start the agent loop
   let rec loop = async (vercelMessages: array<Agent__Bindings__VercelAI.message>) => {
+    Console.log(`=== Loop iteration starting with ${vercelMessages->Array.length->Int.toString} messages`)
+    
     // Call LLM with current message history
     let result = await agent.llm->Agent__LLM.streamTextWithVercelMessages(vercelMessages)
 
@@ -51,10 +59,13 @@ let run = async (agent: Agent__Types.Agent.t, task: Agent__Types.Task.t) => {
 
     // Add LLM generated messages to the message history (CRITICAL!)
     let response = await result->Agent__Bindings__VercelAI.response
+    Console.log2("Response messages count:", response.messages->Array.length)
     messages := Array.concat(messages.contents, response.messages)
 
     // Check finish reason to decide whether to continue
     let finishReason = await result->Agent__Bindings__VercelAI.finishReason
+    Console.log2("=== Finish reason:", finishReason)
+    Console.log2("Current message history length:", messages.contents->Array.length)
 
     if finishReason == "tool-calls" {
       // Get tool calls and execute them
@@ -104,10 +115,11 @@ let run = async (agent: Agent__Types.Agent.t, task: Agent__Types.Task.t) => {
       messages := Array.concat(messages.contents, validToolResults)
 
       // Continue the loop with updated messages
+      Console.log("=== Continuing loop with tool results")
       await loop(messages.contents)
     } else {
       // No more tool calls - task is complete
-      Console.error("No tool calls, completing task")
+      Console.log2("=== No tool calls, completing task. Finish reason was:", finishReason)
 
       // Get final text response
       let finalText = await result->Agent__Bindings__VercelAI.text
@@ -123,9 +135,13 @@ let run = async (agent: Agent__Types.Agent.t, task: Agent__Types.Task.t) => {
 
       // Transition task to complete
       let _ = task->Agent__Task.transition(agent, Complete(Some(agentMessage)))
+      
+      Console.log("=== Agentic loop completed successfully")
     }
   }
 
   // Start the loop with initial messages
+  Console.log("=== Calling loop for the first time")
   await loop(messages.contents)
+  Console.log("=== Agentic loop finished")
 }

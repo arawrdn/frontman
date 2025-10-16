@@ -14,12 +14,14 @@ let streamText = async (
   messages: array<Agent__Message.t>,
 ): Agent__Bindings__VercelAI.streamTextResult => {
   let vercelMessages = Agent__Adapters__Vercel.messagesToVercel(messages)
-  await Agent__Bindings__VercelAI.streamText({
-    model: llm.model,
+  
+  let params = {
+    Agent__Bindings__VercelAI.model: llm.model,
     messages: vercelMessages,
-    tools: Some(llm.tools),
-    maxSteps: None, // Manual control
-  })
+    tools: llm.tools,
+  }
+  
+  await Agent__Bindings__VercelAI.streamText(params)
 }
 
 // Stream text with Vercel messages directly (for manual loop control)
@@ -27,12 +29,13 @@ let streamTextWithVercelMessages = async (
   llm: t,
   messages: array<Agent__Bindings__VercelAI.message>,
 ): Agent__Bindings__VercelAI.streamTextResult => {
-  await Agent__Bindings__VercelAI.streamText({
-    model: llm.model,
+  let params = {
+    Agent__Bindings__VercelAI.model: llm.model,
     messages,
-    tools: Some(llm.tools),
-    maxSteps: None, // Manual control
-  })
+    tools: llm.tools,
+  }
+  
+  await Agent__Bindings__VercelAI.streamText(params)
 }
 
 // Keep existing chat function for backward compatibility

@@ -10,9 +10,16 @@ let toVercelTools = (registry: Agent__Tools__Registry.t): Dict.t<
   registry->Array.forEach(tool => {
     switch tool {
     | Agent__Tools__Registry.Tool({name, description, inputSchema, execute}) =>
+      // Convert Sury schema to JSON Schema
+      let jsonSchemaObj = inputSchema->S.toJSONSchema
+      
+      // Wrap with AI SDK's jsonSchema helper to get proper aiSchema type
+      let aiSchemaWrapped = Agent__Bindings__VercelAI.jsonSchema(jsonSchemaObj)
+      
       let toolDef: Agent__Bindings__VercelAI.toolDef = {
-        description: Some(description),
-        inputSchema: inputSchema->S.toJSONSchema,
+        description: description,
+        parameters: aiSchemaWrapped,
+        inputSchema: aiSchemaWrapped,
         execute: async argsJson => {
           let input = argsJson->S.parseJsonOrThrow(inputSchema)
           let result = await execute(input)
@@ -25,6 +32,7 @@ let toVercelTools = (registry: Agent__Tools__Registry.t): Dict.t<
           }
         },
       }
+      
       vercelTools->Dict.set(name, toolDef)
     }
   })

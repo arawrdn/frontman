@@ -73,10 +73,16 @@ type streamPart =
 //   %raw(`iterable[Symbol.asyncIterator]()`)
 // }
 
-// Tool definition
+// JSON Schema type (from AI SDK's jsonSchema helper)
+// This is an opaque type that wraps JSON schemas
+type aiSchema
+
+// Tool definition - must match what AI SDK expects
+// The Tool type from @ai-sdk/provider-utils uses 'parameters' as an alias for 'inputSchema'
 type toolDef = {
-  description: option<string>,
-  inputSchema: JSONSchema.t,
+  description?: string,
+  parameters: aiSchema,
+  inputSchema: aiSchema,
   execute: JSON.t => promise<JSON.t>,
 }
 
@@ -84,8 +90,8 @@ type toolDef = {
 type streamTextParams = {
   model: languageModel,
   messages: array<message>,
-  tools: option<Dict.t<toolDef>>,
-  maxSteps: option<int>,
+  tools?: Dict.t<toolDef>,
+  maxSteps?: int,
 }
 
 // Bind streamText function
@@ -122,6 +128,10 @@ type response = {messages: array<message>}
 @get
 external response: streamTextResult => promise<response> = "response"
 
+// jsonSchema helper from AI SDK
+@module("ai")
+external jsonSchema: JSONSchema.t => aiSchema = "jsonSchema"
+
 // Provider bindings
 module Anthropic = {
   @module("@ai-sdk/anthropic")
@@ -131,8 +141,8 @@ module Anthropic = {
 }
 
 module OpenAI = {
-  @module("@ai-sdk/openai") @val
-  external openai: string => languageModel = "openai"
+  @module("@ai-sdk/openai") @scope("openai")
+  external model: string => languageModel = "chat"
 
-  let gpt4o = () => openai("gpt-4o")
+  let gpt4o = () => model("gpt-4o")
 }

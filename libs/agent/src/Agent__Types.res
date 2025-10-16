@@ -217,14 +217,6 @@ module Agent = {
     let toolRegistry = Agent__Tools__Registry.make(projectRoot)
     let tools = Agent__Adapters__Vercel.toVercelTools(toolRegistry)
 
-    // Debug: Check tool structure
-    tools
-    ->Dict.toArray
-    ->Array.forEach(((toolName, tool)) => {
-      Console.error2(`Tool ${toolName}:`, tool.inputSchema)
-    })
-
-    // Note: Don't use Console.debug/log here - stdout is used for IPC
     Console.log(`Agent initialized with ${tools->Dict.size->Int.toString} tools`)
 
     let llm = Agent__LLM.make(~model, ~tools)

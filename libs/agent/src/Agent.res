@@ -12,16 +12,28 @@ let make = projectRoot => {
 let run = (agent: Agent__Types.Agent.t) => {
   let shutdown = agent.eventBus->Agent__EventBus.on((event: Agent__Types.EventBus.events) => {
     switch event {
-    | TaskStateChanged(task) =>
-      switch task.status.contents {
-      | Agent__Types.Status.Submitted(_) => {
-          Console.error("Task submitted, starting agentic loop...")
-          Agent__AgenticLoop.run(agent, task)->ignore
+    | TaskStateChanged(task) => {
+        let statusStr = switch task.status.contents {
+        | Submitted(_) => "Submitted"
+        | Working(_) => "Working"
+        | InputRequired(_) => "InputRequired"
+        | Completed(_) => "Completed"
+        | Failed(_) => "Failed"
+        | Rejected(_) => "Rejected"
+        | Canceled(_) => "Canceled"
         }
-      | Agent__Types.Status.Working(_) =>
-        Console.error("Task working (resumed), starting agentic loop...")
-      // Agent__AgenticLoop.run(agent, task)->ignore
-      | _ => ()
+        Console.log2("=== TaskStateChanged event - status:", statusStr)
+        
+        switch task.status.contents {
+        | Agent__Types.Status.Submitted(_) => {
+            Console.log("Task submitted, starting agentic loop...")
+            Agent__AgenticLoop.run(agent, task)->ignore
+          }
+        | Agent__Types.Status.Working(_) =>
+          Console.log("Task working (resumed) - NOT starting loop (commented out)")
+        // Agent__AgenticLoop.run(agent, task)->ignore
+        | _ => ()
+        }
       }
     | ArtifactChunkGenerated(_) => ()
     | TaskMessageAdded({task, message}) => Console.log3("Task message added", task, message)
