@@ -1,4 +1,5 @@
 // Next.js integration library for ask-the-llm
-// Provides middleware and utilities for integrating agents into Next.js applications
+// Provides API routes and utilities for integrating agents into Next.js applications
 
-module Middleware = Nextjs__Middleware
+module ApiRoute = Nextjs__ApiRoute
+module Config = Nextjs__Config

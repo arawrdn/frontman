@@ -1,10 +1,10 @@
 # @ask-the-llm/nextjs
 
-Next.js middleware integration for ask-the-llm agent system.
+Next.js API Routes integration for ask-the-llm agent system.
 
 ## Overview
 
-This library provides middleware functionality for integrating the ask-the-llm agent into Next.js applications.
+This library provides Next.js API route handlers for integrating the ask-the-llm agent into Next.js applications using the Pages Router.
 
 ## Installation
 
@@ -14,7 +14,7 @@ yarn install
 
 ## Usage
 
-For detailed usage instructions, including TypeScript/JavaScript examples, see [MIDDLEWARE.md](./MIDDLEWARE.md).
+For detailed usage instructions, including TypeScript/JavaScript examples, see [API.md](./API.md).
 
 ## Development
 
@@ -46,7 +46,8 @@ make lint
 
 - `src/` - Source code
   - `Nextjs.res` - Main module
-  - `Nextjs__Middleware.res` - Middleware implementation
+  - `Nextjs__ApiRoute.res` - API route handlers implementation
+  - `Nextjs__Config.res` - Configuration module
 - `test/` - Tests
 - `Makefile` - Build tasks
 
