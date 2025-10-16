@@ -27,14 +27,12 @@ The system consists of two main components:
 - **Agent Core** (`apps/agent`) - Stateless executable that processes requests and executes the agentic loop
 - **Framework Plugin** - Framework integration that collects context and manages communication
 
-Communication between components uses STDIO with JSON-encoded messages.
 
 ## Technology Stack
 
 - **Language:** ReScript
 - **Runtime:** Node.js
 - **UI:** React
-- **Communication:** STDIO (Agent ↔ Plugin), WebSocket/HTTP (Plugin ↔ UI)
 
 ## Project Structure
 

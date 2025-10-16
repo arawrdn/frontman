@@ -23,49 +23,6 @@ The agent will:
 3. Listen for user requests on STDIN
 4. Send responses on STDOUT
 
-### STDIO Protocol
-
-**Input (Plugin → Agent):**
-```json
-{
-  "type": "user_request",
-  "requestId": "req-123",
-  "selectedElement": {
-    "component": "Button",
-    "filePath": "src/components/Button.tsx",
-    "lineNumber": 10,
-    "props": {},
-    "styles": {}
-  },
-  "userMessage": "make the button bigger",
-  "context": {
-    "projectRoot": "/path/to/project",
-    "componentSource": "...",
-    "componentTree": null,
-    "types": null,
-    "fileStructure": null,
-    "buildErrors": null
-  }
-}
-```
-
-**Output (Agent → Plugin):**
-```json
-{
-  "type": "status",
-  "requestId": "req-123",
-  "message": "Reading component file..."
-}
-```
-
-```json
-{
-  "type": "response",
-  "requestId": "req-123",
-  "message": "Updated button size by increasing padding",
-  "filesChanged": ["src/components/Button.tsx"]
-}
-```
 
 ## Development
 
@@ -139,7 +96,6 @@ The agent has three built-in filesystem tools:
 - `Agent__Tools__Registry` - Tool definitions with Sury validation
 - `Agent__Bindings__VercelAI` - Vercel AI SDK bindings
 - `Agent__Events` - Event schemas for Plugin communication
-- `Agent__Bus__Plugin` - STDIO communication layer
 
 ### Agent Loop Flow
 
