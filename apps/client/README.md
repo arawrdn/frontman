@@ -15,20 +15,31 @@ A React-based split layout widget that can be injected into any webpage to creat
 
 ### Install dependencies
 ```bash
-npm install
+make install
 ```
 
-### Start development server
+### Run the project
+
+Run these commands in separate terminals:
+
 ```bash
-npm run dev
+make dev-build-watch    # Watch and build in development mode
+make preview            # Preview the build
 ```
 
 ### Build the library
 ```bash
-npm run build
+make build
 ```
 
 This creates `dist/floating-widget.umd.js` and `dist/floating-widget.es.js` files.
+
+### Other commands
+
+See all available commands:
+```bash
+make help
+```
 
 ## Usage
 

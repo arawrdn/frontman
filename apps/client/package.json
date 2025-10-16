@@ -3,21 +3,7 @@
 	"private": true,
 	"version": "0.0.0",
 	"type": "module",
-	"scripts": {
-		"dev": "npm run clean && run-p dev:build:watch dev:copy:watch dev:server",
-		"dev:build:watch": "vite build --mode development --watch",
-		"dev:copy:watch": "chokidar 'dist/ask-the-llm.es.js' -c 'npm run copy-bundle'",
-		"dev:server": "vite",
-		"copy-bundle": "cp dist/ask-the-llm.es.js public/ && cp dist/ask-the-llm.es.js public/bundle.es.js",
-		"dev:hot": "vite --mode development",
-		"dev:clean": "vite",
-		"build": "npm run clean && tsc -b && vite build",
-		"build:lib": "npm run clean && vite build --mode library",
-		"clean": "rm -rf dist && tsc -b --clean",
-		"serve": "vite preview --port 5173 --host",
-		"lint": "eslint .",
-		"preview": "vite preview"
-	},
+	"scripts": {},
 	"dependencies": {
 		"@medv/finder": "^4.0.2",
 		"@radix-ui/react-dialog": "^1.1.15",
