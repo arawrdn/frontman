@@ -151,7 +151,7 @@ const SplitLayoutWidget: React.FC = () => {
 			console.log("[Client] Final chat request:", chatRequest);
 
 			// Make streaming API call
-			const response = await fetch("/api/ask-the-llm/chat", {
+			const response = await fetch("/ask-the-llm/chat", {
 				method: "POST",
 				headers: {
 					"Content-Type": "application/json",
@@ -458,7 +458,7 @@ const SplitLayoutWidget: React.FC = () => {
 
 		try {
 			// Call apply_patch API
-			const response = await fetch("/api/ask-the-llm/apply-patch", {
+			const response = await fetch("/ask-the-llm/apply-patch", {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({
