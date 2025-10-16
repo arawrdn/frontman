@@ -16,7 +16,20 @@ let readFile = async (projectRoot: string, relativePath: string): toolResult<str
         ->JsExn.fromException
         ->Option.flatMap(JsExn.message)
         ->Option.getOr("Unknown error")
-      Error(`Failed to read file ${relativePath}: ${message}`)
+      
+      // Provide helpful error message with suggestions
+      let errorMsg = if message->String.includes("ENOENT") {
+        `File not found: "${relativePath}". ` ++
+        `The file does not exist in the project. ` ++
+        `Use list_files to explore the directory structure and find the correct path.`
+      } else if message->String.includes("EISDIR") {
+        `Cannot read "${relativePath}" because it's a directory, not a file. ` ++
+        `Use list_files to see the contents of this directory.`
+      } else {
+        `Failed to read file ${relativePath}: ${message}`
+      }
+      
+      Error(errorMsg)
     }
   }
 }
@@ -79,7 +92,18 @@ let listFiles = async (projectRoot: string, relativePath: string): toolResult<ar
         ->JsExn.fromException
         ->Option.flatMap(JsExn.message)
         ->Option.getOr("Unknown error")
-      Error(`Failed to list files in ${relativePath}: ${message}`)
+      
+      // Provide helpful error message with suggestions
+      let errorMsg = if message->String.includes("ENOENT") {
+        `Directory not found: "${relativePath}". ` ++
+        `The directory does not exist in the project. ` ++
+        `Try using list_files with directory="." to see the root structure, ` ++
+        `or list the parent directory to understand what's available.`
+      } else {
+        `Failed to list files in ${relativePath}: ${message}`
+      }
+      
+      Error(errorMsg)
     }
   }
 }

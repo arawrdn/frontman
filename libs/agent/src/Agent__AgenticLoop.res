@@ -36,7 +36,31 @@ let run = async (agent: Agent__Types.Agent.t, task: Agent__Types.Task.t) => {
   
   // Get current message history and convert to Vercel format
   let history = task->Agent__Task.getHistory
-  let messages = ref(Agent__Adapters__Vercel.messagesToVercel(history))
+  let userMessages = Agent__Adapters__Vercel.messagesToVercel(history)
+  
+  // Prepend system message with project context (only for new tasks)
+  // A new task has only 1 user message in history
+  let messages = if history->Array.length == 1 {
+    let systemMessage: Agent__Bindings__VercelAI.message = {
+      role: "system",
+      content: JSON.Encode.string(
+        "You are an AI coding assistant helping with a Next.js project. " ++
+        "The project is located at: " ++ agent.projectRoot ++ ". " ++
+        "The project uses TypeScript, React, and Tailwind CSS. " ++
+        "\n\nIMPORTANT Tool Usage Guidelines:\n" ++
+        "- All file paths must be RELATIVE to the project root (e.g., 'src/components/Button.tsx', not '/full/path/...')\n" ++
+        "- Use list_files with directory=\".\" to see the root directory structure first\n" ++
+        "- If a directory doesn't exist, try listing the parent directory to understand the structure\n" ++
+        "- Read files before modifying them to understand the current code\n" ++
+        "- After 2-3 failed tool calls, stop and ask the user for clarification\n" ++
+        "\nWhen making changes, ensure they are compatible with the Next.js framework and follow React best practices.",
+      ),
+    }
+    ref(Array.concat([systemMessage], userMessages))
+  } else {
+    ref(userMessages)
+  }
+  
   Console.log2("Initial message history length:", messages.contents->Array.length)
 
   // Start the agent loop

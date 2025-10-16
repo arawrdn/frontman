@@ -70,26 +70,39 @@ let messageToVercel = (msg: Agent__Message.t): Agent__Bindings__VercelAI.message
 
   {
     Agent__Bindings__VercelAI.role,
-    content: Agent__Bindings__VercelAI.StringContent(content),
+    content: JSON.Encode.string(content),
   }
 }
 
 // Create a tool result message in Vercel format
+// According to AI SDK manual agent loop docs, tool results should be in an array
+// with specific structure matching the ToolResultPart type
 let makeToolResultMessage = (
   toolCallId: string,
   toolName: string,
   result: string,
 ): Agent__Bindings__VercelAI.message => {
+  // Create the tool result part
+  let toolResultPart = Dict.make()
+  toolResultPart->Dict.set("type", JSON.Encode.string("tool-result"))
+  toolResultPart->Dict.set("toolCallId", JSON.Encode.string(toolCallId))
+  toolResultPart->Dict.set("toolName", JSON.Encode.string(toolName))
+  
+  // AI SDK expects "output" field as LanguageModelV2ToolResultOutput
+  // This is a discriminated union with type: 'text' | 'json' | 'error-text' | 'error-json'
+  // For errors, use 'error-text', for success use 'text'
+  let outputObj = Dict.make()
+  let isError = result->String.startsWith("Error:")
+  outputObj->Dict.set("type", JSON.Encode.string(isError ? "error-text" : "text"))
+  outputObj->Dict.set("value", JSON.Encode.string(result))
+  toolResultPart->Dict.set("output", JSON.Encode.object(outputObj))
+  
+  // Tool messages need content as an array of tool-result parts
+  let content = JSON.Encode.array([JSON.Encode.object(toolResultPart)])
+  
   {
     role: "tool",
-    content: Agent__Bindings__VercelAI.ArrayContent([
-      {
-        type_: "tool-result",
-        toolCallId,
-        toolName,
-        result: JSON.Encode.string(result),
-      },
-    ]),
+    content,
   }
 }
 

@@ -2,24 +2,13 @@
 type languageModel
 type streamTextResult
 
-// Tool result content
-type toolResultContent = {
-  @as("type") type_: string, // "tool-result"
-  toolCallId: string,
-  toolName: string,
-  result: JSON.t,
-}
-
-// Message content types
-@unboxed
-type messageContent =
-  | @as("string") StringContent(string)
-  | @as("array") ArrayContent(array<toolResultContent>)
-
-// Message type
+// Message content can be:
+// - A string (for simple text messages)
+// - An array of content parts (for tool calls, tool results, etc.)
+// We use JSON.t for maximum flexibility since the AI SDK accepts various content formats
 type message = {
   role: string, // "user" | "assistant" | "system" | "tool"
-  content: messageContent,
+  content: JSON.t,
 }
 
 // Tool result data
