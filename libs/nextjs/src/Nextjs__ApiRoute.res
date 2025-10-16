@@ -34,8 +34,8 @@ let getOrCreateAgent = () => {
   switch agentInstance.contents {
   | Some(agent) => agent
   | None =>
-    let projectRoot = AskTheLlmBindings.Process.env->Js.Dict.get("PWD")->Belt.Option.getWithDefault(".")
-    Js.log("Initializing agent with projectRoot: " ++ projectRoot)
+    let projectRoot =
+      AskTheLlmBindings.Process.env->Js.Dict.get("PWD")->Belt.Option.getWithDefault(".")
     let agent = Agent.make(projectRoot)
     let _shutdown = Agent.run(agent)
     agentInstance := Some(agent)
@@ -68,7 +68,7 @@ let createUIHandler = (isDev: bool): apiHandler => {
 let createChatHandler = (): apiHandler => {
   async (req, res) => {
     let method = ApiRequest.method(req)
-    
+
     if method !== "POST" {
       res->ApiResponse.status(405)->ApiResponse.json({"error": "Method not allowed"})
     } else {
@@ -85,26 +85,25 @@ let createChatHandler = (): apiHandler => {
               let agent = getOrCreateAgent()
               let message = Agent.sendMessage(
                 agent,
-                Agent.Message.make(
-                  ~role=User,
-                  ~parts=[Agent.Part.text(~text=str)],
-                ),
+                Agent.Message.make(~role=User, ~parts=[Agent.Part.text(~text=str)]),
               )
               switch message {
-              | Ok((messageId, _task)) => 
+              | Ok((messageId, _task)) =>
                 res->ApiResponse.status(200)->ApiResponse.json({"messageId": messageId})
-              | Error(error) => 
-                res->ApiResponse.status(500)->ApiResponse.json({"error": error})
+              | Error(error) => res->ApiResponse.status(500)->ApiResponse.json({"error": error})
               }
             }
-          | None => 
-            res->ApiResponse.status(400)->ApiResponse.json({"error": "Message field must be a string"})
+          | None =>
+            res
+            ->ApiResponse.status(400)
+            ->ApiResponse.json({"error": "Message field must be a string"})
           }
-        | None => 
-          res->ApiResponse.status(400)->ApiResponse.json({"error": "Missing required field: message"})
+        | None =>
+          res
+          ->ApiResponse.status(400)
+          ->ApiResponse.json({"error": "Missing required field: message"})
         }
-      | None => 
-        res->ApiResponse.status(400)->ApiResponse.json({"error": "Invalid JSON body"})
+      | None => res->ApiResponse.status(400)->ApiResponse.json({"error": "Invalid JSON body"})
       }
     }
   }

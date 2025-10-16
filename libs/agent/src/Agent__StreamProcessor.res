@@ -13,11 +13,18 @@ type toolPart = {
   toolCallId: string,
   toolName: string,
   status: ref<toolStatus>,
-  input: ref<option<JSON.t>>,
+  input: option<JSON.t>,
   output: ref<option<string>>,
   error: ref<option<string>>,
   startTime: ref<option<float>>,
   endTime: ref<option<float>>,
+}
+
+// Result type returned by processor
+type processResult = {
+  text: string,
+  toolCalls: array<toolPart>,
+  hasToolCalls: bool,
 }
 
 let rec processAsyncIterator = async (
@@ -41,7 +48,10 @@ let rec processAsyncIterator = async (
 }
 
 // Process stream and collect events
-let process = async (_requestId: string, stream: Agent__Bindings__VercelAI.streamTextResult) => {
+let process = async (
+  _requestId: string,
+  stream: Agent__Bindings__VercelAI.streamTextResult,
+): processResult => {
   let toolParts = Dict.make()
   let textBuffer = ref("")
 
@@ -62,7 +72,7 @@ let process = async (_requestId: string, stream: Agent__Bindings__VercelAI.strea
           toolCallId,
           toolName,
           status: ref(Running),
-          input: ref(Some(args)),
+          input: Some(args),
           output: ref(None),
           error: ref(None),
           startTime: ref(Some(Date.now())),
@@ -91,8 +101,11 @@ let process = async (_requestId: string, stream: Agent__Bindings__VercelAI.strea
     }
   })
 
+  let toolCallsArray = toolParts->Dict.valuesToArray
+
   {
-    "text": textBuffer.contents,
-    "toolParts": toolParts,
+    text: textBuffer.contents,
+    toolCalls: toolCallsArray,
+    hasToolCalls: toolCallsArray->Array.length > 0,
   }
 }

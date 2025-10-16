@@ -1,5 +1,6 @@
 // Message processing with event streaming
 
+module Task = Agent__Types.Task
 type processMessageConfig = {
   taskId: option<Agent__Id.t>,
   contextId: option<Agent__Id.t>,
@@ -10,99 +11,25 @@ let processMessage = (agent: Agent__Types.Agent.t, config: processMessageConfig)
   let {taskId, contextId, userMessage} = config
 
   // Get or create task
-  let task = switch taskId {
-  | Some(id) =>
-    switch agent.tasks.contents->Dict.get(Agent__Id.toString(id)) {
-    | Some(existingTask) => existingTask
-    | None =>
-      Console.error("Task not found, creating new task")
-      let newTask = Agent__Task.makeWithId(~id, ~contextId)
-      agent.tasks.contents->Dict.set(Agent__Id.toString(id), newTask)
-      newTask
-    }
+  let taskId = taskId->Option.getOrThrow
+  let task = switch agent.tasks.contents->Dict.get(Agent__Id.toString(taskId)) {
+  | Some(existingTask) => existingTask
   | None =>
-    let newTask = Agent__Task.make(~contextId)
-    agent.tasks.contents->Dict.set(Agent__Id.toString(newTask.id), newTask)
+    Console.error("Task not found, creating new task")
+    let newTask = Task.makeWithId(~id=taskId, ~contextId)
+    Agent__Task.addNew(agent, newTask)
     newTask
   }
 
-  // Add user message to history
-  task->Agent__Task.addMessage(userMessage)
+  task->Agent__Task.addMessage(agent, userMessage)
 
   // Transition task status
   let _ = switch task->Agent__Task.getStatus {
-  | Submitted(_) => task->Agent__Task.transition(StartProcessing(None))
-  | InputRequired(_) => task->Agent__Task.transition(Resume(None))
+  | InputRequired(_) =>
+    task->Agent__Task.transition(agent, Agent__Types.Status.Resume(Some(userMessage)))
   | _ => Ok()
   }
 
-  // Emit TaskStateChanged event
-  agent.eventBus->Agent__EventBus.emit(
-    TaskStateChanged({
-      taskId: task.id,
-      contextId: task.contextId,
-    }),
-  )
-
-  // Build LLM conversation from task history
-  let history = task->Agent__Task.getHistory
-
-  // Stream LLM response
-  let processStream = async () => {
-    try {
-      let response = await agent.llm->Agent__LLM.chat(history)
-
-      // Create agent message with response
-      let agentMessage = Agent__Message.make(
-        ~role=Agent,
-        ~parts=[Agent__Part.text(~text=response)],
-        ~taskId=Some(task.id),
-        ~contextId=task.contextId,
-      )
-
-      // Add to history
-      task->Agent__Task.addMessage(agentMessage)
-
-      // Emit TaskMessageAdded event
-      agent.eventBus->Agent__EventBus.emit(
-        TaskMessageAdded({
-          taskId: task.id,
-          message: agentMessage,
-        }),
-      )
-
-      // Complete task
-      let _ = task->Agent__Task.transition(Complete(Some(agentMessage)))
-
-      // Emit TaskStateChanged event
-      agent.eventBus->Agent__EventBus.emit(
-        TaskStateChanged({
-          taskId: task.id,
-          contextId: task.contextId,
-        }),
-      )
-
-      // Final notification
-    } catch {
-    | error =>
-      Console.error2("Error processing message:", error)
-      let errorMessage = Agent__Message.make(
-        ~role=Agent,
-        ~parts=[Agent__Part.text(~text="Error processing request")],
-        ~taskId=Some(task.id),
-        ~contextId=task.contextId,
-      )
-
-      let _ = task->Agent__Task.transition(Fail(errorMessage))
-
-      agent.eventBus->Agent__EventBus.emit(
-        TaskStateChanged({
-          taskId: task.id,
-          contextId: task.contextId,
-        }),
-      )
-    }
-  }
-
-  processStream()->ignore
+  // Return the task so the caller can start the agentic loop
+  task
 }

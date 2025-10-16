@@ -63,7 +63,7 @@ type streamPart =
 type toolDef = {
   description: option<string>,
   inputSchema: JSONSchema.t,
-  execute: option<JSON.t => promise<JSON.t>>,
+  execute: JSON.t => promise<JSON.t>,
 }
 
 // Stream text parameters

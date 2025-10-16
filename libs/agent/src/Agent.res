@@ -10,11 +10,21 @@ let make = projectRoot => {
 }
 
 let run = (agent: Agent__Types.Agent.t) => {
-  let shutdown = agent.eventBus->Agent__EventBus.on((event: Agent__EventBus.events) => {
+  let shutdown = agent.eventBus->Agent__EventBus.on((event: Agent__Types.EventBus.events) => {
     switch event {
-    | TaskStateChanged(_)
-    | ArtifactChunkGenerated(_)
-    | TaskMessageAdded(_) => ()
+    | TaskStateChanged(task) =>
+      switch task.status.contents {
+      | Agent__Types.Status.Submitted(_) => {
+          Console.error("Task submitted, starting agentic loop...")
+          Agent__AgenticLoop.run(agent, task)->ignore
+        }
+      | Agent__Types.Status.Working(_) =>
+        Console.error("Task working (resumed), starting agentic loop...")
+      // Agent__AgenticLoop.run(agent, task)->ignore
+      | _ => ()
+      }
+    | ArtifactChunkGenerated(_) => ()
+    | TaskMessageAdded({task, message}) => Console.log3("Task message added", task, message)
     }
   })
   Console.error("Agent is running and listening for domain events...")
@@ -24,7 +34,7 @@ let run = (agent: Agent__Types.Agent.t) => {
 // Send a message to the agent
 // Creates a new task if message.taskId is None, or continues existing task if present
 let sendMessage = (agent: Agent__Types.Agent.t, message: Agent__Message.t): result<
-  (Agent__Id.t, Agent__Task.t),
+  (Agent__Id.t, Agent__Types.Task.t),
   string,
 > => {
   // Task continuation logic: if message.taskId is present, continue existing task
@@ -40,17 +50,17 @@ let sendMessage = (agent: Agent__Types.Agent.t, message: Agent__Message.t): resu
     userMessage: message,
   }
 
-  Agent__MessageHandler.processMessage(agent, config)
+  let task = Agent__MessageHandler.processMessage(agent, config)
 
-  // Retrieve task from internal storage
-  switch agent.tasks.contents->Dict.get(Agent__Id.toString(taskId)) {
-  | Some(task) => Ok((taskId, task))
-  | None => Error("Task not found after processing")
-  }
+  // Return the task
+  Ok((taskId, task))
 }
 
 // Get a task by ID
-let getTask = (agent: Agent__Types.Agent.t, taskId: Agent__Id.t): result<Agent__Task.t, string> => {
+let getTask = (agent: Agent__Types.Agent.t, taskId: Agent__Id.t): result<
+  Agent__Types.Task.t,
+  string,
+> => {
   switch agent.tasks.contents->Dict.get(Agent__Id.toString(taskId)) {
   | Some(task) => Ok(task)
   | None => Error("Task not found")
@@ -62,7 +72,7 @@ let cancelTask = (
   agent: Agent__Types.Agent.t,
   taskId: Agent__Id.t,
   ~reason: option<string>=None,
-): result<Agent__Task.t, string> => {
+): result<Agent__Types.Task.t, string> => {
   switch agent.tasks.contents->Dict.get(Agent__Id.toString(taskId)) {
   | Some(task) => {
       // Create cancellation message if reason provided
@@ -79,15 +89,10 @@ let cancelTask = (
       | None => None
       }
 
-      switch task->Agent__Task.transition(Cancel(cancelMessage)) {
+      switch task->Agent__Task.transition(agent, Cancel(cancelMessage)) {
       | Ok() => {
           // Emit TaskStateChanged event
-          agent.eventBus->Agent__EventBus.emit(
-            TaskStateChanged({
-              taskId: task.id,
-              contextId: task.contextId,
-            }),
-          )
+          agent.eventBus->Agent__EventBus.emit(TaskStateChanged(task))
           Ok(task)
         }
       | Error(msg) => Error(msg)
@@ -107,6 +112,7 @@ module Adapters = {
 }
 module StreamProcessor = Agent__StreamProcessor
 module MessageHandler = Agent__MessageHandler
+module AgenticLoop = Agent__AgenticLoop
 module Task = Agent__Task
 module Message = Agent__Message
 module Part = Agent__Part

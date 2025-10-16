@@ -9,17 +9,21 @@ let make = (~model, ~tools) => {
   {model, tools}
 }
 
-let chat = async (llm: t, messages: array<Agent__Message.t>): string => {
-  // Convert messages using adapter
+let streamText = async (
+  llm: t,
+  messages: array<Agent__Message.t>,
+): Agent__Bindings__VercelAI.streamTextResult => {
   let vercelMessages = Agent__Adapters__Vercel.messagesToVercel(messages)
-
-  // Call LLM
-  let result = await Agent__Bindings__VercelAI.streamText({
+  await Agent__Bindings__VercelAI.streamText({
     model: llm.model,
     messages: vercelMessages,
     tools: Some(llm.tools),
-    maxSteps: None,
+    maxSteps: None, // Manual control
   })
+}
 
+// Keep existing chat function for backward compatibility
+let chat = async (llm: t, messages: array<Agent__Message.t>): string => {
+  let result = await streamText(llm, messages)
   await result->Agent__Bindings__VercelAI.text
 }

@@ -13,19 +13,17 @@ let toVercelTools = (registry: Agent__Tools__Registry.t): Dict.t<
       let toolDef: Agent__Bindings__VercelAI.toolDef = {
         description: Some(description),
         inputSchema: inputSchema->S.toJSONSchema,
-        execute: Some(
-          async argsJson => {
-            let input = argsJson->S.parseJsonOrThrow(inputSchema)
-            let result = await execute(input)
-            switch result {
-            | Ok(output) => JSON.Encode.string(output)
-            | Error(err) => {
-                Console.error2(`Tool ${name} error:`, err)
-                JSON.Encode.string(`Error: ${err}`)
-              }
+        execute: async argsJson => {
+          let input = argsJson->S.parseJsonOrThrow(inputSchema)
+          let result = await execute(input)
+          switch result {
+          | Ok(output) => JSON.Encode.string(output)
+          | Error(err) => {
+              Console.error2(`Tool ${name} error:`, err)
+              JSON.Encode.string(`Error: ${err}`)
             }
-          },
-        ),
+          }
+        },
       }
       vercelTools->Dict.set(name, toolDef)
     }
