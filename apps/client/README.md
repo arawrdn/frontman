@@ -23,8 +23,7 @@ make install
 Run these commands in separate terminals:
 
 ```bash
-make dev-build-watch    # Watch and build in development mode
-make preview            # Preview the build
+make dev    # Watch and build in development mode
 ```
 
 ### Build the library

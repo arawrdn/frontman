@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help install test lint dev dev-hot dev-clean build build-lib clean serve preview copy-bundle check
+.PHONY: help install test lint dev dev-hot build build-lib clean serve preview check
 
 SHELL := /bin/bash
 PATH := ./node_modules/.bin:$(PATH)
@@ -16,28 +16,18 @@ test: ## Run test suite
 lint: ## Run linters and code formatters
 	eslint .
 
-dev: ## Start development server with build watch, copy watch, and dev server
+dev: ## Start development server with build watch
 	$(MAKE) clean
-	npm-run-all --parallel dev-build-watch dev-copy-watch dev-server
+	$(MAKE) -j2 dev-build-watch preview
 
 dev-build-watch: ## Watch and build in development mode
 	vite build --mode development --watch
-
-dev-copy-watch: ## Watch and copy bundle files
-	chokidar 'dist/ask-the-llm.es.js' -c 'make copy-bundle'
 
 dev-server: ## Start vite dev server
 	vite
 
 dev-hot: ## Start development server with hot reload
 	vite --mode development
-
-dev-clean: ## Start clean vite dev server
-	vite
-
-copy-bundle: ## Copy bundle files to public directory
-	cp dist/ask-the-llm.es.js public/
-	cp dist/ask-the-llm.es.js public/bundle.es.js
 
 build: ## Build the project for production
 	$(MAKE) clean
