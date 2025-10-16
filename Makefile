@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help install build clean dev test lint
+.PHONY: help install build clean dev test lint dev-client dev-nextjs
 
 help: ## Display available commands
 	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z_-]+:.*##/ { printf "  %-15s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
@@ -21,3 +21,9 @@ test: ## Run tests
 
 lint: ## Run linters
 	# Add lint commands here
+
+dev-client: ## Start development server for client app
+	cd apps/client && $(MAKE) dev
+
+dev-nextjs: ## Start development server for Next.js test site
+	cd test/sites/blog-starter && $(MAKE) dev
