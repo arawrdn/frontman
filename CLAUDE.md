@@ -15,6 +15,7 @@
 - **TypeScript**: Strict mode enabled. Use React.FC with interfaces. Inline styles preferred.
 - **Imports**: Group by external libs, then internal modules. Use absolute imports.
 - **Naming**: camelCase for variables/functions, PascalCase for components/types.
+- **Folder structure**: keep a flat folder structure, use rescript namespacing convention when needed
 - **Error handling**: Use Result types in ReScript, try/catch in TypeScript.
 - **Testing**: Vitest with Node environment. Test files: `*.test.res.mjs`
 - **Task runner**: Makefiles only - never use yarn/npm scripts directly.
