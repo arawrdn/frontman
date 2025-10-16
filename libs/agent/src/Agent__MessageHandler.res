@@ -13,15 +13,16 @@ let processMessage = (agent: Agent__Types.Agent.t, config: processMessageConfig)
   // Get or create task
   let taskId = taskId->Option.getOrThrow
   let task = switch agent.tasks.contents->Dict.get(Agent__Id.toString(taskId)) {
-  | Some(existingTask) => existingTask
+  | Some(existingTask) => 
+    Agent__Task.addMessage(existingTask, agent, userMessage, false)
+    existingTask
   | None =>
     Console.error("Task not found, creating new task")
     let newTask = Task.makeWithId(~id=taskId, ~contextId)
-    Agent__Task.addNew(agent, newTask)
+    Agent__Task.addMessage(newTask, agent, userMessage, true)
     newTask
   }
-
-  task->Agent__Task.addMessage(agent, userMessage)
+  
 
   // Transition task status
   let _ = switch task->Agent__Task.getStatus {

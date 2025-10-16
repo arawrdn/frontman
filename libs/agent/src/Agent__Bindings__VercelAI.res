@@ -2,10 +2,24 @@
 type languageModel
 type streamTextResult
 
+// Tool result content
+type toolResultContent = {
+  @as("type") type_: string, // "tool-result"
+  toolCallId: string,
+  toolName: string,
+  result: JSON.t,
+}
+
+// Message content types
+@unboxed
+type messageContent =
+  | @as("string") StringContent(string)
+  | @as("array") ArrayContent(array<toolResultContent>)
+
 // Message type
 type message = {
-  role: string, // "user" | "assistant" | "system"
-  content: string,
+  role: string, // "user" | "assistant" | "system" | "tool"
+  content: messageContent,
 }
 
 // Tool result data
@@ -89,6 +103,24 @@ external finishReason: streamTextResult => promise<string> = "finishReason"
 // Get text from result
 @get
 external text: streamTextResult => promise<string> = "text"
+
+// Tool call from result
+type toolCall = {
+  toolCallId: string,
+  toolName: string,
+  args: JSON.t,
+}
+
+// Get tool calls from result
+@get
+external toolCalls: streamTextResult => promise<array<toolCall>> = "toolCalls"
+
+// Response type containing messages
+type response = {messages: array<message>}
+
+// Get response (with messages) from result
+@get
+external response: streamTextResult => promise<response> = "response"
 
 // Provider bindings
 module Anthropic = {

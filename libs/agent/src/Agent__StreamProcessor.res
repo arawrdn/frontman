@@ -27,11 +27,23 @@ type processResult = {
   hasToolCalls: bool,
 }
 
+// Process an async iterable (like ReadableStream) using for-await-of pattern
+let processAsyncIterable: (
+  Agent__Bindings__VercelAI.AsyncIterableStream.t<'a>,
+  'a => promise<unit>,
+) => promise<unit> = %raw(`
+  async function(iterable, handler) {
+    for await (const chunk of iterable) {
+      await handler(chunk);
+    }
+  }
+`)
+
+// Legacy function for direct async iterators (kept for compatibility)
 let rec processAsyncIterator = async (
   iterator: AsyncIterator.t<'a>,
   handler: 'a => promise<unit>,
 ) => {
-  %debugger
   let result = await iterator->AsyncIterator.next
 
   switch result.done {
@@ -55,12 +67,9 @@ let process = async (
   let toolParts = Dict.make()
   let textBuffer = ref("")
 
-  let iterator =
-    stream
-    ->Agent__Bindings__VercelAI.fullStream
-    ->Agent__Bindings__VercelAI.AsyncIterableStream.toAsyncIterator
+  let asyncIterable = stream->Agent__Bindings__VercelAI.fullStream
 
-  await processAsyncIterator(iterator, async event => {
+  await processAsyncIterable(asyncIterable, async event => {
     switch event {
     | TextDelta({textDelta}) => textBuffer := textBuffer.contents ++ textDelta
 

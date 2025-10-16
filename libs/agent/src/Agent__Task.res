@@ -3,11 +3,6 @@ module Agent = Agent__Types.Agent
 module Task = Agent__Types.Task
 module Status = Agent__Types.Status
 
-let addNew = (agent: Agent.t, task: Task.t) => {
-  agent.tasks.contents->Dict.set(Agent__Id.toString(task.id), task)
-  Agent__EventBus.emit(agent.eventBus, TaskStateChanged(task))
-}
-
 let transition = (task: Task.t, agent: Agent.t, event: Status.event): result<unit, string> => {
   switch Status.transition(task.status.contents, event) {
   | Ok(newStatus) => {
@@ -27,14 +22,25 @@ let getHistory = (task: Task.t): array<Agent__Message.t> => task.history.content
 let getArtifacts = (task: Task.t): array<Agent__Artifact.t> => task.artifacts.contents
 
 // Mutations
-let addMessage = (task: Task.t, agent: Agent.t, message: Agent__Message.t): unit => {
+let addMessage = (
+  task: Task.t,
+  agent: Agent.t,
+  message: Agent__Message.t,
+  isNewTask: bool,
+): unit => {
   task.history.contents->Array.push(message)->ignore
-  agent.eventBus->Agent__EventBus.emit(
-    TaskMessageAdded({
-      task,
-      message,
-    }),
-  )
+  switch isNewTask {
+  | true =>
+    agent.tasks.contents->Dict.set(Agent__Id.toString(task.id), task)
+    agent.eventBus->Agent__EventBus.emit(
+      TaskMessageAdded({
+        task,
+        message,
+      }),
+    )
+  | false => ()
+  }
+  agent.eventBus->Agent__EventBus.emit(TaskStateChanged(task))
 }
 
 let addArtifact = (task: Task.t, artifact: Agent__Artifact.t): unit => {

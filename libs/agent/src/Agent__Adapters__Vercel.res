@@ -62,7 +62,26 @@ let messageToVercel = (msg: Agent__Message.t): Agent__Bindings__VercelAI.message
 
   {
     Agent__Bindings__VercelAI.role,
-    content,
+    content: Agent__Bindings__VercelAI.StringContent(content),
+  }
+}
+
+// Create a tool result message in Vercel format
+let makeToolResultMessage = (
+  toolCallId: string,
+  toolName: string,
+  result: string,
+): Agent__Bindings__VercelAI.message => {
+  {
+    role: "tool",
+    content: Agent__Bindings__VercelAI.ArrayContent([
+      {
+        type_: "tool-result",
+        toolCallId,
+        toolName,
+        result: JSON.Encode.string(result),
+      },
+    ]),
   }
 }
 
