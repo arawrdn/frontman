@@ -111,7 +111,7 @@ let run = async (
 
           switch toolResult {
           | Ok(output) => {
-              Console.error2(`Tool ${toolName} succeeded:`, output)
+              Console.log2(`Tool ${toolName} succeeded:`, output)
 
               // Create tool result message in Vercel format
               Some(

@@ -208,7 +208,7 @@ let streamText = async (
       textBuffer := textBuffer.contents ++ textDelta
 
     | ToolCall({toolCallId, toolName, args}) => {
-        Console.error2("Tool call:", toolName)
+        Console.log2("Tool call:", toolName)
 
         let toolPart: Agent__StreamProcessor.toolPart = {
           id: toolCallId,
@@ -226,7 +226,7 @@ let streamText = async (
       }
 
     | ToolResult({toolCallId, toolName, result}) => {
-        Console.error2("Tool result:", toolName)
+        Console.log2("Tool result:", toolName)
 
         switch toolParts->Dict.get(toolCallId) {
         | Some(part) => {
@@ -238,9 +238,9 @@ let streamText = async (
         }
       }
 
-    | FinishStep({finishReason, usage}) => Console.error3("Step finished:", finishReason, usage)
+    | FinishStep({finishReason, usage}) => Console.log3("Step finished:", finishReason, usage)
 
-    | Finish => Console.error("Stream finished")
+    | Finish => Console.log("Stream finished")
     }
   })
 

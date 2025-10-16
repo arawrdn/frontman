@@ -64,7 +64,7 @@ let run = (agent: t) => {
     | TaskMessageAdded({task, message}) => Console.log3("Task message added", task, message)
     }
   })
-  Console.error("Agent is running and listening for domain events...")
+  Console.log("Agent is running and listening for domain events...")
   shutdown
 }
 
