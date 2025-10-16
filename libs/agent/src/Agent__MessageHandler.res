@@ -4,14 +4,10 @@ type processMessageConfig = {
   taskId: option<Agent__Id.t>,
   contextId: option<Agent__Id.t>,
   userMessage: Agent__Message.t,
-  onTaskUpdate: (Agent__Id.t, Agent__Task.t) => unit,
 }
 
-let processMessage = (
-  agent: Agent__Types.Agent.t,
-  config: processMessageConfig,
-) => {
-  let {taskId, contextId, userMessage, onTaskUpdate} = config
+let processMessage = (agent: Agent__Types.Agent.t, config: processMessageConfig) => {
+  let {taskId, contextId, userMessage} = config
 
   // Get or create task
   let task = switch taskId {
@@ -35,10 +31,8 @@ let processMessage = (
 
   // Transition task status
   let _ = switch task->Agent__Task.getStatus {
-  | Submitted(_) =>
-    task->Agent__Task.transition(StartProcessing(None))
-  | InputRequired(_) =>
-    task->Agent__Task.transition(Resume(None))
+  | Submitted(_) => task->Agent__Task.transition(StartProcessing(None))
+  | InputRequired(_) => task->Agent__Task.transition(Resume(None))
   | _ => Ok()
   }
 
@@ -49,9 +43,6 @@ let processMessage = (
       contextId: task.contextId,
     }),
   )
-
-  // Notify middleware
-  onTaskUpdate(task.id, task)
 
   // Build LLM conversation from task history
   let history = task->Agent__Task.getHistory
@@ -92,7 +83,6 @@ let processMessage = (
       )
 
       // Final notification
-      onTaskUpdate(task.id, task)
     } catch {
     | error =>
       Console.error2("Error processing message:", error)
@@ -111,8 +101,6 @@ let processMessage = (
           contextId: task.contextId,
         }),
       )
-
-      onTaskUpdate(task.id, task)
     }
   }
 
