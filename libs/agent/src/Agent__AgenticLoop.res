@@ -58,9 +58,12 @@ let run = async (agent: Agent__Types.Agent.t, task: Agent__Types.Task.t) => {
     })
 
     // Add LLM generated messages to the message history (CRITICAL!)
+    // NOTE: Only add assistant messages, not tool messages (we handle those ourselves)
     let response = await result->Agent__Bindings__VercelAI.response
     Console.log2("Response messages count:", response.messages->Array.length)
-    messages := Array.concat(messages.contents, response.messages)
+    let assistantMessages = response.messages->Array.filter(msg => msg.role == "assistant")
+    Console.log2("Assistant messages count:", assistantMessages->Array.length)
+    messages := Array.concat(messages.contents, assistantMessages)
 
     // Check finish reason to decide whether to continue
     let finishReason = await result->Agent__Bindings__VercelAI.finishReason
