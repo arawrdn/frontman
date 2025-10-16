@@ -75,34 +75,3 @@ let make = (projectRoot: string): t => {
     }),
   ]
 }
-
-// Convert our tools to Vercel AI SDK format
-let toVercelTools = (registry: t): Dict.t<Agent__Bindings__VercelAI.toolDef> => {
-  let vercelTools = Dict.make()
-
-  registry->Array.forEach(tool => {
-    switch tool {
-    | Tool({name, description, inputSchema, execute}) =>
-      let toolDef: Agent__Bindings__VercelAI.toolDef = {
-        description: Some(description),
-        inputSchema: inputSchema->S.toJSONSchema,
-        execute: Some(
-          async argsJson => {
-            let input = argsJson->S.parseJsonOrThrow(inputSchema)
-            let result = await execute(input)
-            switch result {
-            | Ok(output) => JSON.Encode.string(output)
-            | Error(err) => {
-                Console.error2(`Tool ${name} error:`, err)
-                JSON.Encode.string(`Error: ${err}`)
-              }
-            }
-          },
-        ),
-      }
-      vercelTools->Dict.set(name, toolDef)
-    }
-  })
-
-  vercelTools
-}

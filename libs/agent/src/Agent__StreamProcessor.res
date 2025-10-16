@@ -1,4 +1,6 @@
 // Stream processor - handles Vercel AI SDK stream events
+// TODO: Consider extracting stream event conversion to Agent__Adapters__Vercel
+// Currently tightly coupled to Vercel's streamPart event format
 
 type toolStatus =
   | Pending

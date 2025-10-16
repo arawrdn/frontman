@@ -19,7 +19,7 @@ module Agent = {
     let model = Agent__Bindings__VercelAI.OpenAI.gpt4o()
 
     let toolRegistry = Agent__Tools__Registry.make(projectRoot)
-    let tools = Agent__Tools__Registry.toVercelTools(toolRegistry)
+    let tools = Agent__Adapters__Vercel.toVercelTools(toolRegistry)
 
     // Debug: Check tool structure
     tools

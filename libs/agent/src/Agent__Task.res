@@ -19,9 +19,7 @@ module Timestamp: {
 
 module Status = {
   // Each status is a distinct record type with only valid fields
-  type submitted = {
-    timestamp: Timestamp.t,
-  }
+  type submitted = {timestamp: Timestamp.t}
 
   type working = {
     timestamp: Timestamp.t,
@@ -77,30 +75,21 @@ module Status = {
   let transition = (current: t, event: event): result<t, string> => {
     switch (current, event) {
     // From Submitted
-    | (Submitted(_), StartProcessing(message)) =>
-      Ok(Working({timestamp: Timestamp.now(), message}))
-    | (Submitted(_), Reject(message)) =>
-      Ok(Rejected({timestamp: Timestamp.now(), message}))
-    | (Submitted(_), Cancel(message)) =>
-      Ok(Canceled({timestamp: Timestamp.now(), message}))
+    | (Submitted(_), StartProcessing(message)) => Ok(Working({timestamp: Timestamp.now(), message}))
+    | (Submitted(_), Reject(message)) => Ok(Rejected({timestamp: Timestamp.now(), message}))
+    | (Submitted(_), Cancel(message)) => Ok(Canceled({timestamp: Timestamp.now(), message}))
 
     // From Working
-    | (Working(_), Complete(message)) =>
-      Ok(Completed({timestamp: Timestamp.now(), message}))
+    | (Working(_), Complete(message)) => Ok(Completed({timestamp: Timestamp.now(), message}))
     | (Working(_), RequestInput(message)) =>
       Ok(InputRequired({timestamp: Timestamp.now(), message}))
-    | (Working(_), Fail(message)) =>
-      Ok(Failed({timestamp: Timestamp.now(), message}))
-    | (Working(_), Cancel(message)) =>
-      Ok(Canceled({timestamp: Timestamp.now(), message}))
+    | (Working(_), Fail(message)) => Ok(Failed({timestamp: Timestamp.now(), message}))
+    | (Working(_), Cancel(message)) => Ok(Canceled({timestamp: Timestamp.now(), message}))
 
     // From InputRequired
-    | (InputRequired(_), Resume(message)) =>
-      Ok(Working({timestamp: Timestamp.now(), message}))
-    | (InputRequired(_), Fail(message)) =>
-      Ok(Failed({timestamp: Timestamp.now(), message}))
-    | (InputRequired(_), Cancel(message)) =>
-      Ok(Canceled({timestamp: Timestamp.now(), message}))
+    | (InputRequired(_), Resume(message)) => Ok(Working({timestamp: Timestamp.now(), message}))
+    | (InputRequired(_), Fail(message)) => Ok(Failed({timestamp: Timestamp.now(), message}))
+    | (InputRequired(_), Cancel(message)) => Ok(Canceled({timestamp: Timestamp.now(), message}))
 
     // Terminal statuses cannot transition
     | (Completed(_), _) => Error("Cannot transition from completed status")

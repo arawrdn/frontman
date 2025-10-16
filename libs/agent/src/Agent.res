@@ -5,7 +5,7 @@ let _ = AskTheLlmBindings.Dotenv.config()
 
 module Bindings = AskTheLlmBindings
 
-let make = (projectRoot) => {
+let make = projectRoot => {
   Agent__Types.Agent.make(projectRoot)
 }
 
@@ -101,6 +101,9 @@ module Events = Agent__Events
 module Tools = {
   module Filesystem = Agent__Tools__Filesystem
   module Registry = Agent__Tools__Registry
+}
+module Adapters = {
+  module Vercel = Agent__Adapters__Vercel
 }
 module StreamProcessor = Agent__StreamProcessor
 module MessageHandler = Agent__MessageHandler
