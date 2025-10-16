@@ -55,14 +55,15 @@ module Response = {
 }
 
 module Config = {
-  type matcher =
+  @unboxed
+  type matcher = 
     | String(string)
     | Array(array<string>)
 
-  type t = {matcher: matcher}
+  type t = {matcher: matcher, runtime: [#nodejs | #edge]}
 
-  let make = (~matcher) => {
-    {matcher: matcher}
+  let make = (~matcher, ~runtime=#nodejs) => {
+    {matcher: matcher, runtime: runtime}
   }
 }
 
@@ -147,4 +148,4 @@ let createMiddleware = (isDev: bool) => {
 // Main middleware that handles /ask-the-llm route
 
 // Configuration that matches the /ask-the-llm route
-let config = Config.make(~matcher=Array(["/ask-the-llm", "/ask-the-llm/chat"]))
+let config = Config.make(~matcher=Array(["/ask-the-llm", "/ask-the-llm/chat"]), ~runtime=#nodejs)
