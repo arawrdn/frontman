@@ -49,8 +49,8 @@ let transition = (task: t, event: Status.event): result<t, string> => {
 let addMessage = (task: t, message: Agent__Task__Message.t): result<t, string> => {
   let updated_task = {...task, history: Array.concat(task.history, [message])}
   switch updated_task.status {
-  | InputRequired(_) => transition(task, Agent__Task__Status.Resume(Some(message)))
-  | _ => Ok(task)
+  | InputRequired(_) => transition(updated_task, Agent__Task__Status.Resume(Some(message)))
+  | _ => Ok(updated_task)
   }
 }
 

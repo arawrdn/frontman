@@ -38,6 +38,7 @@ let toVercelTools = (registry: Agent__Tools__Registry.t): Dict.t<
         parameters: aiSchemaWrapped,
         inputSchema: aiSchemaWrapped,
         execute: async argsJson => {
+          %debugger
           let input = argsJson->S.parseJsonOrThrow(inputSchema)
           let result = await execute(input)
           switch result {
@@ -61,9 +62,10 @@ let toVercelTools = (registry: Agent__Tools__Registry.t): Dict.t<
 
 let messageToVercel = (msg: Agent__Task__Message.t): Agent__Bindings__VercelAI.message => {
   let role = switch msg->Agent__Task__Message.getRole {
-  | User => "user"
-  | Agent => "assistant"
-  | System => "system"
+  | User => Agent__Bindings__VercelAI.User
+  | Agent => Agent__Bindings__VercelAI.Assistant
+  | System => Agent__Bindings__VercelAI.System
+  | Tool => Agent__Bindings__VercelAI.Tool
   }
 
   let content =
@@ -87,7 +89,7 @@ let messageToVercel = (msg: Agent__Task__Message.t): Agent__Bindings__VercelAI.m
     ->Array.join("\n")
 
   {
-    Agent__Bindings__VercelAI.role,
+    role,
     content: JSON.Encode.string(content),
   }
 }
@@ -119,13 +121,39 @@ let makeToolResultMessage = (
   let content = JSON.Encode.array([JSON.Encode.object(toolResultPart)])
 
   {
-    role: "tool",
+    role: Tool,
     content,
   }
 }
 
 let messagesToVercel = (messages: array<Agent__Task__Message.t>): array<vercelMessage> => {
   messages->Array.map(messageToVercel)
+}
+
+// Convert Vercel message back to domain message
+let messageFromVercel = (
+  msg: Agent__Bindings__VercelAI.message,
+  ~taskId: option<Agent__Task__Id.t>=None,
+): Agent__Task__Message.t => {
+  let role = switch msg.role {
+  | User => Agent__Task__Message.User
+  | Assistant => Agent__Task__Message.Agent
+  | System => Agent__Task__Message.System
+  | Tool => Agent__Task__Message.Tool
+  }
+
+  // Extract text content from the message
+  // Vercel messages have content as JSON (string or array)
+  let textContent = switch msg.content {
+  | String(str) => str
+  | _ =>
+    // For complex content (like tool messages), stringify it
+    msg.content->JSON.stringify
+  }
+
+  let parts = [Part.text(~text=textContent)]
+
+  Agent__Task__Message.make(~role, ~parts, ~taskId)
 }
 
 // ============ LLM Creation ============
@@ -173,98 +201,31 @@ let getText = (result: streamResult) => result->Agent__Bindings__VercelAI.text
 
 // Process an async iterable (like ReadableStream) using for-await-of pattern
 // This is more efficient than recursive iteration
-let processAsyncIterable: (
-  Agent__Bindings__VercelAI.AsyncIterableStream.t<'a>,
-  'a => promise<unit>,
-) => promise<unit> = %raw(`
-  async function(iterable, handler) {
-    for await (const chunk of iterable) {
-      await handler(chunk);
+let processAsyncIterable = (iterable, handler) => {
+  let impl: (
+    Agent__Bindings__VercelAI.AsyncIterableStream.t<'a>,
+    'a => promise<unit>,
+  ) => promise<unit> = %raw(`
+    async function(iterable, handler) {
+      for await (const chunk of iterable) {
+        await handler(chunk);
+      }
     }
-  }
-`)
+  `)
+  impl(iterable, handler)
+}
 
 // ============ Stream Text ============
 
 // Stream text with Vercel messages directly (for manual loop control)
 let streamTextWithVercelMessages = async (
   llm: t,
-  messages: array<vercelMessage>,
+  messages: array<Agent__Task__Message.t>,
 ): streamResult => {
+  let messages = messagesToVercel(messages)
   await Agent__Bindings__VercelAI.streamText({
     model: llm.model,
     messages,
     tools: llm.tools,
   })
-}
-
-let streamText = async (
-  llm: t,
-  ~messages: array<Agent__Task__Message.t>,
-): Agent__StreamProcessor.processResult => {
-  // Convert messages to Vercel format
-  let vercelMessages = messagesToVercel(messages)
-
-  // Call Vercel AI SDK
-  let stream = await Agent__Bindings__VercelAI.streamText({
-    model: llm.model,
-    messages: vercelMessages,
-    tools: llm.tools,
-  })
-
-  // Process the stream and convert to domain result
-  let toolParts = Dict.make()
-  let textBuffer = ref("")
-
-  let asyncIterable = stream->Agent__Bindings__VercelAI.fullStream
-
-  await processAsyncIterable(asyncIterable, async event => {
-    switch event {
-    | Agent__Bindings__VercelAI.TextDelta({textDelta}) =>
-      textBuffer := textBuffer.contents ++ textDelta
-
-    | ToolCall({toolCallId, toolName, args}) => {
-        Console.log2("Tool call:", toolName)
-
-        let toolPart: Agent__StreamProcessor.toolPart = {
-          id: toolCallId,
-          toolCallId,
-          toolName,
-          status: ref(Agent__StreamProcessor.Running),
-          input: Some(args),
-          output: ref(None),
-          error: ref(None),
-          startTime: ref(Some(Date.now())),
-          endTime: ref(None),
-        }
-
-        toolParts->Dict.set(toolCallId, toolPart)
-      }
-
-    | ToolResult({toolCallId, toolName, result}) => {
-        Console.log2("Tool result:", toolName)
-
-        switch toolParts->Dict.get(toolCallId) {
-        | Some(part) => {
-            part.status := Agent__StreamProcessor.Completed
-            part.output := Some(result->JSON.stringify)
-            part.endTime := Some(Date.now())
-          }
-        | None => Console.error("Tool result without matching call")
-        }
-      }
-
-    | FinishStep({finishReason, usage}) => Console.log3("Step finished:", finishReason, usage)
-
-    | Finish => Console.log("Stream finished")
-    }
-  })
-
-  let toolCallsArray = toolParts->Dict.valuesToArray
-
-  {
-    Agent__StreamProcessor.text: textBuffer.contents,
-    toolCalls: toolCallsArray,
-    hasToolCalls: toolCallsArray->Array.length > 0,
-  }
 }

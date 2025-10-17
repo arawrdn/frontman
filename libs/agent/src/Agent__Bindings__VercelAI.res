@@ -2,12 +2,18 @@
 type languageModel
 type streamTextResult
 
+type role =
+  | @as("user") User
+  | @as("assistant") Assistant
+  | @as("system") System
+  | @as("tool") Tool
+
 // Message content can be:
 // - A string (for simple text messages)
 // - An array of content parts (for tool calls, tool results, etc.)
 // We use JSON.t for maximum flexibility since the AI SDK accepts various content formats
 type message = {
-  role: string, // "user" | "assistant" | "system" | "tool"
+  role: role,
   content: JSON.t,
 }
 

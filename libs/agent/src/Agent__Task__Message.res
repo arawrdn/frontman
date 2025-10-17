@@ -1,7 +1,7 @@
 // Message - opaque type with safe construction
 
 module Part = Agent__Task__Message__Part
-type role = User | Agent | System
+type role = User | Agent | System | Tool
 type t = {
   role: role,
   parts: array<Part.t>,
