@@ -4,10 +4,18 @@
 // ============ LLM Type ============
 
 // Opaque type - hides VercelAI implementation details
+module Part = Agent__Task__Message__Part
 type t = {
   model: Agent__Bindings__VercelAI.languageModel,
   tools: Dict.t<Agent__Bindings__VercelAI.toolDef>,
 }
+
+// ============ Type Re-exports ============
+// Re-export types so AgenticLoop doesn't need to import bindings directly
+type vercelMessage = Agent__Bindings__VercelAI.message
+type streamResult = Agent__Bindings__VercelAI.streamTextResult
+type toolCallInfo = Agent__Bindings__VercelAI.toolCall
+type streamEvent = Agent__Bindings__VercelAI.streamPart
 
 // ============ Tool Conversion ============
 
@@ -55,6 +63,7 @@ let messageToVercel = (msg: Agent__Task__Message.t): Agent__Bindings__VercelAI.m
   let role = switch msg->Agent__Task__Message.getRole {
   | User => "user"
   | Agent => "assistant"
+  | System => "system"
   }
 
   let content =
@@ -62,15 +71,15 @@ let messageToVercel = (msg: Agent__Task__Message.t): Agent__Bindings__VercelAI.m
     ->Agent__Task__Message.getParts
     ->Array.map(part => {
       switch part {
-      | Text(textPart) => textPart->Agent__Part.TextPart.getText
+      | Text(textPart) => textPart->Part.TextPart.getText
       | File(filePart) => {
-          let file = filePart->Agent__Part.FilePart.getFile
-          let name = file->Agent__Part.File.getName->Option.getOr("unnamed")
-          let mimeType = file->Agent__Part.File.getMimeType
+          let file = filePart->Part.FilePart.getFile
+          let name = file->Part.File.getName->Option.getOr("unnamed")
+          let mimeType = file->Part.File.getMimeType
           `File: ${name}, MimeType: ${mimeType}`
         }
       | Data(dataPart) => {
-          let data = dataPart->Agent__Part.DataPart.getData
+          let data = dataPart->Part.DataPart.getData
           `Data: ${data->JSON.stringify}`
         }
       }
@@ -115,9 +124,7 @@ let makeToolResultMessage = (
   }
 }
 
-let messagesToVercel = (messages: array<Agent__Task__Message.t>): array<
-  Agent__Bindings__VercelAI.message,
-> => {
+let messagesToVercel = (messages: array<Agent__Task__Message.t>): array<vercelMessage> => {
   messages->Array.map(messageToVercel)
 }
 
@@ -153,6 +160,15 @@ let executeTool = async (llm: t, ~toolName: string, ~args: JSON.t): result<strin
   }
 }
 
+// ============ Stream Result Accessors ============
+
+// Accessor functions for streamResult - shields AgenticLoop from Vercel bindings
+let getFullStream = (result: streamResult) => result->Agent__Bindings__VercelAI.fullStream
+let getResponse = (result: streamResult) => result->Agent__Bindings__VercelAI.response
+let getFinishReason = (result: streamResult) => result->Agent__Bindings__VercelAI.finishReason
+let getToolCalls = (result: streamResult) => result->Agent__Bindings__VercelAI.toolCalls
+let getText = (result: streamResult) => result->Agent__Bindings__VercelAI.text
+
 // ============ Stream Processing ============
 
 // Process an async iterable (like ReadableStream) using for-await-of pattern
@@ -173,8 +189,8 @@ let processAsyncIterable: (
 // Stream text with Vercel messages directly (for manual loop control)
 let streamTextWithVercelMessages = async (
   llm: t,
-  messages: array<Agent__Bindings__VercelAI.message>,
-): Agent__Bindings__VercelAI.streamTextResult => {
+  messages: array<vercelMessage>,
+): streamResult => {
   await Agent__Bindings__VercelAI.streamText({
     model: llm.model,
     messages,

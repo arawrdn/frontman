@@ -16,7 +16,7 @@ module StreamProcessor = Agent__StreamProcessor
 module AgenticLoop = Agent__AgenticLoop
 module Task = Agent__Task
 module TaskMessage = Agent__Task__Message
-module Part = Agent__Part
+module Part = Agent__Task__Message__Part
 module Artifact = Agent__Artifact
 module Id = Agent__Id
 module TaskId = Agent__Task__Id
@@ -58,7 +58,6 @@ let run = (agent: t) => {
     switch event {
     | TaskCreated(task) => {
         Console.log("=== TaskCreated event - starting agentic loop")
-        %debugger
         Agent__AgenticLoop.run(agent.llm, agent.tasks, agent.eventBus, task)->ignore
       }
     | TaskStateChanged(task) => {
@@ -121,41 +120,6 @@ let sendMessage = (agent: t, message: Agent__Task__Message.t): result<Agent__Tas
 let getTask = (agent: t, taskId: Agent__Task__Id.t): result<Agent__Task.t, string> => {
   switch Agent__Tasks.get(agent.tasks, taskId) {
   | Some(task) => Ok(task)
-  | None => Error("Task not found")
-  }
-}
-
-// Cancel a task
-let cancelTask = (agent: t, taskId: Agent__Task__Id.t, ~reason: option<string>=None): result<
-  Agent__Task.t,
-  string,
-> => {
-  switch Agent__Tasks.get(agent.tasks, taskId) {
-  | Some(task) => {
-      // Create cancellation message if reason provided
-      let cancelMessage = switch reason {
-      | Some(text) =>
-        Some(
-          Agent__Task__Message.make(
-            ~role=Agent,
-            ~parts=[Agent__Part.text(~text)],
-            ~taskId=Some(taskId),
-          ),
-        )
-      | None => None
-      }
-
-      switch Agent__Task.transition(task, Cancel(cancelMessage)) {
-      | Ok(updatedTask) => {
-          // Update in registry
-          Agent__Tasks.update(agent.tasks, updatedTask)
-          // Emit TaskStateChanged event
-          Agent__EventBus.emit(agent.eventBus, TaskStateChanged(updatedTask))
-          Ok(updatedTask)
-        }
-      | Error(msg) => Error(msg)
-      }
-    }
   | None => Error("Task not found")
   }
 }

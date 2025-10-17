@@ -1,5 +1,6 @@
 // Task aggregate root - immutable
 module Status = Agent__Task__Status
+module Part = Agent__Task__Message__Part
 
 // Domain-specific ID type alias
 type taskId = Agent__Task__Id.t
@@ -11,11 +12,27 @@ type t = {
   artifacts: array<Agent__Artifact.t>,
   metadata: option<Dict.t<JSON.t>>,
 }
+let systemMessage = "You are an AI coding assistant helping with a Next.js project.
+  The project uses TypeScript, React, and Tailwind CSS.
+  \nIMPORTANT Tool Usage Guidelines:
+  \n- All file paths must be RELATIVE to the project root (e.g., 'src/components/Button.tsx', not '/full/path/...')
+  \n- Use list_files with directory=\".\" to see the root directory structure first
+  \n- If a directory doesn't exist, try listing the parent directory to understand the structure
+  \n- Read files before modifying them to understand the current code
+  \n- After 2-3 failed tool calls, stop and ask the user for clarification
+  \nWhen making changes, ensure they are compatible with the Next.js framework and follow React best practices."
 
 // Constructors
 let make = (~history: history=[], ~metadata=None): t => {
+  let taskId = Agent__Id.make()
+
+  let history = Array.concat(
+    [Agent__Task__Message.make(~role=System, ~parts=[Part.text(~text=systemMessage)])],
+    history,
+  )
+
   {
-    id: Agent__Id.make(),
+    id: taskId,
     status: Status.initial(),
     history,
     artifacts: [],

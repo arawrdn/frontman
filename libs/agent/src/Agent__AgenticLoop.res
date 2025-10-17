@@ -34,32 +34,12 @@ let run = async (
   let history = workingTask->Agent__Task.getHistory
   let userMessages = Agent__Adapters__Vercel.messagesToVercel(history)
 
-  // Prepend system message with project context (only for new tasks)
-  // A new task has only 1 user message in history
-  let messages = if history->Array.length == 1 {
-    let systemMessage: Agent__Bindings__VercelAI.message = {
-      role: "system",
-      content: JSON.Encode.string(
-        "You are an AI coding assistant helping with a Next.js project. " ++
-        "The project uses TypeScript, React, and Tailwind CSS. " ++
-        "\n\nIMPORTANT Tool Usage Guidelines:\n" ++
-        "- All file paths must be RELATIVE to the project root (e.g., 'src/components/Button.tsx', not '/full/path/...')\n" ++
-        "- Use list_files with directory=\".\" to see the root directory structure first\n" ++
-        "- If a directory doesn't exist, try listing the parent directory to understand the structure\n" ++
-        "- Read files before modifying them to understand the current code\n" ++
-        "- After 2-3 failed tool calls, stop and ask the user for clarification\n" ++ "\nWhen making changes, ensure they are compatible with the Next.js framework and follow React best practices.",
-      ),
-    }
-    ref(Array.concat([systemMessage], userMessages))
-  } else {
-    ref(userMessages)
-  }
-
-  Console.log2("Initial message history length:", messages.contents->Array.length)
+  // Track message accumulation throughout loop iterations
+  let messages = ref(userMessages)
 
   // Start the agent loop
   let rec loop = async (
-    vercelMessages: array<Agent__Bindings__VercelAI.message>,
+    vercelMessages: array<Agent__Adapters__Vercel.vercelMessage>,
     currentTask: Agent__Task.t,
   ) => {
     Console.log(
@@ -70,7 +50,7 @@ let run = async (
     let result = await Agent__Adapters__Vercel.streamTextWithVercelMessages(llm, vercelMessages)
 
     // Stream the response (for user updates - optional but recommended)
-    let stream = result->Agent__Bindings__VercelAI.fullStream
+    let stream = result->Agent__Adapters__Vercel.getFullStream
 
     await Agent__Adapters__Vercel.processAsyncIterable(stream, async event => {
       switch event {
@@ -82,20 +62,20 @@ let run = async (
 
     // Add LLM generated messages to the message history (CRITICAL!)
     // NOTE: Only add assistant messages, not tool messages (we handle those ourselves)
-    let response = await result->Agent__Bindings__VercelAI.response
+    let response = await result->Agent__Adapters__Vercel.getResponse
     Console.log2("Response messages count:", response.messages->Array.length)
     let assistantMessages = response.messages->Array.filter(msg => msg.role == "assistant")
     Console.log2("Assistant messages count:", assistantMessages->Array.length)
     messages := Array.concat(messages.contents, assistantMessages)
 
     // Check finish reason to decide whether to continue
-    let finishReason = await result->Agent__Bindings__VercelAI.finishReason
+    let finishReason = await result->Agent__Adapters__Vercel.getFinishReason
     Console.log2("=== Finish reason:", finishReason)
     Console.log2("Current message history length:", messages.contents->Array.length)
 
     if finishReason == "tool-calls" {
       // Get tool calls and execute them
-      let toolCalls = await result->Agent__Bindings__VercelAI.toolCalls
+      let toolCalls = await result->Agent__Adapters__Vercel.getToolCalls
 
       Console.log("Processing tool calls...")
 
@@ -144,12 +124,12 @@ let run = async (
       Console.log2("=== No tool calls, completing task. Finish reason was:", finishReason)
 
       // Get final text response
-      let finalText = await result->Agent__Bindings__VercelAI.text
+      let finalText = await result->Agent__Adapters__Vercel.getText
 
       // Add final agent message to our internal history
       let agentMessage = Agent__Task__Message.make(
         ~role=Agent,
-        ~parts=[Agent__Part.text(~text=finalText)],
+        ~parts=[Agent__Task__Message__Part.text(~text=finalText)],
         ~taskId=Some(currentTask.id),
       )
       //Note(Danni)-> handle errors here better

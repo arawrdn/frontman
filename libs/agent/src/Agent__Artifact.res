@@ -1,15 +1,15 @@
 // Artifact - opaque type with safe construction
-
+module Part = Agent__Task__Message__Part
 type t = {
   artifactId: Agent__Id.t,
   name: option<string>,
-  parts: array<Agent__Part.t>,
+  parts: array<Part.t>,
   metadata: option<Dict.t<JSON.t>>,
 }
 
 let make = (
   ~name: option<string>=None,
-  ~parts: array<Agent__Part.t>,
+  ~parts: array<Part.t>,
   ~metadata: option<Dict.t<JSON.t>>=None,
 ): t => {
   {
@@ -21,5 +21,5 @@ let make = (
 }
 
 // Accessor for getting parts
-let getParts = (artifact: t): array<Agent__Part.t> => artifact.parts
+let getParts = (artifact: t): array<Part.t> => artifact.parts
 let getId = (artifact: t): Agent__Id.t => artifact.artifactId
