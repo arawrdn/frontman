@@ -88,8 +88,7 @@ let createChatHandler = (): apiHandler => {
                 Agent.TaskMessage.make(~role=User, ~parts=[Agent.Part.text(~text=str)]),
               )
               switch message {
-              | Ok((messageId, _task)) =>
-                res->ApiResponse.status(200)->ApiResponse.json({"messageId": messageId})
+              | Ok(task) => res->ApiResponse.status(200)->ApiResponse.json({"task": task})
               | Error(error) => res->ApiResponse.status(500)->ApiResponse.json({"error": error})
               }
             }

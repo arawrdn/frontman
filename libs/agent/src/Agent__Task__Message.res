@@ -6,7 +6,6 @@ type t = {
   parts: array<Agent__Part.t>,
   messageId: Agent__Id.t,
   taskId: option<Agent__Task__Id.t>,
-  contextId: option<Agent__Context__Id.t>,
   metadata: option<Dict.t<JSON.t>>,
 }
 
@@ -14,7 +13,6 @@ let make = (
   ~role: role,
   ~parts: array<Agent__Part.t>,
   ~taskId: option<Agent__Task__Id.t>=None,
-  ~contextId: option<Agent__Context__Id.t>=None,
   ~metadata: option<Dict.t<JSON.t>>=None,
 ): t => {
   {
@@ -22,7 +20,6 @@ let make = (
     parts,
     messageId: Agent__Id.make(),
     taskId,
-    contextId,
     metadata,
   }
 }

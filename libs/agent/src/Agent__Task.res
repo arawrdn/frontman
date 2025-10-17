@@ -3,34 +3,21 @@ module Status = Agent__Task__Status
 
 // Domain-specific ID type alias
 type taskId = Agent__Task__Id.t
-
+type history = array<Agent__Task__Message.t>
 type t = {
   id: taskId,
-  contextId: option<Agent__Context__Id.t>,
   status: Status.t,
-  history: array<Agent__Task__Message.t>,
+  history: history,
   artifacts: array<Agent__Artifact.t>,
   metadata: option<Dict.t<JSON.t>>,
 }
 
 // Constructors
-let make = (~contextId=None, ~metadata=None): t => {
+let make = (~history: history=[], ~metadata=None): t => {
   {
     id: Agent__Id.make(),
-    contextId,
     status: Status.initial(),
-    history: [],
-    artifacts: [],
-    metadata,
-  }
-}
-
-let makeWithId = (~id, ~contextId=None, ~metadata=None): t => {
-  {
-    id,
-    contextId,
-    status: Status.initial(),
-    history: [],
+    history,
     artifacts: [],
     metadata,
   }
@@ -42,8 +29,12 @@ let transition = (task: t, event: Status.event): result<t, string> => {
 }
 
 // Mutations - return new Task
-let addMessage = (task: t, message: Agent__Task__Message.t): t => {
-  {...task, history: Array.concat(task.history, [message])}
+let addMessage = (task: t, message: Agent__Task__Message.t): result<t, string> => {
+  let updated_task = {...task, history: Array.concat(task.history, [message])}
+  switch updated_task.status {
+  | InputRequired(_) => transition(task, Agent__Task__Status.Resume(Some(message)))
+  | _ => Ok(task)
+  }
 }
 
 let addArtifact = (task: t, artifact: Agent__Artifact.t): t => {

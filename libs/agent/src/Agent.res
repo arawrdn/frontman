@@ -5,16 +5,33 @@ let _ = AskTheLlmBindings.Dotenv.config()
 
 module Bindings = AskTheLlmBindings
 
+module Tools = {
+  module Filesystem = Agent__Tools__Filesystem
+  module Registry = Agent__Tools__Registry
+}
+module Adapters = {
+  module Vercel = Agent__Adapters__Vercel
+}
+module StreamProcessor = Agent__StreamProcessor
+module AgenticLoop = Agent__AgenticLoop
+module Task = Agent__Task
+module TaskMessage = Agent__Task__Message
+module Part = Agent__Part
+module Artifact = Agent__Artifact
+module Id = Agent__Id
+module TaskId = Agent__Task__Id
+module EventBus = Agent__EventBus
+
 type t = {
   projectRoot: string,
-  eventBus: Agent__EventBus.t,
+  eventBus: EventBus.t,
   tasks: Agent__Tasks.t,
-  llm: Agent__Adapters__Vercel.t,
+  llm: Adapters.Vercel.t,
 }
 
 let make = (projectRoot: string) => {
   Console.log(`Initializing agent for project: ${projectRoot}`)
-  let eventBus = Agent__EventBus.make()
+  let eventBus = EventBus.make()
 
   // Verify OpenAI API key is set
   let _apiKey = AskTheLlmBindings.Dotenv.getExn("OPENAI_API_KEY")
@@ -35,8 +52,15 @@ let make = (projectRoot: string) => {
 }
 
 let run = (agent: t) => {
-  let shutdown = agent.eventBus->Agent__EventBus.on((event: Agent__EventBus.events) => {
+  Console.log("Agent is running and listening for domain events...")
+  agent.eventBus->EventBus.on((event: EventBus.events) => {
+    Console.log2("Got EventBus Event: ", event)
     switch event {
+    | TaskCreated(task) => {
+        Console.log("=== TaskCreated event - starting agentic loop")
+        %debugger
+        Agent__AgenticLoop.run(agent.llm, agent.tasks, agent.eventBus, task)->ignore
+      }
     | TaskStateChanged(task) => {
         let statusStr = switch task.status {
         | Submitted(_) => "Submitted"
@@ -49,11 +73,8 @@ let run = (agent: t) => {
         }
         Console.log2("=== TaskStateChanged event - status:", statusStr)
 
+        // Handle state transitions (but TaskCreated already handles initial Submitted)
         switch task.status {
-        | Agent__Task__Status.Submitted(_) => {
-            Console.log("Task submitted, starting agentic loop...")
-            Agent__AgenticLoop.run(agent.llm, agent.tasks, agent.eventBus, task)->ignore
-          }
         | Agent__Task__Status.Working(_) =>
           Console.log("Task working (resumed) - NOT starting loop (commented out)")
         // Agent__AgenticLoop.run(agent.llm, agent.tasks, agent.eventBus, task)->ignore
@@ -64,8 +85,6 @@ let run = (agent: t) => {
     | TaskMessageAdded({task, message}) => Console.log3("Task message added", task, message)
     }
   })
-  Console.log("Agent is running and listening for domain events...")
-  shutdown
 }
 
 let addTask = (agent: t, task: Agent__Task.t) => {
@@ -75,27 +94,27 @@ let addTask = (agent: t, task: Agent__Task.t) => {
 
 // Send a message to the agent
 // Creates a new task if message.taskId is None, or continues existing task if present
-let sendMessage = (agent: t, message: Agent__Task__Message.t): result<
-  (Agent__Task__Id.t, Agent__Task.t),
-  string,
-> => {
+let sendMessage = (agent: t, message: Agent__Task__Message.t): result<Agent__Task.t, string> => {
   // Task continuation logic: if message.taskId is present, continue existing task
   // If absent, create new task implicitly
-  let taskId = switch message.taskId {
-  | Some(id) => id
-  | None => Agent__Task__Id.make()
+  let task = switch message->Agent__Task__Message.getTaskId {
+  | Some(id) =>
+    let task = Agent__Tasks.get(agent.tasks, id)->Option.getOrThrow
+    Agent__Task.addMessage(task, message)->Result.map(updatedTask => {
+      Agent__Tasks.update(agent.tasks, updatedTask)
+      Agent__EventBus.emit(agent.eventBus, TaskMessageAdded({task: updatedTask, message}))
+      updatedTask
+    })
+
+  | None =>
+    Console.info("Task not found, creating new task")
+    let newTask = Agent__Task.make(~history=[message])
+    Agent__Tasks.add(agent.tasks, newTask)
+    Agent__EventBus.emit(agent.eventBus, TaskCreated(newTask))
+    Ok(newTask)
   }
 
-  let task = Agent__MessageHandler.processMessage(
-    agent.tasks,
-    agent.eventBus,
-    ~taskId=Some(taskId),
-    ~contextId=message.contextId,
-    ~message,
-  )
-
-  // Return the task
-  Ok((taskId, task))
+  task
 }
 
 // Get a task by ID
@@ -121,7 +140,6 @@ let cancelTask = (agent: t, taskId: Agent__Task__Id.t, ~reason: option<string>=N
             ~role=Agent,
             ~parts=[Agent__Part.text(~text)],
             ~taskId=Some(taskId),
-            ~contextId=task.contextId,
           ),
         )
       | None => None
@@ -141,22 +159,3 @@ let cancelTask = (agent: t, taskId: Agent__Task__Id.t, ~reason: option<string>=N
   | None => Error("Task not found")
   }
 }
-
-module Events = Agent__Events
-module Tools = {
-  module Filesystem = Agent__Tools__Filesystem
-  module Registry = Agent__Tools__Registry
-}
-module Adapters = {
-  module Vercel = Agent__Adapters__Vercel
-}
-module StreamProcessor = Agent__StreamProcessor
-module MessageHandler = Agent__MessageHandler
-module AgenticLoop = Agent__AgenticLoop
-module Task = Agent__Task
-module TaskMessage = Agent__Task__Message
-module Part = Agent__Part
-module Artifact = Agent__Artifact
-module Id = Agent__Id
-module TaskId = Agent__Task__Id
-module ContextId = Agent__Context__Id

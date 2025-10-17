@@ -18,6 +18,7 @@ let run = async (
   task: Agent__Task.t,
 ) => {
   Console.log("=== Starting agentic loop")
+  %debugger
 
   // Transition task to Working status to prevent re-triggering
   let workingTask = switch Agent__Task.transition(task, Agent__Task__Status.StartProcessing(None)) {
@@ -46,8 +47,7 @@ let run = async (
         "- Use list_files with directory=\".\" to see the root directory structure first\n" ++
         "- If a directory doesn't exist, try listing the parent directory to understand the structure\n" ++
         "- Read files before modifying them to understand the current code\n" ++
-        "- After 2-3 failed tool calls, stop and ask the user for clarification\n" ++
-        "\nWhen making changes, ensure they are compatible with the Next.js framework and follow React best practices.",
+        "- After 2-3 failed tool calls, stop and ask the user for clarification\n" ++ "\nWhen making changes, ensure they are compatible with the Next.js framework and follow React best practices.",
       ),
     }
     ref(Array.concat([systemMessage], userMessages))
@@ -100,38 +100,37 @@ let run = async (
       Console.log("Processing tool calls...")
 
       // Execute all tool calls and collect results
-      let toolResultMessages =
-        await toolCalls
-        ->Array.map(async toolCall => {
-          let toolName = toolCall.toolName
-          let args = toolCall.args
-          Console.log2(`Executing tool: ${toolName}`, args)
+      let toolResultMessages = await toolCalls
+      ->Array.map(async toolCall => {
+        let toolName = toolCall.toolName
+        let args = toolCall.args
+        Console.log2(`Executing tool: ${toolName}`, args)
 
-          let toolResult = await executeTool(llm, toolName, args)
+        let toolResult = await executeTool(llm, toolName, args)
 
-          switch toolResult {
-          | Ok(output) => {
-              Console.log2(`Tool ${toolName} succeeded:`, output)
+        switch toolResult {
+        | Ok(output) => {
+            Console.log2(`Tool ${toolName} succeeded:`, output)
 
-              // Create tool result message in Vercel format
-              Some(
-                Agent__Adapters__Vercel.makeToolResultMessage(toolCall.toolCallId, toolName, output),
-              )
-            }
-          | Error(err) => {
-              Console.error2(`Tool ${toolName} failed:`, err)
-              // Still need to return a result message for the LLM
-              Some(
-                Agent__Adapters__Vercel.makeToolResultMessage(
-                  toolCall.toolCallId,
-                  toolName,
-                  `Error: ${err}`,
-                ),
-              )
-            }
+            // Create tool result message in Vercel format
+            Some(
+              Agent__Adapters__Vercel.makeToolResultMessage(toolCall.toolCallId, toolName, output),
+            )
           }
-        })
-        ->Promise.all
+        | Error(err) => {
+            Console.error2(`Tool ${toolName} failed:`, err)
+            // Still need to return a result message for the LLM
+            Some(
+              Agent__Adapters__Vercel.makeToolResultMessage(
+                toolCall.toolCallId,
+                toolName,
+                `Error: ${err}`,
+              ),
+            )
+          }
+        }
+      })
+      ->Promise.all
 
       // Add tool result messages to history
       let validToolResults = toolResultMessages->Array.filterMap(x => x)
@@ -152,14 +151,16 @@ let run = async (
         ~role=Agent,
         ~parts=[Agent__Part.text(~text=finalText)],
         ~taskId=Some(currentTask.id),
-        ~contextId=currentTask.contextId,
       )
-      let taskWithMessage = Agent__Task.addMessage(currentTask, agentMessage)
+      //Note(Danni)-> handle errors here better
+      let taskWithMessage = Agent__Task.addMessage(currentTask, agentMessage)->Result.getOrThrow
       Agent__Tasks.update(tasks, taskWithMessage)
 
       // Transition task to complete
-      let _ = Agent__Task.transition(taskWithMessage, Complete(Some(agentMessage)))
-      ->Result.map(completedTask => {
+      let _ = Agent__Task.transition(
+        taskWithMessage,
+        Complete(Some(agentMessage)),
+      )->Result.map(completedTask => {
         Agent__Tasks.update(tasks, completedTask)
         Agent__EventBus.emit(eventBus, TaskStateChanged(completedTask))
       })

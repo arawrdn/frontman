@@ -1,7 +1,6 @@
 // Event bus - publishes domain events
 type artifactChunkGenerated = {
   taskId: Agent__Id.t,
-  contextId: option<Agent__Id.t>,
   artifact: Agent__Artifact.t,
   isComplete: bool,
 }
@@ -12,6 +11,7 @@ type taskMessageAdded = {
 }
 
 type events =
+  | TaskCreated(Agent__Task.t)
   | TaskStateChanged(Agent__Task.t)
   | ArtifactChunkGenerated(artifactChunkGenerated)
   | TaskMessageAdded(taskMessageAdded)
