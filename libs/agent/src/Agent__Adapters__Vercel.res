@@ -59,7 +59,6 @@ let toVercelTools = (registry: Agent__Tools__Registry.t): Dict.t<
 }
 
 // ============ Message Conversion ============
-
 let messageToVercel = (msg: Agent__Task__Message.t): Agent__Bindings__VercelAI.message => {
   let role = switch msg->Agent__Task__Message.getRole {
   | User => Agent__Bindings__VercelAI.User
@@ -68,63 +67,85 @@ let messageToVercel = (msg: Agent__Task__Message.t): Agent__Bindings__VercelAI.m
   | Tool => Agent__Bindings__VercelAI.Tool
   }
 
-  let content =
-    msg
-    ->Agent__Task__Message.getParts
-    ->Array.map(part => {
+  let parts = msg->Agent__Task__Message.getParts
+
+  // Check if we have any non-text parts
+  let hasStructuredParts = parts->Array.some(part => {
+    switch part {
+    | Part.ToolUse(_) | Part.ToolResult(_) => true
+    | _ => false
+    }
+  })
+
+  let content = if hasStructuredParts {
+    // Build array of contentParts and serialize them to JSON
+    let contentParts: array<Agent__Bindings__VercelAI.ContentPart.t> = parts->Array.map(part => {
       switch part {
-      | Text(textPart) => textPart->Part.TextPart.getText
-      | File(filePart) => {
+      | Part.Text(textPart) => {
+          let text = textPart->Part.TextPart.getText
+          Agent__Bindings__VercelAI.ContentPart.Text({text: text})
+        }
+      | Part.ToolUse(toolUsePart) =>
+        Agent__Bindings__VercelAI.ContentPart.ToolCall({
+          toolCallId: toolUsePart->Part.ToolUsePart.getToolCallId,
+          toolName: toolUsePart->Part.ToolUsePart.getToolName,
+          args: toolUsePart->Part.ToolUsePart.getArgs,
+        })
+      | Part.ToolResult(toolResultPart) =>
+        Agent__Bindings__VercelAI.ContentPart.ToolResult({
+          toolCallId: toolResultPart->Part.ToolResultPart.getToolCallId,
+          toolName: toolResultPart->Part.ToolResultPart.getToolName,
+          output: toolResultPart->Part.ToolResultPart.getResult,
+        })
+      | Part.File(filePart) => {
           let file = filePart->Part.FilePart.getFile
           let name = file->Part.File.getName->Option.getOr("unnamed")
           let mimeType = file->Part.File.getMimeType
-          `File: ${name}, MimeType: ${mimeType}`
+          Agent__Bindings__VercelAI.ContentPart.Text({text: `File: ${name}, MimeType: ${mimeType}`})
         }
-      | Data(dataPart) => {
+      | Part.Data(dataPart) => {
           let data = dataPart->Part.DataPart.getData
-          `Data: ${data->JSON.stringify}`
+          Agent__Bindings__VercelAI.ContentPart.Text({text: `Data: ${data->JSON.stringify}`})
         }
       }
     })
-    ->Array.join("\n")
+
+    // Serialize the variants to JSON using Sury
+    let contentPartsSchema = S.array(Agent__Bindings__VercelAI.ContentPart.schema)
+    let serialized = contentParts->S.reverseConvertOrThrow(contentPartsSchema)
+    // Safe cast: reverseConvertOrThrow returns JSON
+    let jsonArray: array<JSON.t> = serialized->Obj.magic
+    Agent__Bindings__VercelAI.Parts(jsonArray)
+  } else {
+    // Simple text-only message
+    let text =
+      parts
+      ->Array.map(part => {
+        switch part {
+        | Part.Text(textPart) => textPart->Part.TextPart.getText
+        | Part.File(filePart) => {
+            let file = filePart->Part.FilePart.getFile
+            let name = file->Part.File.getName->Option.getOr("unnamed")
+            let mimeType = file->Part.File.getMimeType
+            `File: ${name}, MimeType: ${mimeType}`
+          }
+        | Part.Data(dataPart) => {
+            let data = dataPart->Part.DataPart.getData
+            `Data: ${data->JSON.stringify}`
+          }
+        | _ => ""
+        }
+      })
+      ->Array.join("\n")
+    Agent__Bindings__VercelAI.String(text)
+  }
 
   {
     role,
-    content: JSON.Encode.string(content),
-  }
-}
-
-// Create a tool result message in Vercel format
-// According to AI SDK manual agent loop docs, tool results should be in an array
-// with specific structure matching the ToolResultPart type
-let makeToolResultMessage = (
-  toolCallId: string,
-  toolName: string,
-  result: string,
-): Agent__Bindings__VercelAI.message => {
-  // Create the tool result part
-  let toolResultPart = Dict.make()
-  toolResultPart->Dict.set("type", JSON.Encode.string("tool-result"))
-  toolResultPart->Dict.set("toolCallId", JSON.Encode.string(toolCallId))
-  toolResultPart->Dict.set("toolName", JSON.Encode.string(toolName))
-
-  // AI SDK expects "output" field as LanguageModelV2ToolResultOutput
-  // This is a discriminated union with type: 'text' | 'json' | 'error-text' | 'error-json'
-  // For errors, use 'error-text', for success use 'text'
-  let outputObj = Dict.make()
-  let isError = result->String.startsWith("Error:")
-  outputObj->Dict.set("type", JSON.Encode.string(isError ? "error-text" : "text"))
-  outputObj->Dict.set("value", JSON.Encode.string(result))
-  toolResultPart->Dict.set("output", JSON.Encode.object(outputObj))
-
-  // Tool messages need content as an array of tool-result parts
-  let content = JSON.Encode.array([JSON.Encode.object(toolResultPart)])
-
-  {
-    role: Tool,
     content,
   }
 }
+
 
 let messagesToVercel = (messages: array<Agent__Task__Message.t>): array<vercelMessage> => {
   messages->Array.map(messageToVercel)
@@ -142,16 +163,26 @@ let messageFromVercel = (
   | Tool => Agent__Task__Message.Tool
   }
 
-  // Extract text content from the message
-  // Vercel messages have content as JSON (string or array)
-  let textContent = switch msg.content {
-  | String(str) => str
-  | _ =>
-    // For complex content (like tool messages), stringify it
-    msg.content->JSON.stringify
-  }
+  // Parse content using Sury
+  let parts = switch msg.content {
+  | String(text) => [Part.text(~text)]
+  | Parts(contentPartsJson) => {
+      // Parse the array of content parts using Sury
+      let contentPartsSchema = S.array(Agent__Bindings__VercelAI.ContentPart.schema)
+      let parsedParts = contentPartsJson->S.parseOrThrow(contentPartsSchema)
 
-  let parts = [Part.text(~text=textContent)]
+      // Convert to domain Part.t
+      parsedParts->Array.map(contentPart => {
+        switch contentPart {
+        | Agent__Bindings__VercelAI.ContentPart.Text({text}) => Part.text(~text)
+        | Agent__Bindings__VercelAI.ContentPart.ToolCall({toolCallId, toolName, args}) =>
+          Part.toolUse(~toolCallId, ~toolName, ~args)
+        | Agent__Bindings__VercelAI.ContentPart.ToolResult({toolCallId, toolName, output}) =>
+          Part.toolResult(~toolCallId, ~toolName, ~result=output)
+        }
+      })
+    }
+  }
 
   Agent__Task__Message.make(~role, ~parts, ~taskId)
 }

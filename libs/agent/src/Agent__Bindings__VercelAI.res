@@ -8,13 +8,53 @@ type role =
   | @as("system") System
   | @as("tool") Tool
 
-// Message content can be:
-// - A string (for simple text messages)
-// - An array of content parts (for tool calls, tool results, etc.)
-// We use JSON.t for maximum flexibility since the AI SDK accepts various content formats
+// Enable JSON support in Sury
+S.enableJson()
+
+// Content part types from Vercel AI SDK
+// We use Sury to parse these based on the "type" field
+// Put in a module to avoid naming collision with streamPart
+
+module ContentPart = {
+  type t =
+    | Text({text: string})
+    | ToolCall({toolCallId: string, toolName: string, args: JSON.t})
+    | ToolResult({toolCallId: string, toolName: string, output: JSON.t})
+
+  let schema = S.union([
+    S.object(s => {
+      s.tag("type", "text")
+      Text({text: s.field("text", S.string)})
+    }),
+    S.object(s => {
+      s.tag("type", "tool-call")
+      ToolCall({
+        toolCallId: s.field("toolCallId", S.string),
+        toolName: s.field("toolName", S.string),
+        args: s.field("input", S.json),
+      })
+    }),
+    S.object(s => {
+      s.tag("type", "tool-result")
+      ToolResult({
+        toolCallId: s.field("toolCallId", S.string),
+        toolName: s.field("toolName", S.string),
+        output: s.field("output", S.json),
+      })
+    }),
+  ])
+}
+
+// Message content can be string OR array of parts
+// We use JSON.t for the array since we serialize/deserialize with Sury
+@unboxed
+type content =
+  | String(string)
+  | Parts(array<JSON.t>)
+
 type message = {
   role: role,
-  content: JSON.t,
+  content: content,
 }
 
 // Tool result data

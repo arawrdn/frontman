@@ -85,14 +85,84 @@ module DataPart: {
   let getMetadata = (part: t): option<Dict.t<JSON.t>> => part.metadata
 }
 
+// ============ ToolUsePart ============
+
+module ToolUsePart: {
+  type t
+  let make: (
+    ~toolCallId: string,
+    ~toolName: string,
+    ~args: JSON.t,
+    ~metadata: option<Dict.t<JSON.t>>=?,
+  ) => t
+  let getToolCallId: t => string
+  let getToolName: t => string
+  let getArgs: t => JSON.t
+  let getMetadata: t => option<Dict.t<JSON.t>>
+} = {
+  type t = {
+    toolCallId: string,
+    toolName: string,
+    args: JSON.t,
+    metadata: option<Dict.t<JSON.t>>,
+  }
+
+  let make = (~toolCallId, ~toolName, ~args, ~metadata=None) => {
+    {toolCallId, toolName, args, metadata}
+  }
+
+  let getToolCallId = (part: t): string => part.toolCallId
+  let getToolName = (part: t): string => part.toolName
+  let getArgs = (part: t): JSON.t => part.args
+  let getMetadata = (part: t): option<Dict.t<JSON.t>> => part.metadata
+}
+
+// ============ ToolResultPart ============
+
+module ToolResultPart: {
+  type t
+  let make: (
+    ~toolCallId: string,
+    ~toolName: string,
+    ~result: JSON.t,
+    ~metadata: option<Dict.t<JSON.t>>=?,
+  ) => t
+  let getToolCallId: t => string
+  let getToolName: t => string
+  let getResult: t => JSON.t
+  let getMetadata: t => option<Dict.t<JSON.t>>
+} = {
+  type t = {
+    toolCallId: string,
+    toolName: string,
+    result: JSON.t,
+    metadata: option<Dict.t<JSON.t>>,
+  }
+
+  let make = (~toolCallId, ~toolName, ~result, ~metadata=None) => {
+    {toolCallId, toolName, result, metadata}
+  }
+
+  let getToolCallId = (part: t): string => part.toolCallId
+  let getToolName = (part: t): string => part.toolName
+  let getResult = (part: t): JSON.t => part.result
+  let getMetadata = (part: t): option<Dict.t<JSON.t>> => part.metadata
+}
+
 // ============ Part Union ============
 
 type t =
   | Text(TextPart.t)
   | File(FilePart.t)
   | Data(DataPart.t)
+  | ToolUse(ToolUsePart.t)
+  | ToolResult(ToolResultPart.t)
 
 // Convenience constructors
 let text = (~text, ~metadata=None) => Text(TextPart.make(~text, ~metadata))
 let file = (~file, ~metadata=None) => File(FilePart.make(~file, ~metadata))
 let data = (~data, ~metadata=None) => Data(DataPart.make(~data, ~metadata))
+let toolUse = (~toolCallId, ~toolName, ~args, ~metadata=None) =>
+  ToolUse(ToolUsePart.make(~toolCallId, ~toolName, ~args, ~metadata))
+let toolResult = (~toolCallId, ~toolName, ~result, ~metadata=None) =>
+  ToolResult(ToolResultPart.make(~toolCallId, ~toolName, ~result, ~metadata))

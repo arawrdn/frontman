@@ -38,27 +38,23 @@ let run = async (
     })
 
     // Add LLM generated messages to task history (CRITICAL!)
+    // This includes BOTH assistant messages (with tool calls) AND tool messages (with results)
     let response = await result->Adapter.getResponse
     Console.log2("Response messages count:", response.messages->Array.length)
-    let assistantMessages = response.messages->Array.filter(msg => msg.role == Assistant)
-    Console.log2("Assistant messages count:", assistantMessages->Array.length)
 
-    // Convert assistant messages to domain format and add to task
-    let taskWithAssistantMessages = assistantMessages->Array.reduce(currentTask, (
-      task,
-      vercelMsg,
-    ) => {
+    // Convert ALL messages (assistant + tool) to domain format and add to task
+    let taskWithNewMessages = response.messages->Array.reduce(currentTask, (task, vercelMsg) => {
       let domainMessage = Adapter.messageFromVercel(vercelMsg, ~taskId=Some(task.id))
       Agent__Task.addMessage(task, domainMessage)->Result.getOr(task)
     })
-    Agent__Tasks.update(tasks, taskWithAssistantMessages)
+    Agent__Tasks.update(tasks, taskWithNewMessages)
 
     // Check finish reason to decide whether to continue
     let finishReason = await result->Adapter.getFinishReason
     Console.log2("=== Finish reason:", finishReason)
     Console.log2(
       "Current message history length:",
-      taskWithAssistantMessages->Agent__Task.getHistory->Array.length,
+      taskWithNewMessages->Agent__Task.getHistory->Array.length,
     )
 
     if finishReason == "tool-calls" {
@@ -70,19 +66,19 @@ let run = async (
 
       // Continue the loop with current task (tool results should already be in response.messages)
       Console.log("=== Continuing loop")
-      await loop(taskWithAssistantMessages)
+      await loop(taskWithNewMessages)
     } else {
       // No more tool calls - task is complete
       Console.log2("=== No tool calls, completing task. Finish reason was:", finishReason)
 
-      // Assistant messages have already been added above
+      // All messages have already been added above
       // Get the last message (should be the final assistant message)
-      let history = taskWithAssistantMessages->Agent__Task.getHistory
+      let history = taskWithNewMessages->Agent__Task.getHistory
       let lastMessage = history->Array.at(-1)
 
       // Transition task to complete
       let _ = Agent__Task.transition(
-        taskWithAssistantMessages,
+        taskWithNewMessages,
         Complete(lastMessage),
       )->Result.map(completedTask => {
         Agent__Tasks.update(tasks, completedTask)
