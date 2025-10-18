@@ -21,7 +21,6 @@ let run = async (
     }
   | Error(_) => task
   }
-  %debugger
 
   // Start the agent loop
   let rec loop = async (currentTask: Agent__Task.t) => {
@@ -57,7 +56,7 @@ let run = async (
       taskWithNewMessages->Agent__Task.getHistory->Array.length,
     )
 
-    if finishReason == "tool-calls" {
+    if finishReason == ToolCalls {
       // Debug: Let's see what messages Vercel returns
       Console.log("=== DEBUG: All response.messages after tool-calls finish reason")
       response.messages->Array.forEachWithIndex((msg, idx) => {

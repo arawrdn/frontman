@@ -95,12 +95,22 @@ module AsyncIterableStream = {
   @send external read: defaultReader<'a> => Js.Promise.t<readResult<'a>> = "read"
   @send external releaseLock: defaultReader<'a> => unit = "releaseLock"
 }
+// Finish reason type from LanguageModelV3FinishReason
+type finishReason =
+  | @as("stop") Stop // model generated stop sequence
+  | @as("length") Length // model generated maximum number of tokens
+  | @as("content-filter") ContentFilter // content filter violation stopped the model
+  | @as("tool-calls") ToolCalls // model triggered tool calls
+  | @as("error") Error // model stopped because of an error
+  | @as("other") Other // model stopped for other reasons
+  | @as("unknown") Unknown // the model has not transmitted a finish reason
+
 // Stream event types
 type streamPart =
   | @as("text-delta") TextDelta({textDelta: string})
   | @as("tool-call") ToolCall({toolCallId: string, toolName: string, args: JSON.t})
   | @as("tool-result") ToolResult({toolCallId: string, toolName: string, result: JSON.t})
-  | @as("finish-step") FinishStep({finishReason: string, usage: usage})
+  | @as("finish-step") FinishStep({finishReason: finishReason, usage: usage})
   | @as("finish") Finish
 
 // // Get iterator from iterable using Symbol.asyncIterator
@@ -139,7 +149,7 @@ external fullStream: streamTextResult => AsyncIterableStream.t<streamPart> = "fu
 
 // Get finishReason
 @get
-external finishReason: streamTextResult => promise<string> = "finishReason"
+external finishReason: streamTextResult => promise<finishReason> = "finishReason"
 
 // Get text from result
 @get

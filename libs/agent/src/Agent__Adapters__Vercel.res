@@ -38,7 +38,6 @@ let toVercelTools = (registry: Agent__Tools__Registry.t): Dict.t<
         parameters: aiSchemaWrapped,
         inputSchema: aiSchemaWrapped,
         execute: async argsJson => {
-          %debugger
           let input = argsJson->S.parseJsonOrThrow(inputSchema)
           let result = await execute(input)
           switch result {
