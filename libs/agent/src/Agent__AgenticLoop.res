@@ -26,7 +26,7 @@ let run = async (
   let rec loop = async (currentTask: Agent__Task.t) => {
     let history = currentTask->Agent__Task.getHistory
     Console.log(`=== Loop iteration starting with ${history->Array.length->Int.toString} messages`)
-    let result = await Adapter.streamTextWithVercelMessages(llm, history)
+    let result = await Adapter.streamText(llm, history)
     let stream = result->Adapter.getFullStream
     await Adapter.processAsyncIterable(stream, async event => {
       switch event {

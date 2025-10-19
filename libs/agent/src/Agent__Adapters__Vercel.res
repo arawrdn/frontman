@@ -145,7 +145,6 @@ let messageToVercel = (msg: Agent__Task__Message.t): Agent__Bindings__VercelAI.m
   }
 }
 
-
 let messagesToVercel = (messages: array<Agent__Task__Message.t>): array<vercelMessage> => {
   messages->Array.map(messageToVercel)
 }
@@ -248,10 +247,7 @@ let processAsyncIterable = (iterable, handler) => {
 // ============ Stream Text ============
 
 // Stream text with Vercel messages directly (for manual loop control)
-let streamTextWithVercelMessages = async (
-  llm: t,
-  messages: array<Agent__Task__Message.t>,
-): streamResult => {
+let streamText = async (llm: t, messages: array<Agent__Task__Message.t>): streamResult => {
   let messages = messagesToVercel(messages)
   await Agent__Bindings__VercelAI.streamText({
     model: llm.model,
