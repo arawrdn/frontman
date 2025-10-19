@@ -26,7 +26,7 @@ let toVercelTools = (registry: Agent__Tools__Registry.t): Dict.t<
 
   registry->Array.forEach(tool => {
     switch tool {
-    | Agent__Tools__Registry.Tool({name, description, inputSchema, execute}) =>
+    | Agent__Tools__Registry.Tool({name, description, inputSchema}) =>
       // Convert Sury schema to JSON Schema
       let jsonSchemaObj = inputSchema->S.toJSONSchema
 
@@ -37,17 +37,6 @@ let toVercelTools = (registry: Agent__Tools__Registry.t): Dict.t<
         description,
         parameters: aiSchemaWrapped,
         inputSchema: aiSchemaWrapped,
-        execute: async argsJson => {
-          let input = argsJson->S.parseJsonOrThrow(inputSchema)
-          let result = await execute(input)
-          switch result {
-          | Ok(output) => JSON.Encode.string(output)
-          | Error(err) => {
-              Console.error2(`Tool ${name} error:`, err)
-              JSON.Encode.string(`Error: ${err}`)
-            }
-          }
-        },
       }
 
       vercelTools->Dict.set(name, toolDef)
@@ -194,28 +183,6 @@ let makeLLM = (
 ): t => {
   let tools = toVercelTools(toolRegistry)
   {model, tools}
-}
-
-// ============ Tool Execution ============
-
-let executeTool = async (llm: t, ~toolName: string, ~args: JSON.t): result<string, string> => {
-  switch llm.tools->Dict.get(toolName) {
-  | Some(toolDef) =>
-    try {
-      let result = await toolDef.execute(args)
-      Ok(result->JSON.stringify)
-    } catch {
-    | exn => {
-        let message =
-          exn
-          ->JsExn.fromException
-          ->Option.flatMap(JsExn.message)
-          ->Option.getOr("Unknown error")
-        Error(`Tool execution failed: ${message}`)
-      }
-    }
-  | None => Error(`Tool ${toolName} not found in registry`)
-  }
 }
 
 // ============ Stream Result Accessors ============

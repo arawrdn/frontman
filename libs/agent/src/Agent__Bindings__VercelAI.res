@@ -128,7 +128,7 @@ type toolDef = {
   description?: string,
   parameters: aiSchema,
   inputSchema: aiSchema,
-  execute: JSON.t => promise<JSON.t>,
+  execute?: JSON.t => promise<JSON.t>,
 }
 
 // Stream text parameters
