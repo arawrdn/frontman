@@ -1,4 +1,5 @@
-type t = Id(string)
+@schema
+type t = @as("id") Id(string)
 
 let make = (): t => {
   let uuid = %raw(`crypto.randomUUID()`)

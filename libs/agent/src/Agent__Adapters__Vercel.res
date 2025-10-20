@@ -64,6 +64,7 @@ let messageToVercel = (msg: Agent__Task__Message.t): Agent__Bindings__VercelAI.m
   | Agent => Agent__Bindings__VercelAI.Assistant
   | System => Agent__Bindings__VercelAI.System
   | Tool => Agent__Bindings__VercelAI.Tool
+  | Assistant => Agent__Bindings__VercelAI.Assistant
   }
 
   let parts = msg->Agent__Task__Message.getParts

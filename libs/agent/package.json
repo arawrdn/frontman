@@ -10,6 +10,7 @@
 		"dotenv": "catalog:",
 		"react": "^19.2.0",
 		"sury": "catalog:",
+		"sury-ppx": "^11.0.0-alpha.2",
 		"zod": "^4.1.12"
 	},
 	"devDependencies": {

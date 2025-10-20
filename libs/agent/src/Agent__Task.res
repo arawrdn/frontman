@@ -3,6 +3,7 @@ module Status = Agent__Task__Status
 module Part = Agent__Task__Message__Part
 
 // Domain-specific ID type alias
+@schema
 type taskId = Agent__Task__Id.t
 type history = array<Agent__Task__Message.t>
 type t = {

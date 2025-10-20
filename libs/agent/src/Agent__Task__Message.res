@@ -1,7 +1,14 @@
 // Message - opaque type with safe construction
 
 module Part = Agent__Task__Message__Part
-type role = User | Agent | System | Tool
+@schema
+type role =
+  | @as("user") User
+  | @as("agent") Agent
+  | @as("assistant") Assistant
+  | @as("system") System
+  | @as("tool") Tool
+@schema
 type t = {
   role: role,
   parts: array<Part.t>,

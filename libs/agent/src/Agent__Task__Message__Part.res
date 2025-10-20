@@ -1,13 +1,10 @@
+S.enableJson()
 // Part types - opaque construction for type safety
 
 // ============ TextPart ============
 
-module TextPart: {
-  type t
-  let make: (~text: string, ~metadata: option<Dict.t<JSON.t>>=?) => t
-  let getText: t => string
-  let getMetadata: t => option<Dict.t<JSON.t>>
-} = {
+module TextPart = {
+  @schema
   type t = {
     text: string,
     metadata: option<Dict.t<JSON.t>>,
@@ -23,13 +20,8 @@ module TextPart: {
 
 // ============ FilePart ============
 
-module File: {
-  type t
-  let make: (~name: option<string>=?, ~mimeType: string, ~bytes: string) => t
-  let getName: t => option<string>
-  let getMimeType: t => string
-  let getBytes: t => string
-} = {
+module File = {
+  @schema
   type t = {
     name: option<string>,
     mimeType: string,
@@ -45,12 +37,8 @@ module File: {
   let getBytes = (file: t): string => file.bytes
 }
 
-module FilePart: {
-  type t
-  let make: (~file: File.t, ~metadata: option<Dict.t<JSON.t>>=?) => t
-  let getFile: t => File.t
-  let getMetadata: t => option<Dict.t<JSON.t>>
-} = {
+module FilePart = {
+  @schema
   type t = {
     file: File.t,
     metadata: option<Dict.t<JSON.t>>,
@@ -66,12 +54,8 @@ module FilePart: {
 
 // ============ DataPart ============
 
-module DataPart: {
-  type t
-  let make: (~data: JSON.t, ~metadata: option<Dict.t<JSON.t>>=?) => t
-  let getData: t => JSON.t
-  let getMetadata: t => option<Dict.t<JSON.t>>
-} = {
+module DataPart = {
+  @schema
   type t = {
     data: JSON.t,
     metadata: option<Dict.t<JSON.t>>,
@@ -87,19 +71,8 @@ module DataPart: {
 
 // ============ ToolUsePart ============
 
-module ToolUsePart: {
-  type t
-  let make: (
-    ~toolCallId: string,
-    ~toolName: string,
-    ~args: JSON.t,
-    ~metadata: option<Dict.t<JSON.t>>=?,
-  ) => t
-  let getToolCallId: t => string
-  let getToolName: t => string
-  let getArgs: t => JSON.t
-  let getMetadata: t => option<Dict.t<JSON.t>>
-} = {
+module ToolUsePart = {
+  @schema
   type t = {
     toolCallId: string,
     toolName: string,
@@ -119,19 +92,8 @@ module ToolUsePart: {
 
 // ============ ToolResultPart ============
 
-module ToolResultPart: {
-  type t
-  let make: (
-    ~toolCallId: string,
-    ~toolName: string,
-    ~result: JSON.t,
-    ~metadata: option<Dict.t<JSON.t>>=?,
-  ) => t
-  let getToolCallId: t => string
-  let getToolName: t => string
-  let getResult: t => JSON.t
-  let getMetadata: t => option<Dict.t<JSON.t>>
-} = {
+module ToolResultPart = {
+  @schema
   type t = {
     toolCallId: string,
     toolName: string,
@@ -151,12 +113,13 @@ module ToolResultPart: {
 
 // ============ Part Union ============
 
+@schema 
 type t =
-  | Text(TextPart.t)
-  | File(FilePart.t)
-  | Data(DataPart.t)
-  | ToolUse(ToolUsePart.t)
-  | ToolResult(ToolResultPart.t)
+  | @as("text") Text(TextPart.t)
+  | @as("file") File(FilePart.t)
+  | @as("data") Data(DataPart.t)
+  | @as("toolUse") ToolUse(ToolUsePart.t)
+  | @as("toolResult") ToolResult(ToolResultPart.t)
 
 // Convenience constructors
 let text = (~text, ~metadata=None) => Text(TextPart.make(~text, ~metadata))

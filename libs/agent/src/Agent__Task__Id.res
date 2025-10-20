@@ -1,4 +1,5 @@
 // Task ID - domain-specific identifier
+@schema
 type t = Agent__Id.t
 
 let make = Agent__Id.make

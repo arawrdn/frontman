@@ -18,6 +18,7 @@
 			"suffix": ".res.mjs"
 		}
 	],
+	"ppx-flags": ["sury-ppx/bin"],
 	"dependencies": [
 		"@ask-the-llm/bindings",
 		"sury",

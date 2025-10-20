@@ -44,9 +44,11 @@ let run = async (
     // Convert ALL messages (assistant + tool) to domain format and add to task
     let taskWithNewMessages = response.messages->Array.reduce(currentTask, (task, vercelMsg) => {
       let domainMessage = Adapter.messageFromVercel(vercelMsg, ~taskId=Some(task.id))
-      Agent__Task.addMessage(task, domainMessage)->Result.getOr(task)
+      let task = Agent__Task.addMessage(task, domainMessage)->Result.getOr(task)
+      Agent__Tasks.update(tasks, task)
+      Agent__EventBus.emit(eventBus, TaskMessageAdded({task, message: domainMessage}))
+      task
     })
-    Agent__Tasks.update(tasks, taskWithNewMessages)
 
     // Check finish reason to decide whether to continue
     let finishReason = await result->Adapter.getFinishReason

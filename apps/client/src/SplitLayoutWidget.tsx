@@ -1,8 +1,10 @@
 import type React from "react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import ChatPanel from "./components/ChatPanel";
 import ContentPanel from "./components/ContentPanel";
 import type { SelectElement } from "./types/SelectElement";
+import { useSSE } from "./hooks/useSSE"
+import { Message, normalizeId, normalizePart } from "./types/Message";
 
 // Types for compatibility with ChatPanel
 export interface ChangeProposal {
@@ -76,30 +78,98 @@ const SplitLayoutWidget: React.FC = () => {
 		setIframeUrl(originUrl);
 	}, []);
 
-	// SSE connection hook
-	useEffect(() => {
-		console.log("[SSE] Connecting to /api/ask-the-llm/chat-sse...");
-		const eventSource = new EventSource("/api/ask-the-llm/chat-sse");
+	const handleSSEMessage = useCallback((msg: Message) => {
+		console.log("[SSE] Message received:", msg);
 
-		eventSource.onopen = () => {
-			console.log("[SSE] Connection opened");
-		};
+		// Normalize the message ID from ReScript format
+		const messageId = normalizeId(msg.messageId);
 
-		eventSource.onmessage = (event) => {
-			console.log("[SSE] Message received:", event.data);
-		};
+		setMessages((prev) => {
+			// Check if we already have a message with this ID
+			const existingIndex = prev.findIndex((m) => m.id === messageId);
 
-		eventSource.onerror = (error) => {
-			console.error("[SSE] Error occurred:", error);
-			eventSource.close();
-		};
+			// Safety check for parts array
+			if (!msg.parts || !Array.isArray(msg.parts)) {
+				console.warn("[SSE] Message has no parts array:", msg);
+				return prev;
+			}
 
-		// Cleanup on unmount
-		return () => {
-			console.log("[SSE] Closing connection");
-			eventSource.close();
-		};
-	}, []);
+			// Normalize all parts from ReScript TAG/_0 format
+			const normalizedParts = msg.parts.map(normalizePart);
+
+			// Build content from text parts
+			let content = "";
+			const textParts = normalizedParts.filter((p) => p.type === "text");
+
+			// Filter out thinking content (metadata.isThinking === true)
+			const nonThinkingParts = textParts.filter(
+				(p) => !p.metadata?.isThinking
+			);
+
+			// Use non-thinking parts if available, otherwise use all text
+			const partsToUse = nonThinkingParts.length > 0 ? nonThinkingParts : textParts;
+
+			for (const part of partsToUse) {
+				if (part.type === "text") {
+					content += part.text;
+				}
+			}
+
+			// Extract tool calls from parts
+			const toolCalls: ToolCall[] = [];
+			for (const part of normalizedParts) {
+				if (part.type === "toolUse") {
+					toolCalls.push({
+						tool: part.toolName,
+						parameters: part.args as Record<string, unknown>,
+						status: "executing",
+					});
+				} else if (part.type === "toolResult") {
+					// Find matching tool call and update it
+					const toolIndex = toolCalls.findIndex(
+						(tc) => tc.tool === part.toolName
+					);
+					if (toolIndex >= 0) {
+						toolCalls[toolIndex] = {
+							...toolCalls[toolIndex],
+							status: "completed",
+							result: typeof part.result === "string"
+								? part.result
+								: JSON.stringify(part.result),
+						};
+					}
+				}
+			}
+
+			if (existingIndex >= 0) {
+				// Update existing message
+				return prev.map((m, idx) => {
+					if (idx !== existingIndex) return m;
+
+					return {
+						...m,
+						content,
+						toolCalls: toolCalls.length > 0 ? toolCalls : m.toolCalls,
+						status: "completed" as const,
+						statusMessage: undefined,
+					};
+				});
+			} else {
+				// Create new message
+				const newMessage: ChatMessage = {
+					id: messageId,
+					content,
+					sender: msg.role === "user" ? "user" : "assistant",
+					status: "completed",
+					toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+				};
+
+				return [...prev, newMessage];
+			}
+		});
+	}, []); // Empty deps - setMessages is stable
+
+	useSSE(handleSSEMessage)
 
 	const handleSendMessage = async () => {
 		if (!message.trim() || isLoading) return;
@@ -112,367 +182,80 @@ const SplitLayoutWidget: React.FC = () => {
 			status: "completed",
 		};
 
-		// Add assistant loading message
-		const assistantMessage: ChatMessage = {
-			id: (Date.now() + 1).toString(),
-			content: "",
-			sender: "assistant",
-			status: "sending",
-			statusMessage: "Thinking...",
-			toolCalls: [],
-		};
-
-		setMessages((prev) => [...prev, userMessage, assistantMessage]);
+		setMessages((prev) => [...prev, userMessage]);
 		setMessage("");
 		setIsLoading(true);
 
-		try {
-			// Prepare the API request
-			const chatRequest: ChatRequest = {
-				message: message,
-			};
+		// Prepare the API request
+		const chatRequest: ChatRequest = {
+			message: message,
+		};
 
-			// Add selected element if available
-			console.log("[Client] Selected element:", selectedElement);
+		// Add selected element if available
+		console.log("[Client] Selected element:", selectedElement);
 
-			if (selectedElement) {
-				chatRequest.selectedElement = {};
+		if (selectedElement) {
+			chatRequest.selectedElement = {};
 
-				// Add source location if available and resolved
-				if (
-					selectedElement.reactComponent?.sourceLocation?.status === "resolved"
-				) {
-					console.log(
-						"[Client] Adding source location to request:",
-						selectedElement.reactComponent.sourceLocation,
-					);
-					chatRequest.selectedElement.sourceLocation = {
-						file: selectedElement.reactComponent.sourceLocation.file,
-						line: selectedElement.reactComponent.sourceLocation.line,
-					};
-				}
-
-				// Always add selector as fallback
-				if (selectedElement.selector) {
-					chatRequest.selectedElement.selector = selectedElement.selector;
-				}
-
-				// Add component name if available
-				if (selectedElement.reactComponent?.name) {
-					chatRequest.selectedElement.componentName =
-						selectedElement.reactComponent.name;
-				}
-
-				console.log("[Client] Selected element debug info:", {
-					hasReactComponent: !!selectedElement.reactComponent,
-					sourceLocationStatus:
-						selectedElement.reactComponent?.sourceLocation?.status,
-					sourceLocation: selectedElement.reactComponent?.sourceLocation,
-					selector: selectedElement.selector,
-					componentName: selectedElement.reactComponent?.name,
-				});
+			// Add source location if available and resolved
+			if (
+				selectedElement.reactComponent?.sourceLocation?.status === "resolved"
+			) {
+				console.log(
+					"[Client] Adding source location to request:",
+					selectedElement.reactComponent.sourceLocation,
+				);
+				chatRequest.selectedElement.sourceLocation = {
+					file: selectedElement.reactComponent.sourceLocation.file,
+					line: selectedElement.reactComponent.sourceLocation.line,
+				};
 			}
 
-			console.log("[Client] Final chat request:", chatRequest);
+			// Always add selector as fallback
+			if (selectedElement.selector) {
+				chatRequest.selectedElement.selector = selectedElement.selector;
+			}
 
-			// Make streaming API call
-			const response = await fetch("/api/ask-the-llm/chat", {
-				method: "POST",
-				headers: {
-					"Content-Type": "application/json",
-					Accept: "text/event-stream",
-				},
-				body: JSON.stringify(chatRequest),
+			// Add component name if available
+			if (selectedElement.reactComponent?.name) {
+				chatRequest.selectedElement.componentName =
+					selectedElement.reactComponent.name;
+			}
+
+			console.log("[Client] Selected element debug info:", {
+				hasReactComponent: !!selectedElement.reactComponent,
+				sourceLocationStatus:
+					selectedElement.reactComponent?.sourceLocation?.status,
+				sourceLocation: selectedElement.reactComponent?.sourceLocation,
+				selector: selectedElement.selector,
+				componentName: selectedElement.reactComponent?.name,
 			});
-
-			console.log(
-				"[Client] Response headers:",
-				Object.fromEntries(response.headers.entries()),
-			);
-			console.log(
-				"[Client] Response content-type:",
-				response.headers.get("content-type"),
-			);
-
-			if (!response.ok) {
-				throw new Error(`HTTP ${response.status}`);
-			}
-
-			console.log("[Client] Processing streaming response...");
-
-			// Handle streaming response
-			const reader = response.body?.getReader();
-			const decoder = new TextDecoder();
-
-			if (!reader) {
-				throw new Error("No response body");
-			}
-
-			let buffer = "";
-
-			while (true) {
-				const { done, value } = await reader.read();
-
-				if (done) break;
-
-				buffer += decoder.decode(value, { stream: true });
-				const lines = buffer.split("\n");
-				buffer = lines.pop() || "";
-
-				for (const line of lines) {
-					if (line.startsWith("data: ")) {
-						try {
-							const data = JSON.parse(line.slice(6));
-							console.log("[Client] Stream event:", data);
-
-							switch (data.type) {
-								case "reasoning_chunk":
-									// Append reasoning content to assistant message
-									setMessages((prev) =>
-										prev.map((m) =>
-											m.id === assistantMessage.id
-												? {
-														...m,
-														content: (m.content || "") + data.content,
-														statusMessage: "Thinking...",
-													}
-												: m,
-										),
-									);
-									break;
-
-								case "status":
-									// Update assistant message with status
-									setMessages((prev) =>
-										prev.map((m) =>
-											m.id === assistantMessage.id
-												? { ...m, statusMessage: data.message }
-												: m,
-										),
-									);
-									break;
-
-								case "strategy":
-									// Display the task strategy to the user
-									setMessages((prev) =>
-										prev.map((m) =>
-											m.id === assistantMessage.id
-												? {
-														...m,
-														content: data.message,
-														statusMessage: "Strategy planned",
-													}
-												: m,
-										),
-									);
-									break;
-
-								case "tool_start":
-									setMessages((prev) =>
-										prev.map((m) => {
-											if (m.id !== assistantMessage.id) return m;
-
-											// APPEND new tools to existing toolCalls, don't replace
-											const existingToolCalls = m.toolCalls || [];
-											const newTools = data.tools.map(
-												(t: {
-													name: string;
-													parameters: Record<string, unknown>;
-												}) => ({
-													tool: t.name,
-													parameters: t.parameters,
-													status: "executing" as const,
-												}),
-											);
-
-											return {
-												...m,
-												statusMessage: data.message,
-												toolCalls: [...existingToolCalls, ...newTools],
-											};
-										}),
-									);
-									break;
-
-								case "tool_executing": {
-									setMessages((prev) =>
-										prev.map((m) => {
-											if (m.id !== assistantMessage.id) return m;
-
-											const updatedToolCalls = [...(m.toolCalls || [])];
-											const existingIndex = updatedToolCalls.findIndex(
-												(tc) => tc.tool === data.tool,
-											);
-
-											if (existingIndex >= 0) {
-												updatedToolCalls[existingIndex] = {
-													...updatedToolCalls[existingIndex],
-													status: "executing" as const,
-												};
-											} else {
-												updatedToolCalls.push({
-													tool: data.tool,
-													parameters: data.parameters,
-													status: "executing" as const,
-												});
-											}
-
-											return {
-												...m,
-												toolCalls: updatedToolCalls,
-												statusMessage: "Executing tools...",
-											};
-										}),
-									);
-									break;
-								}
-
-								case "tool_completed": {
-									console.log("[DEBUG] tool_completed event received:", {
-										tool: data.tool,
-										resultLength: data.result?.length,
-										resultPreview: data.result?.substring(0, 100),
-									});
-
-									setMessages((prev) =>
-										prev.map((m) => {
-											if (m.id !== assistantMessage.id) return m;
-
-											const updatedToolCalls = [...(m.toolCalls || [])];
-											console.log(
-												"[DEBUG] Current toolCalls:",
-												updatedToolCalls.map((tc) => ({
-													tool: tc.tool,
-													status: tc.status,
-												})),
-											);
-
-											const toolIndex = updatedToolCalls.findIndex(
-												(tc) => tc.tool === data.tool,
-											);
-											console.log(
-												"[DEBUG] Found toolIndex:",
-												toolIndex,
-												"for tool:",
-												data.tool,
-											);
-
-											if (toolIndex >= 0) {
-												updatedToolCalls[toolIndex] = {
-													...updatedToolCalls[toolIndex],
-													status: "completed" as const,
-													result: data.result,
-													executionTime: data.executionTime,
-												};
-
-												// NEW: Parse propose_change results
-												if (data.tool === "propose_change") {
-													console.log(
-														"[DEBUG] Attempting to parse propose_change result...",
-													);
-													try {
-														const proposal: ChangeProposal = JSON.parse(
-															data.result,
-														);
-														console.log(
-															"[DEBUG] Successfully parsed proposal:",
-															{
-																filePath: proposal.filePath,
-																changeType: proposal.changeType,
-																hasDiff: !!proposal.diff,
-																diffLength: proposal.diff?.length,
-																diffPreview: proposal.diff?.substring(0, 100),
-															},
-														);
-														updatedToolCalls[toolIndex].proposalState = {
-															proposal,
-															status: "pending",
-														};
-														console.log(
-															"[DEBUG] proposalState set successfully",
-														);
-													} catch (e) {
-														console.error(
-															"[DEBUG] Failed to parse proposal:",
-															e,
-														);
-														console.error(
-															"[DEBUG] Raw result was:",
-															data.result,
-														);
-													}
-												}
-											} else {
-												console.warn(
-													"[DEBUG] toolIndex not found! data.tool =",
-													data.tool,
-													"available tools:",
-													updatedToolCalls.map((tc) => tc.tool),
-												);
-											}
-
-											return {
-												...m,
-												toolCalls: updatedToolCalls,
-												statusMessage: "Processing...",
-											};
-										}),
-									);
-									break;
-								}
-
-								case "final_response": {
-									// Update with final response
-									setMessages((prev) =>
-										prev.map((m) =>
-											m.id === assistantMessage.id
-												? {
-														...m,
-														content: data.response,
-														status: "completed" as const,
-														statusMessage: undefined,
-													}
-												: m,
-										),
-									);
-									break;
-								}
-
-								case "complete":
-									console.log("[Client] Stream completed");
-									break;
-
-								case "error":
-									throw new Error(data.error);
-							}
-						} catch (parseError) {
-							console.error(
-								"[Client] Failed to parse stream data:",
-								parseError,
-							);
-						}
-					}
-				}
-			}
-		} catch (error) {
-			console.error("Chat API error:", error);
-
-			// Update the assistant message with error
-			setMessages((prev) =>
-				prev.map((m) =>
-					m.id === assistantMessage.id
-						? {
-								...m,
-								content: `Error: ${error instanceof Error ? error.message : "Unknown error occurred"}`,
-								status: "error" as const,
-								statusMessage: undefined,
-							}
-						: m,
-				),
-			);
-		} finally {
-			setIsLoading(false);
 		}
+
+		// Make streaming API call
+		const response = await fetch("/api/ask-the-llm/chat", {
+			method: "POST",
+			headers: {
+				"Content-Type": "application/json",
+				Accept: "text/event-stream",
+			},
+			body: JSON.stringify(chatRequest),
+		});
+
+		console.log(
+			"[Client] Response headers:",
+			Object.fromEntries(response.headers.entries()),
+		);
+		console.log(
+			"[Client] Response content-type:",
+			response.headers.get("content-type"),
+		);
+
+		if (!response.ok) {
+			throw new Error(`HTTP ${response.status}`);
+		}
+
+		console.log("[Client] Processing streaming response...");
 	};
 
 	const handleElementSelected = (element: SelectElement) => {
@@ -497,19 +280,19 @@ const SplitLayoutWidget: React.FC = () => {
 			prev.map((m) =>
 				m.id === messageId
 					? {
-							...m,
-							toolCalls: m.toolCalls?.map((tc, idx) =>
-								idx === toolIndex && tc.proposalState
-									? {
-											...tc,
-											proposalState: {
-												...tc.proposalState,
-												status: "applying" as const,
-											},
-										}
-									: tc,
-							),
-						}
+						...m,
+						toolCalls: m.toolCalls?.map((tc, idx) =>
+							idx === toolIndex && tc.proposalState
+								? {
+									...tc,
+									proposalState: {
+										...tc.proposalState,
+										status: "applying" as const,
+									},
+								}
+								: tc,
+						),
+					}
 					: m,
 			),
 		);
@@ -534,19 +317,19 @@ const SplitLayoutWidget: React.FC = () => {
 					prev.map((m) =>
 						m.id === messageId
 							? {
-									...m,
-									toolCalls: m.toolCalls?.map((tc, idx) =>
-										idx === toolIndex && tc.proposalState
-											? {
-													...tc,
-													proposalState: {
-														...tc.proposalState,
-														status: "accepted" as const,
-													},
-												}
-											: tc,
-									),
-								}
+								...m,
+								toolCalls: m.toolCalls?.map((tc, idx) =>
+									idx === toolIndex && tc.proposalState
+										? {
+											...tc,
+											proposalState: {
+												...tc.proposalState,
+												status: "accepted" as const,
+											},
+										}
+										: tc,
+								),
+							}
 							: m,
 					),
 				);
@@ -559,23 +342,23 @@ const SplitLayoutWidget: React.FC = () => {
 				prev.map((m) =>
 					m.id === messageId
 						? {
-								...m,
-								toolCalls: m.toolCalls?.map((tc, idx) =>
-									idx === toolIndex && tc.proposalState
-										? {
-												...tc,
-												proposalState: {
-													...tc.proposalState,
-													status: "error" as const,
-													errorMessage:
-														error instanceof Error
-															? error.message
-															: "Unknown error",
-												},
-											}
-										: tc,
-								),
-							}
+							...m,
+							toolCalls: m.toolCalls?.map((tc, idx) =>
+								idx === toolIndex && tc.proposalState
+									? {
+										...tc,
+										proposalState: {
+											...tc.proposalState,
+											status: "error" as const,
+											errorMessage:
+												error instanceof Error
+													? error.message
+													: "Unknown error",
+										},
+									}
+									: tc,
+							),
+						}
 						: m,
 				),
 			);
@@ -587,19 +370,19 @@ const SplitLayoutWidget: React.FC = () => {
 			prev.map((m) =>
 				m.id === messageId
 					? {
-							...m,
-							toolCalls: m.toolCalls?.map((tc, idx) =>
-								idx === toolIndex && tc.proposalState
-									? {
-											...tc,
-											proposalState: {
-												...tc.proposalState,
-												status: "rejected" as const,
-											},
-										}
-									: tc,
-							),
-						}
+						...m,
+						toolCalls: m.toolCalls?.map((tc, idx) =>
+							idx === toolIndex && tc.proposalState
+								? {
+									...tc,
+									proposalState: {
+										...tc.proposalState,
+										status: "rejected" as const,
+									},
+								}
+								: tc,
+						),
+					}
 					: m,
 			),
 		);

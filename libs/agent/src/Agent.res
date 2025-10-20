@@ -1,3 +1,4 @@
+S.enableJson()
 // Main Agent module - entry point
 
 // Load environment variables from .env file

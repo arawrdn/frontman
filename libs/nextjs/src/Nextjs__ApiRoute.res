@@ -45,6 +45,8 @@ let getOrCreateAgent = () => {
   }
 }
 
+let agent = getOrCreateAgent()
+
 // Handler for /api/ask-the-llm (serves the UI)
 let createUIHandler = (isDev: bool): apiHandler => {
   async (_req, res) => {
@@ -117,13 +119,16 @@ let createStreamHandler = (): apiHandler => {
     let _ = res->ApiResponse.setHeader("Cache-Control", "no-cache, no-transform")
     let _ = res->ApiResponse.setHeader("Connection", "keep-alive")
 
-    let send = (msg: string) => res->ApiResponse.write(`data: ${msg}\n\n`)
+    let send = (msg) => {
+      let data = msg->S.reverseConvertToJsonStringOrThrow(Agent.TaskMessage.schema)
+      res->ApiResponse.write(`data: ${data}\n\n`)
+    }
 
-    let agent = agentInstance.contents->Option.getOrThrow
     let unsubsribe = agent.eventBus->Agent.EventBus.on(event => {
       switch event {
       | TaskMessageAdded({task: _task, message}) =>
-        send(message.messageId->AskTheLlmAgent.Agent__Id.toString)
+        Console.log("taskMessageAdded")
+        send(message)
       | _ => Console.log("other event")
       }
     })
@@ -132,5 +137,7 @@ let createStreamHandler = (): apiHandler => {
       unsubsribe()
       res->ApiResponse.end("")
     })
+
+    res->ApiResponse.write(`data: ${Js.Json.stringify(Js.Json.object_(Js.Dict.fromArray([("type", Js.Json.string("connected"))])))}\n\n`)
   }
 }
