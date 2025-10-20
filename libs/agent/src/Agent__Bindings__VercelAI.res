@@ -1,6 +1,16 @@
-// Core types for Vercel AI SDK
+// Bindings for Vercel AI SDK
+// https://sdk.vercel.ai/docs
+
+// Enable JSON support in Sury
+S.enableJson()
+
+// ============================================================================
+// Core Types
+// ============================================================================
+
 type languageModel
 type streamTextResult
+type aiSchema
 
 type role =
   | @as("user") User
@@ -8,18 +18,102 @@ type role =
   | @as("system") System
   | @as("tool") Tool
 
-// Enable JSON support in Sury
-S.enableJson()
+type usage = {
+  promptTokens: int,
+  completionTokens: int,
+  totalTokens: int,
+}
 
-// Content part types from Vercel AI SDK
-// We use Sury to parse these based on the "type" field
-// Put in a module to avoid naming collision with streamPart
+type finishReason =
+  | @as("stop") Stop
+  | @as("length") Length
+  | @as("content-filter") ContentFilter
+  | @as("tool-calls") ToolCalls
+  | @as("error") Error
+  | @as("other") Other
+  | @as("unknown") Unknown
 
+// ============================================================================
+// Message Parts
+// ============================================================================
+
+// Image/File data - opaque types that accept string | Uint8Array | ArrayBuffer
+type imageData
+type fileData
+
+module ImageData = {
+  external fromString: string => imageData = "%identity"
+  external fromUint8Array: Js.TypedArray2.Uint8Array.t => imageData = "%identity"
+  external fromArrayBuffer: Js.TypedArray2.ArrayBuffer.t => imageData = "%identity"
+}
+
+module FileData = {
+  external fromString: string => fileData = "%identity"
+  external fromUint8Array: Js.TypedArray2.Uint8Array.t => fileData = "%identity"
+  external fromArrayBuffer: Js.TypedArray2.ArrayBuffer.t => fileData = "%identity"
+}
+
+module UserPart = {
+  @tag("type")
+  type t =
+    | @as("text") Text({text: string})
+    | @as("image") Image({image: imageData, mediaType?: string})
+    | @as("file") File({data: fileData, filename?: string, mediaType: string})
+
+  let text = (text: string): t => Text({text: text})
+
+  let imageFromString = (~url: string, ~mediaType=?, ()): t => Image({
+    image: ImageData.fromString(url),
+    ?mediaType,
+  })
+
+  let imageFromUint8Array = (~data: Js.TypedArray2.Uint8Array.t, ~mediaType=?, ()): t => Image({
+    image: ImageData.fromUint8Array(data),
+    ?mediaType,
+  })
+
+  let imageFromArrayBuffer = (~data: Js.TypedArray2.ArrayBuffer.t, ~mediaType=?, ()): t => Image({
+    image: ImageData.fromArrayBuffer(data),
+    ?mediaType,
+  })
+
+  let fileFromString = (~url: string, ~mediaType, ~filename=?, ()): t => File({
+    data: FileData.fromString(url),
+    mediaType,
+    ?filename,
+  })
+
+  let fileFromUint8Array = (
+    ~data: Js.TypedArray2.Uint8Array.t,
+    ~mediaType,
+    ~filename=?,
+    (),
+  ): t => File({data: FileData.fromUint8Array(data), mediaType, ?filename})
+
+  let fileFromArrayBuffer = (
+    ~data: Js.TypedArray2.ArrayBuffer.t,
+    ~mediaType,
+    ~filename=?,
+    (),
+  ): t => File({data: FileData.fromArrayBuffer(data), mediaType, ?filename})
+}
+
+module AssistantPart = {
+  @tag("type")
+  type t =
+    | @as("text") Text({text: string})
+    | @as("tool-call") ToolCall({toolCallId: string, toolName: string, args: JSON.t})
+
+  let text = (text: string): t => Text({text: text})
+
+  let toolCall = (~toolCallId, ~toolName, ~args): t => ToolCall({toolCallId, toolName, args})
+}
+
+// Content part types used for parsing responses from Vercel
 module ContentPart = {
   type t =
     | Text({text: string})
     | ToolCall({toolCallId: string, toolName: string, args: JSON.t})
-    | ToolResult({toolCallId: string, toolName: string, output: JSON.t})
 
   let schema = S.union([
     S.object(s => {
@@ -34,19 +128,44 @@ module ContentPart = {
         args: s.field("input", S.json),
       })
     }),
-    S.object(s => {
-      s.tag("type", "tool-result")
-      ToolResult({
-        toolCallId: s.field("toolCallId", S.string),
-        toolName: s.field("toolName", S.string),
-        output: s.field("output", S.json),
-      })
-    }),
   ])
 }
 
-// Message content can be string OR array of parts
-// We use JSON.t for the array since we serialize/deserialize with Sury
+// ============================================================================
+// Message Types
+// ============================================================================
+
+@unboxed
+type userContent =
+  | String(string)
+  | Parts(array<UserPart.t>)
+
+@unboxed
+type assistantContent =
+  | String(string)
+  | Parts(array<AssistantPart.t>)
+
+type systemModelMessage = {
+  role: role,
+  content: string,
+}
+
+type userModelMessage = {
+  role: role,
+  content: userContent,
+}
+
+type assistantModelMessage = {
+  role: role,
+  content: assistantContent,
+}
+
+type modelMessage =
+  | SystemMessage(systemModelMessage)
+  | UserMessage(userModelMessage)
+  | AssistantMessage(assistantModelMessage)
+
+// Legacy message type (used by current implementation)
 @unboxed
 type content =
   | String(string)
@@ -57,55 +176,27 @@ type message = {
   content: content,
 }
 
-// Tool result data
-type toolResultData = {
-  output: string,
-  title: option<string>,
-  metadata: option<JSON.t>,
-}
-
-// Usage information
-type usage = {
-  promptTokens: int,
-  completionTokens: int,
-  totalTokens: int,
-}
+// ============================================================================
+// Streaming
+// ============================================================================
 
 module AsyncIterableStream = {
   type readableStream<'a>
   type defaultReader<'a>
   type asyncIterator<'a> = AsyncIterator.t<'a>
-
-  // Intersection facade: ReadableStream & AsyncIterable
   type t<'a>
-
-  // Minimal read() result
   type readResult<'a> = {"done": bool, "value": 'a}
 
-  // Views
   external toReadableStream: t<'a> => readableStream<'a> = "%identity"
   external toAsyncIterator: t<'a> => asyncIterator<'a> = "%identity"
-
-  // Constructors (use when the value actually has both facets)
   external fromReadableStream: readableStream<'a> => t<'a> = "%identity"
   external fromAsyncIterator: asyncIterator<'a> => t<'a> = "%identity"
 
-  // Reader ops
   @send external getReader: readableStream<'a> => defaultReader<'a> = "getReader"
   @send external read: defaultReader<'a> => Js.Promise.t<readResult<'a>> = "read"
   @send external releaseLock: defaultReader<'a> => unit = "releaseLock"
 }
-// Finish reason type from LanguageModelV3FinishReason
-type finishReason =
-  | @as("stop") Stop // model generated stop sequence
-  | @as("length") Length // model generated maximum number of tokens
-  | @as("content-filter") ContentFilter // content filter violation stopped the model
-  | @as("tool-calls") ToolCalls // model triggered tool calls
-  | @as("error") Error // model stopped because of an error
-  | @as("other") Other // model stopped for other reasons
-  | @as("unknown") Unknown // the model has not transmitted a finish reason
 
-// Stream event types
 type streamPart =
   | @as("text-delta") TextDelta({textDelta: string})
   | @as("tool-call") ToolCall({toolCallId: string, toolName: string, args: JSON.t})
@@ -113,17 +204,14 @@ type streamPart =
   | @as("finish-step") FinishStep({finishReason: finishReason, usage: usage})
   | @as("finish") Finish
 
-// // Get iterator from iterable using Symbol.asyncIterator
-// let getAsyncIterator = (_iterable: asyncIterable<'a>): AsyncIterator<'a> => {
-//   %raw(`iterable[Symbol.asyncIterator]()`)
-// }
+@get external fullStream: streamTextResult => AsyncIterableStream.t<streamPart> = "fullStream"
+@get external finishReason: streamTextResult => promise<finishReason> = "finishReason"
+@get external text: streamTextResult => promise<string> = "text"
 
-// JSON Schema type (from AI SDK's jsonSchema helper)
-// This is an opaque type that wraps JSON schemas
-type aiSchema
+// ============================================================================
+// Tools
+// ============================================================================
 
-// Tool definition - must match what AI SDK expects
-// The Tool type from @ai-sdk/provider-utils uses 'parameters' as an alias for 'inputSchema'
 type toolDef = {
   description?: string,
   parameters: aiSchema,
@@ -131,7 +219,20 @@ type toolDef = {
   execute?: JSON.t => promise<JSON.t>,
 }
 
-// Stream text parameters
+type toolCall = {
+  toolCallId: string,
+  toolName: string,
+  args: JSON.t,
+}
+
+@get external toolCalls: streamTextResult => promise<array<toolCall>> = "toolCalls"
+
+@module("ai") external jsonSchema: JSONSchema.t => aiSchema = "jsonSchema"
+
+// ============================================================================
+// API Functions
+// ============================================================================
+
 type streamTextParams = {
   model: languageModel,
   messages: array<message>,
@@ -139,45 +240,15 @@ type streamTextParams = {
   maxSteps?: int,
 }
 
-// Bind streamText function
-@module("ai")
-external streamText: streamTextParams => promise<streamTextResult> = "streamText"
-
-// Bind fullStream property - returns an async iterable
-@get
-external fullStream: streamTextResult => AsyncIterableStream.t<streamPart> = "fullStream"
-
-// Get finishReason
-@get
-external finishReason: streamTextResult => promise<finishReason> = "finishReason"
-
-// Get text from result
-@get
-external text: streamTextResult => promise<string> = "text"
-
-// Tool call from result
-type toolCall = {
-  toolCallId: string,
-  toolName: string,
-  args: JSON.t,
-}
-
-// Get tool calls from result
-@get
-external toolCalls: streamTextResult => promise<array<toolCall>> = "toolCalls"
-
-// Response type containing messages
 type response = {messages: array<message>}
 
-// Get response (with messages) from result
-@get
-external response: streamTextResult => promise<response> = "response"
+@module("ai") external streamText: streamTextParams => promise<streamTextResult> = "streamText"
+@get external response: streamTextResult => promise<response> = "response"
 
-// jsonSchema helper from AI SDK
-@module("ai")
-external jsonSchema: JSONSchema.t => aiSchema = "jsonSchema"
+// ============================================================================
+// Providers
+// ============================================================================
 
-// Provider bindings
 module Anthropic = {
   @module("@ai-sdk/anthropic")
   external anthropic: string => languageModel = "anthropic"

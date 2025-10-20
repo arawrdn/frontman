@@ -113,7 +113,7 @@ module ToolResultPart = {
 
 // ============ Part Union ============
 
-@schema 
+@schema
 type t =
   | @as("text") Text(TextPart.t)
   | @as("file") File(FilePart.t)
@@ -125,7 +125,9 @@ type t =
 let text = (~text, ~metadata=None) => Text(TextPart.make(~text, ~metadata))
 let file = (~file, ~metadata=None) => File(FilePart.make(~file, ~metadata))
 let data = (~data, ~metadata=None) => Data(DataPart.make(~data, ~metadata))
-let toolUse = (~toolCallId, ~toolName, ~args, ~metadata=None) =>
-  ToolUse(ToolUsePart.make(~toolCallId, ~toolName, ~args, ~metadata))
-let toolResult = (~toolCallId, ~toolName, ~result, ~metadata=None) =>
-  ToolResult(ToolResultPart.make(~toolCallId, ~toolName, ~result, ~metadata))
+let toolUse = (~toolCallId, ~toolName, ~args, ~metadata=None) => ToolUse(
+  ToolUsePart.make(~toolCallId, ~toolName, ~args, ~metadata),
+)
+let toolResult = (~toolCallId, ~toolName, ~result, ~metadata=None) => ToolResult(
+  ToolResultPart.make(~toolCallId, ~toolName, ~result, ~metadata),
+)

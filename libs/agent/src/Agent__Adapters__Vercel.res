@@ -61,7 +61,7 @@ let messageToVercel = (msg: Agent__Task__Message.t): Agent__Bindings__VercelAI.m
   // Check if we have any non-text parts
   let hasStructuredParts = parts->Array.some(part => {
     switch part {
-    | Part.ToolUse(_) | Part.ToolResult(_) => true
+    | Part.ToolUse(_) => true
     | _ => false
     }
   })
@@ -79,12 +79,6 @@ let messageToVercel = (msg: Agent__Task__Message.t): Agent__Bindings__VercelAI.m
           toolCallId: toolUsePart->Part.ToolUsePart.getToolCallId,
           toolName: toolUsePart->Part.ToolUsePart.getToolName,
           args: toolUsePart->Part.ToolUsePart.getArgs,
-        })
-      | Part.ToolResult(toolResultPart) =>
-        Agent__Bindings__VercelAI.ContentPart.ToolResult({
-          toolCallId: toolResultPart->Part.ToolResultPart.getToolCallId,
-          toolName: toolResultPart->Part.ToolResultPart.getToolName,
-          output: toolResultPart->Part.ToolResultPart.getResult,
         })
       | Part.File(filePart) => {
           let file = filePart->Part.FilePart.getFile
@@ -165,8 +159,6 @@ let messageFromVercel = (
         | Agent__Bindings__VercelAI.ContentPart.Text({text}) => Part.text(~text)
         | Agent__Bindings__VercelAI.ContentPart.ToolCall({toolCallId, toolName, args}) =>
           Part.toolUse(~toolCallId, ~toolName, ~args)
-        | Agent__Bindings__VercelAI.ContentPart.ToolResult({toolCallId, toolName, output}) =>
-          Part.toolResult(~toolCallId, ~toolName, ~result=output)
         }
       })
     }
