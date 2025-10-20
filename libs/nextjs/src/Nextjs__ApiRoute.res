@@ -11,6 +11,7 @@ module ApiRequest = {
   @get external body: t => Js.Json.t = "body"
   @get external query: t => Js.Dict.t<string> = "query"
   @get external headers: t => Js.Dict.t<string> = "headers"
+  @send external on: (t, string, unit => unit) => unit = "on"
 }
 
 // Next.js API Route Response type (Pages Router)
@@ -20,6 +21,7 @@ module ApiResponse = {
   @send external status: (t, int) => t = "status"
   @send external json: (t, 'a) => unit = "json"
   @send external send: (t, string) => unit = "send"
+  @send external write: (t, string) => unit = "write"
   @send external setHeader: (t, string, string) => t = "setHeader"
   @send external end: (t, string) => unit = "end"
 }
@@ -105,5 +107,30 @@ let createChatHandler = (): apiHandler => {
       | None => res->ApiResponse.status(400)->ApiResponse.json({"error": "Invalid JSON body"})
       }
     }
+  }
+}
+
+// Handler for /api/ask-the-llm/stream (SSE streaming endpoint)
+let createStreamHandler = (): apiHandler => {
+  async (req, res) => {
+    let _ = res->ApiResponse.setHeader("Content-Type", "text/event-stream")
+    let _ = res->ApiResponse.setHeader("Cache-Control", "no-cache, no-transform")
+    let _ = res->ApiResponse.setHeader("Connection", "keep-alive")
+
+    let send = (msg: string) => res->ApiResponse.write(`data: ${msg}\n\n`)
+
+    let agent = agentInstance.contents->Option.getOrThrow
+    let unsubsribe = agent.eventBus->Agent.EventBus.on(event => {
+      switch event {
+      | TaskMessageAdded({task: _task, message}) =>
+        send(message.messageId->AskTheLlmAgent.Agent__Id.toString)
+      | _ => Console.log("other event")
+      }
+    })
+
+    req->ApiRequest.on("close", () => {
+      unsubsribe()
+      res->ApiResponse.end("")
+    })
   }
 }

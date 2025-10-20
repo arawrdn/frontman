@@ -76,6 +76,31 @@ const SplitLayoutWidget: React.FC = () => {
 		setIframeUrl(originUrl);
 	}, []);
 
+	// SSE connection hook
+	useEffect(() => {
+		console.log("[SSE] Connecting to /api/ask-the-llm/chat-sse...");
+		const eventSource = new EventSource("/api/ask-the-llm/chat-sse");
+
+		eventSource.onopen = () => {
+			console.log("[SSE] Connection opened");
+		};
+
+		eventSource.onmessage = (event) => {
+			console.log("[SSE] Message received:", event.data);
+		};
+
+		eventSource.onerror = (error) => {
+			console.error("[SSE] Error occurred:", error);
+			eventSource.close();
+		};
+
+		// Cleanup on unmount
+		return () => {
+			console.log("[SSE] Closing connection");
+			eventSource.close();
+		};
+	}, []);
+
 	const handleSendMessage = async () => {
 		if (!message.trim() || isLoading) return;
 
@@ -235,7 +260,7 @@ const SplitLayoutWidget: React.FC = () => {
 												? {
 														...m,
 														content: data.message,
-														statusMessage: "Strategy planned"
+														statusMessage: "Strategy planned",
 													}
 												: m,
 										),
@@ -249,11 +274,16 @@ const SplitLayoutWidget: React.FC = () => {
 
 											// APPEND new tools to existing toolCalls, don't replace
 											const existingToolCalls = m.toolCalls || [];
-											const newTools = data.tools.map((t: { name: string; parameters: Record<string, unknown> }) => ({
-												tool: t.name,
-												parameters: t.parameters,
-												status: "executing" as const,
-											}));
+											const newTools = data.tools.map(
+												(t: {
+													name: string;
+													parameters: Record<string, unknown>;
+												}) => ({
+													tool: t.name,
+													parameters: t.parameters,
+													status: "executing" as const,
+												}),
+											);
 
 											return {
 												...m,
@@ -309,12 +339,23 @@ const SplitLayoutWidget: React.FC = () => {
 											if (m.id !== assistantMessage.id) return m;
 
 											const updatedToolCalls = [...(m.toolCalls || [])];
-											console.log("[DEBUG] Current toolCalls:", updatedToolCalls.map(tc => ({ tool: tc.tool, status: tc.status })));
+											console.log(
+												"[DEBUG] Current toolCalls:",
+												updatedToolCalls.map((tc) => ({
+													tool: tc.tool,
+													status: tc.status,
+												})),
+											);
 
 											const toolIndex = updatedToolCalls.findIndex(
 												(tc) => tc.tool === data.tool,
 											);
-											console.log("[DEBUG] Found toolIndex:", toolIndex, "for tool:", data.tool);
+											console.log(
+												"[DEBUG] Found toolIndex:",
+												toolIndex,
+												"for tool:",
+												data.tool,
+											);
 
 											if (toolIndex >= 0) {
 												updatedToolCalls[toolIndex] = {
@@ -326,28 +367,48 @@ const SplitLayoutWidget: React.FC = () => {
 
 												// NEW: Parse propose_change results
 												if (data.tool === "propose_change") {
-													console.log("[DEBUG] Attempting to parse propose_change result...");
+													console.log(
+														"[DEBUG] Attempting to parse propose_change result...",
+													);
 													try {
-														const proposal: ChangeProposal = JSON.parse(data.result);
-														console.log("[DEBUG] Successfully parsed proposal:", {
-															filePath: proposal.filePath,
-															changeType: proposal.changeType,
-															hasDiff: !!proposal.diff,
-															diffLength: proposal.diff?.length,
-															diffPreview: proposal.diff?.substring(0, 100),
-														});
+														const proposal: ChangeProposal = JSON.parse(
+															data.result,
+														);
+														console.log(
+															"[DEBUG] Successfully parsed proposal:",
+															{
+																filePath: proposal.filePath,
+																changeType: proposal.changeType,
+																hasDiff: !!proposal.diff,
+																diffLength: proposal.diff?.length,
+																diffPreview: proposal.diff?.substring(0, 100),
+															},
+														);
 														updatedToolCalls[toolIndex].proposalState = {
 															proposal,
 															status: "pending",
 														};
-														console.log("[DEBUG] proposalState set successfully");
+														console.log(
+															"[DEBUG] proposalState set successfully",
+														);
 													} catch (e) {
-														console.error("[DEBUG] Failed to parse proposal:", e);
-														console.error("[DEBUG] Raw result was:", data.result);
+														console.error(
+															"[DEBUG] Failed to parse proposal:",
+															e,
+														);
+														console.error(
+															"[DEBUG] Raw result was:",
+															data.result,
+														);
 													}
 												}
 											} else {
-												console.warn("[DEBUG] toolIndex not found! data.tool =", data.tool, "available tools:", updatedToolCalls.map(tc => tc.tool));
+												console.warn(
+													"[DEBUG] toolIndex not found! data.tool =",
+													data.tool,
+													"available tools:",
+													updatedToolCalls.map((tc) => tc.tool),
+												);
 											}
 
 											return {
@@ -425,10 +486,7 @@ const SplitLayoutWidget: React.FC = () => {
 		setSelectedElement(null);
 	};
 
-	const handleAcceptProposal = async (
-		messageId: string,
-		toolIndex: number,
-	) => {
+	const handleAcceptProposal = async (messageId: string, toolIndex: number) => {
 		const message = messages.find((m) => m.id === messageId);
 		if (!message?.toolCalls?.[toolIndex]?.proposalState) return;
 

@@ -53,7 +53,7 @@ let make = (projectRoot: string) => {
 
 let run = (agent: t) => {
   Console.log("Agent is running and listening for domain events...")
-  agent.eventBus->EventBus.on((event: EventBus.events) => {
+  let unsubscribe = agent.eventBus->EventBus.on(event => {
     Console.log2("Got EventBus Event: ", event)
     switch event {
     | TaskCreated(task) => {
@@ -84,6 +84,7 @@ let run = (agent: t) => {
     | TaskMessageAdded({task, message}) => Console.log3("Task message added", task, message)
     }
   })
+  unsubscribe
 }
 
 let addTask = (agent: t, task: Agent__Task.t) => {
