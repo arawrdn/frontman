@@ -109,26 +109,41 @@ module AssistantPart = {
   let toolCall = (~toolCallId, ~toolName, ~args): t => ToolCall({toolCallId, toolName, args})
 }
 
-// Content part types used for parsing responses from Vercel
-module ContentPart = {
-  type t =
-    | Text({text: string})
-    | ToolCall({toolCallId: string, toolName: string, args: JSON.t})
+module ToolResultPart = {
+  // Tool result output types
+  type toolResultContentPart =
+    | @as("text") TextContent({text: string})
+    | @as("media") MediaContent({data: string, mediaType: string})
 
-  let schema = S.union([
-    S.object(s => {
-      s.tag("type", "text")
-      Text({text: s.field("text", S.string)})
-    }),
-    S.object(s => {
-      s.tag("type", "tool-call")
-      ToolCall({
-        toolCallId: s.field("toolCallId", S.string),
-        toolName: s.field("toolName", S.string),
-        args: s.field("input", S.json),
+  @tag("type")
+  type toolResultOutput =
+    | @as("text") Text({value: string})
+    | @as("json") Json({value: JSON.t})
+    | @as("error-text") ErrorText({value: string})
+    | @as("error-json") ErrorJson({value: JSON.t})
+    | @as("content") Content({value: array<toolResultContentPart>})
+
+  @tag("type")
+  type t =
+    | @as("tool-result")
+    ToolResult({
+        toolCallId: string,
+        toolName: string,
+        output: toolResultOutput,
+        providerOptions?: JSON.t,
       })
-    }),
-  ])
+
+  let textOutput = (value: string): toolResultOutput => Text({value: value})
+  let jsonOutput = (value: JSON.t): toolResultOutput => Json({value: value})
+  let errorText = (value: string): toolResultOutput => ErrorText({value: value})
+  let errorJson = (value: JSON.t): toolResultOutput => ErrorJson({value: value})
+
+  let create = (~toolCallId, ~toolName, ~output, ~providerOptions=?, ()): t => ToolResult({
+    toolCallId,
+    toolName,
+    output,
+    ?providerOptions,
+  })
 }
 
 // ============================================================================
@@ -145,6 +160,9 @@ type assistantContent =
   | String(string)
   | Parts(array<AssistantPart.t>)
 
+@unboxed
+type toolContent = Parts(array<ToolResultPart.t>)
+
 type systemModelMessage = {
   role: role,
   content: string,
@@ -160,10 +178,17 @@ type assistantModelMessage = {
   content: assistantContent,
 }
 
+type toolModelMessage = {
+  role: role,
+  content: toolContent,
+}
+
+@tag("role")
 type modelMessage =
-  | SystemMessage(systemModelMessage)
-  | UserMessage(userModelMessage)
-  | AssistantMessage(assistantModelMessage)
+  | @as("system") SystemMessage(systemModelMessage)
+  | @as("user") UserMessage(userModelMessage)
+  | @as("assistant") AssistantMessage(assistantModelMessage)
+  | @as("tool") ToolMessage(toolModelMessage)
 
 // Legacy message type (used by current implementation)
 @unboxed
@@ -200,7 +225,6 @@ module AsyncIterableStream = {
 type streamPart =
   | @as("text-delta") TextDelta({textDelta: string})
   | @as("tool-call") ToolCall({toolCallId: string, toolName: string, args: JSON.t})
-  | @as("tool-result") ToolResult({toolCallId: string, toolName: string, result: JSON.t})
   | @as("finish-step") FinishStep({finishReason: finishReason, usage: usage})
   | @as("finish") Finish
 

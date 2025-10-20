@@ -1,39 +1,19 @@
 // Message - opaque type with safe construction
 
 module Part = Agent__Task__Message__Part
-@schema
-type role =
-  | @as("user") User
-  | @as("agent") Agent
-  | @as("assistant") Assistant
-  | @as("system") System
-  | @as("tool") Tool
-@schema
-type t = {
-  role: role,
-  parts: array<Part.t>,
-  messageId: Agent__Id.t,
-  taskId: option<Agent__Task__Id.t>,
-  metadata: option<Dict.t<JSON.t>>,
+type id = Agent__Id.t
+module System = {
+  type t = {id: id, taskId?: Agent__Task__Id.t, content: string}
+}
+module User = {
+  type contentParts = Text(Part.TextPart.t) | Image(Part.ImagePart.t) | File(Part.FilePart.t)
+  type userContent = String(string) | List(array<contentParts>)
+  type t = {content: userContent}
 }
 
-let make = (
-  ~role: role,
-  ~parts: array<Part.t>,
-  ~taskId: option<Agent__Task__Id.t>=None,
-  ~metadata: option<Dict.t<JSON.t>>=None,
-): t => {
-  {
-    role,
-    parts,
-    messageId: Agent__Id.make(),
-    taskId,
-    metadata,
-  }
+module Assistant = {
+  type contentParts = Text(Part.TextPart.t) | ToolCall(Part.ToolCallPart.t)
+  type t = String(string) | List(array<contentParts>)
 }
-
-// Accessor for getting parts (needed for LLM conversion)
-let getParts = (msg: t): array<Part.t> => msg.parts
-let getRole = (msg: t): role => msg.role
-let getMetadata = (msg: t): option<Dict.t<JSON.t>> => msg.metadata
-let getTaskId = (msg: t): option<Agent__Task__Id.t> => msg.taskId
+//TODO(Danni) - continue here
+type t = System(System.t) | User(User.t) | Assistant(Assistant.t)
