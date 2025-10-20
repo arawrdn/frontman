@@ -6,6 +6,7 @@
 		"libs/agent",
 		"libs/nextjs",
 		"libs/bindings",
+		"apps/client-rescript",
 		"test/sites/blog-starter"
 	],
 	"dependencies": {
