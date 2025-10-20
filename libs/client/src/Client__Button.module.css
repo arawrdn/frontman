@@ -1,0 +1,32 @@
+.button {
+  display: block;
+  cursor: pointer;
+  background-color: #db4d3f;
+  padding: 12px 16px;
+  margin: 64px auto;
+  color: #ffffff;
+  font-weight: 500;
+  font-size: 12px;
+  line-height: 1.25;
+  text-transform: uppercase;
+  border-radius: 4px;
+  border: none;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  transition: all 150ms ease-in-out;
+}
+
+.button:hover {
+  background-color: #c43d30;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+}
+
+.button:focus {
+  background-color: #b0352a;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+  outline: none;
+}
+
+.button:active {
+  background-color: #b0352a;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+}

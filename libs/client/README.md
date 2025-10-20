@@ -6,7 +6,7 @@ ReScript + React component library for internal monorepo use.
 
 - [ReScript](https://rescript-lang.org) 11.0 with @rescript/react and JSX v4
 - ES6 modules (ReScript code compiled to `.res.mjs` files)
-- Tailwind 4 for styling
+- CSS Modules for component styling
 - Vitest for testing
 
 ## Development

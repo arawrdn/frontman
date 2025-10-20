@@ -1,2 +1,2 @@
 // Re-export all components from the library
-module Button = Button
+module Button = Client__Button

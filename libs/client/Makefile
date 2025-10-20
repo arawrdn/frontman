@@ -7,22 +7,22 @@ help: ## Display this help message
 	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z_-]+:.*##/ { printf "  %-15s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
 
 build: ## Compile ReScript code
-	rescript
+	yarn rescript
 
 clean: ## Clean ReScript build artifacts
-	rescript clean
+	yarn rescript clean
 
 dev: ## Watch and recompile ReScript code
-	rescript watch
+	yarn rescript watch
 
 test: ## Run tests
-	vitest run
+	yarn vitest run
 
 test-watch: ## Run tests in watch mode
-	vitest
+	yarn vitest
 
 format: ## Format code with rescript format
-	rescript format -all
+	yarn rescript format -all
 
 lint: ## Check code formatting
-	rescript format -all -check
+	yarn rescript format -all -check
