@@ -3,12 +3,11 @@
 	"version": "0.1.0",
 	"type": "module",
 	"dependencies": {
-		"@ai-sdk/anthropic": "^2.0.29",
-		"@ai-sdk/openai": "^2.0.52",
-		"@rescript/webapi": "catalog:",
-		"ai": "^5.0.71",
+		"@ai-sdk/anthropic": "^2.0.34",
+		"@ai-sdk/openai": "^2.0.53",
+		"@rescript/webapi": "0.1.0-experimental-ffc94c8",
+		"ai": "^5.0.76",
 		"dotenv": "catalog:",
-		"react": "^19.2.0",
 		"sury": "catalog:",
 		"sury-ppx": "^11.0.0-alpha.2",
 		"zod": "^4.1.12"

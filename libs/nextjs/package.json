@@ -4,9 +4,9 @@
 	"type": "module",
 	"dependencies": {
 		"@ask-the-llm/agent": "*",
-		"@rescript/webapi": "catalog:",
+		"@rescript/webapi": "0.1.0-experimental-ffc94c8",
 		"dotenv": "catalog:",
-		"next": "^15.1.6",
+		"next": "^15.5.6",
 		"react": "^19.2.0",
 		"react-dom": "^19.2.0",
 		"sury": "catalog:"

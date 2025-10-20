@@ -1,0 +1,21 @@
+{
+	"name": "client-rescript",
+	"sources": [
+		{
+			"dir": "src",
+			"subdirs": true
+		}
+	],
+	"package-specs": [
+		{
+			"module": "esmodule",
+			"in-source": true
+		}
+	],
+	"suffix": ".res.mjs",
+	"dependencies": ["@rescript/react"],
+	"compiler-flags": [],
+	"jsx": {
+		"version": 4
+	}
+}
