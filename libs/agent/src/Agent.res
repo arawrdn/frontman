@@ -41,7 +41,6 @@ let make = (projectRoot: string) => {
   let toolRegistry = Agent__Tools__Registry.make(projectRoot)
   let llm = Agent__Adapters__Vercel.makeLLM(~model, ~toolRegistry)
 
-  // Note: Don't use Console.debug/log here - stdout is used for IPC
   Console.log(`Agent initialized with ${toolRegistry->Array.length->Int.toString} tools`)
 
   {

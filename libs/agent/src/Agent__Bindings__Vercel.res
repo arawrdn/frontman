@@ -38,64 +38,62 @@ type finishReason =
 // ============================================================================
 
 // Image/File data - opaque types that accept string | Uint8Array | ArrayBuffer
-type imageData
-type fileData
 
 module ImageData = {
-  external fromString: string => imageData = "%identity"
-  external fromUint8Array: Js.TypedArray2.Uint8Array.t => imageData = "%identity"
-  external fromArrayBuffer: Js.TypedArray2.ArrayBuffer.t => imageData = "%identity"
+  type t
+  external fromString: string => t = "%identity"
+  external fromUint8Array: Uint8Array.t => t = "%identity"
+  external fromArrayBuffer: ArrayBuffer.t => t = "%identity"
 }
 
 module FileData = {
-  external fromString: string => fileData = "%identity"
-  external fromUint8Array: Js.TypedArray2.Uint8Array.t => fileData = "%identity"
-  external fromArrayBuffer: Js.TypedArray2.ArrayBuffer.t => fileData = "%identity"
+  type t
+  external fromString: string => t = "%identity"
+  external fromUint8Array: Uint8Array.t => t = "%identity"
+  external fromArrayBuffer: ArrayBuffer.t => t = "%identity"
 }
 
 module UserPart = {
   @tag("type")
   type t =
     | @as("text") Text({text: string})
-    | @as("image") Image({image: imageData, mediaType?: string})
-    | @as("file") File({data: fileData, filename?: string, mediaType: string})
+    | @as("image") Image({image: ImageData.t, mediaType?: string})
+    | @as("file") File({data: FileData.t, filename?: string, mediaType: string})
 
   let text = (text: string): t => Text({text: text})
 
-  let imageFromString = (~url: string, ~mediaType=?, ()): t => Image({
+  let imageFromString = (~url: string, ~mediaType): t => Image({
     image: ImageData.fromString(url),
     ?mediaType,
   })
 
-  let imageFromUint8Array = (~data: Js.TypedArray2.Uint8Array.t, ~mediaType=?, ()): t => Image({
+  let imageFromUint8Array = (~data: Uint8Array.t, ~mediaType): t => Image({
     image: ImageData.fromUint8Array(data),
     ?mediaType,
   })
 
-  let imageFromArrayBuffer = (~data: Js.TypedArray2.ArrayBuffer.t, ~mediaType=?, ()): t => Image({
+  let imageFromArrayBuffer = (~data: ArrayBuffer.t, ~mediaType): t => Image({
     image: ImageData.fromArrayBuffer(data),
     ?mediaType,
   })
 
-  let fileFromString = (~url: string, ~mediaType, ~filename=?, ()): t => File({
+  let fileFromString = (~url: string, ~mediaType, ~filename): t => File({
     data: FileData.fromString(url),
     mediaType,
     ?filename,
   })
 
-  let fileFromUint8Array = (
-    ~data: Js.TypedArray2.Uint8Array.t,
-    ~mediaType,
-    ~filename=?,
-    (),
-  ): t => File({data: FileData.fromUint8Array(data), mediaType, ?filename})
+  let fileFromUint8Array = (~data: Uint8Array.t, ~mediaType, ~filename): t => File({
+    data: FileData.fromUint8Array(data),
+    mediaType,
+    ?filename,
+  })
 
-  let fileFromArrayBuffer = (
-    ~data: Js.TypedArray2.ArrayBuffer.t,
-    ~mediaType,
-    ~filename=?,
-    (),
-  ): t => File({data: FileData.fromArrayBuffer(data), mediaType, ?filename})
+  let fileFromArrayBuffer = (~data: ArrayBuffer.t, ~mediaType, ~filename): t => File({
+    data: FileData.fromArrayBuffer(data),
+    mediaType,
+    ?filename,
+  })
 }
 
 module AssistantPart = {
@@ -110,7 +108,6 @@ module AssistantPart = {
 }
 
 module ToolResultPart = {
-  // Tool result output types
   type toolResultContentPart =
     | @as("text") TextContent({text: string})
     | @as("media") MediaContent({data: string, mediaType: string})
@@ -163,32 +160,18 @@ type assistantContent =
 @unboxed
 type toolContent = Parts(array<ToolResultPart.t>)
 
-type systemModelMessage = {
-  role: role,
-  content: string,
-}
+type systemModelMessage = {content: string}
 
-type userModelMessage = {
-  role: role,
-  content: userContent,
-}
+type userModelMessage = {content: userContent}
 
-type assistantModelMessage = {
-  role: role,
-  content: assistantContent,
-}
-
-type toolModelMessage = {
-  role: role,
-  content: toolContent,
-}
+type toolModelMessage = {content: toolContent}
 
 @tag("role")
 type modelMessage =
-  | @as("system") SystemMessage(systemModelMessage)
-  | @as("user") UserMessage(userModelMessage)
-  | @as("assistant") AssistantMessage(assistantModelMessage)
-  | @as("tool") ToolMessage(toolModelMessage)
+  | @as("system") SystemMessage({content: string})
+  | @as("user") UserMessage({content: userContent})
+  | @as("assistant") AssistantMessage({content: assistantContent})
+  | @as("tool") ToolMessage({content: toolContent})
 
 // Legacy message type (used by current implementation)
 @unboxed
@@ -218,7 +201,7 @@ module AsyncIterableStream = {
   external fromAsyncIterator: asyncIterator<'a> => t<'a> = "%identity"
 
   @send external getReader: readableStream<'a> => defaultReader<'a> = "getReader"
-  @send external read: defaultReader<'a> => Js.Promise.t<readResult<'a>> = "read"
+  @send external read: defaultReader<'a> => Promise.t<readResult<'a>> = "read"
   @send external releaseLock: defaultReader<'a> => unit = "releaseLock"
 }
 
@@ -240,7 +223,9 @@ type toolDef = {
   description?: string,
   parameters: aiSchema,
   inputSchema: aiSchema,
-  execute?: JSON.t => promise<JSON.t>,
+  //Note(Danni) - although vercel supports executing tools, we want to manage this ourselves, so removing it for now
+  // to avoid any chance of passing this in
+  // execute?: JSON.t => promise<JSON.t>,
 }
 
 type toolCall = {
@@ -259,12 +244,12 @@ type toolCall = {
 
 type streamTextParams = {
   model: languageModel,
-  messages: array<message>,
+  messages: array<modelMessage>,
   tools?: Dict.t<toolDef>,
   maxSteps?: int,
 }
 
-type response = {messages: array<message>}
+type response = {messages: array<modelMessage>}
 
 @module("ai") external streamText: streamTextParams => promise<streamTextResult> = "streamText"
 @get external response: streamTextResult => promise<response> = "response"

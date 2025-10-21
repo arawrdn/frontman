@@ -6,8 +6,10 @@
 
 // Opaque type - hides Vercel implementation details
 module Bindings = Agent__Bindings__Vercel
-
 module Part = Agent__Task__Message__Part
+module Message = Agent__Task__Message
+module UserPart = Agent__Adapters__Vercel__UserPart
+
 type t = {
   model: Bindings.languageModel,
   tools: Dict.t<Bindings.toolDef>,
@@ -15,7 +17,7 @@ type t = {
 
 // ============ Type Re-exports ============
 // Re-export types so AgenticLoop doesn't need to import bindings directly
-type vercelMessage = Bindings.message
+type vercelMessage = Bindings.modelMessage
 type streamResult = Bindings.streamTextResult
 type toolCallInfo = Bindings.toolCall
 type streamEvent = Bindings.streamPart
@@ -28,12 +30,8 @@ let toVercelTools = (registry: Agent__Tools__Registry.t): Dict.t<Bindings.toolDe
   registry->Array.forEach(tool => {
     switch tool {
     | Agent__Tools__Registry.Tool({name, description, inputSchema}) =>
-      // Convert Sury schema to JSON Schema
       let jsonSchemaObj = inputSchema->S.toJSONSchema
-
-      // Wrap with AI SDK's jsonSchema helper to get proper aiSchema type
       let aiSchemaWrapped = Bindings.jsonSchema(jsonSchemaObj)
-
       let toolDef: Bindings.toolDef = {
         description,
         parameters: aiSchemaWrapped,
@@ -48,86 +46,94 @@ let toVercelTools = (registry: Agent__Tools__Registry.t): Dict.t<Bindings.toolDe
 }
 
 // ============ Message Conversion ============
-let messageToVercel = (msg: Agent__Task__Message.t): Bindings.message => {
-  let roleToVercel = role =>
-    switch msg->Agent__Task__Message.getRole {
-    | User => Bindings.User
-    | Agent => Bindings.Assistant
-    | System => Bindings.System
-    | Tool => Bindings.Tool
-    | Assistant => Bindings.Assistant
-    }
 
-
-  let parts = msg->Agent__Task__Message.getParts
-
-  let hasStructuredParts = parts->Array.some(part => {
-    switch part {
-    | Part.ToolUse(_) => true
-    | _ => false
-    }
-  })
-
-  let content = if hasStructuredParts {
-    // Build array of contentParts and serialize them to JSON
-    let contentParts: array<Bindings.ContentPart.t> = parts->Array.map(part => {
-      switch part {
-      | Part.Text(textPart) => {
-          let text = textPart->Part.TextPart.getText
-          Bindings.ContentPart.Text({text: text})
-        }
-      | Part.ToolUse(toolUsePart) =>
-        Bindings.ContentPart.ToolCall({
-          toolCallId: toolUsePart->Part.ToolUsePart.getToolCallId,
-          toolName: toolUsePart->Part.ToolUsePart.getToolName,
-          args: toolUsePart->Part.ToolUsePart.getArgs,
-        })
-      | Part.File(filePart) => {
-          let file = filePart->Part.FilePart.getFile
-          let name = file->Part.File.getName->Option.getOr("unnamed")
-          let mimeType = file->Part.File.getMimeType
-          Bindings.ContentPart.Text({text: `File: ${name}, MimeType: ${mimeType}`})
-        }
-      | Part.Data(dataPart) => {
-          let data = dataPart->Part.DataPart.getData
-          Bindings.ContentPart.Text({text: `Data: ${data->JSON.stringify}`})
-        }
-      }
-    })
-
-    // Serialize the variants to JSON using Sury
-    let contentPartsSchema = S.array(Bindings.ContentPart.schema)
-    let serialized = contentParts->S.reverseConvertOrThrow(contentPartsSchema)
-    // Safe cast: reverseConvertOrThrow returns JSON
-    let jsonArray: array<JSON.t> = serialized->Obj.magic
-    Bindings.Parts(jsonArray)
-  } else {
-    // Simple text-only message
-    let text =
-      parts
-      ->Array.map(part => {
+// Helper to convert domain ToolResultPart.Output to Vercel ToolResultPart.Output
+let toolResultOutputToVercel = (
+  output: Part.ToolResultPart.Output.t,
+): Bindings.ToolResultPart.toolResultOutput => {
+  switch output {
+  | Text(value) => Bindings.ToolResultPart.textOutput(value)
+  | JSON(value) => Bindings.ToolResultPart.jsonOutput(value)
+  | ErrorText(value) => Bindings.ToolResultPart.errorText(value)
+  | ErrorJSON(value) => Bindings.ToolResultPart.errorJson(value)
+  | Content(contentParts) => {
+      let vercelContentParts = contentParts->Array.map(part => {
         switch part {
-        | Part.Text(textPart) => textPart->Part.TextPart.getText
-        | Part.File(filePart) => {
-            let file = filePart->Part.FilePart.getFile
-            let name = file->Part.File.getName->Option.getOr("unnamed")
-            let mimeType = file->Part.File.getMimeType
-            `File: ${name}, MimeType: ${mimeType}`
+        | Part.ToolResultPart.Content.Text(text) => {
+            let textValue = text
+            Bindings.ToolResultPart.TextContent({text: textValue})
           }
-        | Part.Data(dataPart) => {
-            let data = dataPart->Part.DataPart.getData
-            `Data: ${data->JSON.stringify}`
+        | Part.ToolResultPart.Content.Media({data, mediaType}) => {
+            let dataValue = data
+            let mediaTypeValue = mediaType
+            Bindings.ToolResultPart.MediaContent({data: dataValue, mediaType: mediaTypeValue})
           }
-        | _ => ""
         }
       })
-      ->Array.join("\n")
-    Bindings.String(text)
+      let contentValue = vercelContentParts
+      Bindings.ToolResultPart.Content({value: contentValue})
+    }
   }
+}
 
-  {
-    role,
-    content,
+let messageToVercel = (msg: Message.t): Bindings.modelMessage => {
+  switch msg {
+  | System(systemMsg) =>
+    Bindings.SystemMessage({
+      content: systemMsg.content,
+    })
+
+  | User({content: Message.User.String(text)}) =>
+    Bindings.UserMessage({
+      content: Bindings.String(text),
+    })
+
+  | User({content: List(parts)}) => {
+      let vercelParts = UserPart.arrayToVercel(parts)
+      let content: Bindings.userContent = Parts(vercelParts)
+      Bindings.UserMessage({
+        content: content,
+      })
+    }
+
+  | Assistant({content: Message.Assistant.String(text)}) =>
+    Bindings.AssistantMessage({
+      content: String(text),
+    })
+
+  | Assistant({content: Message.Assistant.List(parts)}) => {
+      let vercelParts = parts->Array.map(part => {
+        switch part {
+        | Message.Assistant.Text({content}) => Bindings.AssistantPart.text(content)
+        | Message.Assistant.ToolCall(toolCallPart) =>
+          Bindings.AssistantPart.toolCall(
+            ~toolCallId=toolCallPart.toolCallId,
+            ~toolName=toolCallPart.toolName,
+            ~args=toolCallPart.args,
+          )
+        }
+      })
+      let content: Bindings.assistantContent = Parts(vercelParts)
+      Bindings.AssistantMessage({
+        content: content,
+      })
+    }
+
+  | Tool(toolResults) => {
+      let vercelParts = toolResults.content->Array.map(toolResult => {
+        Bindings.ToolResultPart.create(
+          ~toolCallId=toolResult.toolCallId,
+          ~toolName=toolResult.toolName,
+          ~output=toolResultOutputToVercel(toolResult.output),
+          ~providerOptions=?toolResult.providerOptions,
+          (),
+        )
+      })
+      let content: Bindings.toolContent = Parts(vercelParts)
+      Bindings.ToolMessage({
+        content: content,
+      })
+    }
   }
 }
 
@@ -135,38 +141,91 @@ let messagesToVercel = (messages: array<Agent__Task__Message.t>): array<vercelMe
   messages->Array.map(messageToVercel)
 }
 
-// Convert Vercel message back to domain message
-let messageFromVercel = (
-  msg: Bindings.message,
-  ~taskId: option<Agent__Task__Id.t>=None,
-): Agent__Task__Message.t => {
-  let role = switch msg.role {
-  | User => Agent__Task__Message.User
-  | Assistant => Agent__Task__Message.Agent
-  | System => Agent__Task__Message.System
-  | Tool => Agent__Task__Message.Tool
-  }
+// Convert Vercel modelMessage back to domain message
+let messageFromVercel = (msg: Bindings.modelMessage, ~taskId: option<Agent__Task__Id.t>=?): option<
+  Agent__Task__Message.t,
+> => {
+  switch msg {
+  | SystemMessage({content, _}) =>
+    Some(
+      Agent__Task__Message.System({
+        taskId,
+        id: Agent__Id.make(),
+        content,
+      }),
+    )
 
-  // Parse content using Sury
-  let parts = switch msg.content {
-  | String(text) => [Part.text(~text)]
-  | Parts(contentPartsJson) => {
-      // Parse the array of content parts using Sury
-      let contentPartsSchema = S.array(Bindings.ContentPart.schema)
-      let parsedParts = contentPartsJson->S.parseOrThrow(contentPartsSchema)
+  | UserMessage({content: String(text), _}) =>
+    Some(Agent__Task__Message.User({taskId, content: String(text)}))
 
-      // Convert to domain Part.t
-      parsedParts->Array.map(contentPart => {
-        switch contentPart {
-        | Bindings.ContentPart.Text({text}) => Part.text(~text)
-        | Bindings.ContentPart.ToolCall({toolCallId, toolName, args}) =>
-          Part.toolUse(~toolCallId, ~toolName, ~args)
+  | UserMessage({content: Parts(parts), _}) => {
+      let domainParts = UserPart.arrayFromVercel(parts)
+      Some(Agent__Task__Message.User({taskId, content: List(domainParts)}))
+    }
+
+  | AssistantMessage({content: String(text), _}) =>
+    Some(
+      Agent__Task__Message.Assistant({
+        taskId,
+        content: Agent__Task__Message.Assistant.String(text),
+      }),
+    )
+
+  | AssistantMessage({content: Parts(parts), _}) => {
+      let domainParts = parts->Array.map(part => {
+        switch part {
+        | Bindings.AssistantPart.Text({text}) =>
+          Agent__Task__Message.Assistant.Text({content: text})
+        | Bindings.AssistantPart.ToolCall({toolCallId, toolName, args}) =>
+          Agent__Task__Message.Assistant.ToolCall({
+            toolCallId,
+            toolName,
+            args,
+          })
         }
       })
+      Some(
+        Agent__Task__Message.Assistant({
+          taskId,
+          content: Agent__Task__Message.Assistant.List(domainParts),
+        }),
+      )
     }
-  }
 
-  Agent__Task__Message.make(~role, ~parts, ~taskId)
+  | ToolMessage({content: Parts(parts), _}) =>
+    // let domainParts: array<Part.ToolResultPart.t> = parts->Array.map(part => {
+    //   let Bindings.ToolResultPart.ToolResult(record) = part
+    //   let domainOutput = switch record.output {
+    //   | Bindings.ToolResultPart.Text({value}) => Part.ToolResultPart.Output.Text(value)
+    //   | Bindings.ToolResultPart.Json({value}) => Part.ToolResultPart.Output.JSON(value)
+    //   | Bindings.ToolResultPart.ErrorText({value}) => Part.ToolResultPart.Output.ErrorText(value)
+    //   | Bindings.ToolResultPart.ErrorJson({value}) => Part.ToolResultPart.Output.ErrorJSON(value)
+    //   | Bindings.ToolResultPart.Content({value}) => {
+    //       let contentParts = value->Array.map(contentPart => {
+    //         switch contentPart {
+    //         | Bindings.ToolResultPart.TextContent({text}) =>
+    //           Part.ToolResultPart.Content.Text(text)
+    //         | Bindings.ToolResultPart.MediaContent({data, mediaType}) =>
+    //           Part.ToolResultPart.Content.Media({data, mediaType})
+    //         }
+    //       })
+    //       Part.ToolResultPart.Output.Content(contentParts)
+    //     }
+    //   }
+    //   {
+    //     Part.ToolResultPart.toolCallId: record.toolCallId,
+    //     toolName: record.toolName,
+    //     output: domainOutput,
+    //     providerOptions: record.providerOptions,
+    //   }
+    // })
+    // Agent__Task__Message.Tool({taskId, content: domainParts})
+    Console.error2(
+      "We're executing tools ourselves, but for some reason Vercel returned a toolResult msg",
+      parts,
+    )
+    None
+  }
 }
 
 // ============ LLM Creation ============

@@ -24,6 +24,7 @@ let run = async (
 
   // Start the agent loop
   let rec loop = async (currentTask: Agent__Task.t) => {
+    %debugger
     let history = currentTask->Agent__Task.getHistory
     Console.log(`=== Loop iteration starting with ${history->Array.length->Int.toString} messages`)
     let result = await Adapter.streamText(llm, history)
@@ -37,14 +38,15 @@ let run = async (
     })
 
     // Add LLM generated messages to task history (CRITICAL!)
-    // This includes BOTH assistant messages (with tool calls) AND tool messages (with results)
     let response = await result->Adapter.getResponse
     Console.log2("Response messages count:", response.messages->Array.length)
 
     // Convert ALL messages (assistant + tool) to domain format and add to task
     let taskWithNewMessages = response.messages->Array.reduce(currentTask, (task, vercelMsg) => {
-      let domainMessage = Adapter.messageFromVercel(vercelMsg, ~taskId=Some(task.id))
-      let task = Agent__Task.addMessage(task, domainMessage)->Result.getOr(task)
+      //Note(Danni) - the getOrThrow here is to make sure we dont get unexpected messages, once we gain better understanding
+      // we should refactor this
+      let domainMessage = Adapter.messageFromVercel(vercelMsg)->Option.getOrThrow
+      let task = task->Agent__Task.addMessage(domainMessage)->Result.getOr(task)
       Agent__Tasks.update(tasks, task)
       Agent__EventBus.emit(eventBus, TaskMessageAdded({task, message: domainMessage}))
       task

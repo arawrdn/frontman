@@ -5,7 +5,7 @@
 external exit: int => unit = "exit"
 
 // Process environment variables
-@val @scope("process") external env: Js.Dict.t<string> = "env"
+@val @scope("process") external env: Dict.t<string> = "env"
 
 // Node.js __dirname global
 @val external __dirname: string = "__dirname"

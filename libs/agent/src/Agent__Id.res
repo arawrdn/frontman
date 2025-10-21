@@ -1,18 +1,18 @@
 @schema
-type t = @as("id") Id(string)
+type t = string
 
 let make = (): t => {
   let uuid = %raw(`crypto.randomUUID()`)
-  Id(uuid)
+  uuid
 }
 
 let fromString = (str: string): option<t> => {
   if str != "" {
-    Some(Id(str))
+    Some(str)
   } else {
     None
   }
 }
 
 // Only expose toString when needed for serialization
-let toString = (Id(str): t): string => str
+let toString = (str: t): string => str

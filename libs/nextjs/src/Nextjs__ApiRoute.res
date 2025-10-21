@@ -1,16 +1,17 @@
 // Next.js API Routes Module
 // This module provides API route handlers for Next.js applications
 
+S.enableJson()
 module Agent = AskTheLlmAgent.Agent
-
+module Bindings = AskTheLlmBindings
 // Next.js API Route Request type (Pages Router)
 module ApiRequest = {
   type t
 
   @get external method: t => string = "method"
-  @get external body: t => Js.Json.t = "body"
-  @get external query: t => Js.Dict.t<string> = "query"
-  @get external headers: t => Js.Dict.t<string> = "headers"
+  @get external body: t => JSON.t = "body"
+  @get external query: t => Dict.t<string> = "query"
+  @get external headers: t => Dict.t<string> = "headers"
   @send external on: (t, string, unit => unit) => unit = "on"
 }
 
@@ -36,8 +37,7 @@ let getOrCreateAgent = () => {
   switch agentInstance.contents {
   | Some(agent) => agent
   | None =>
-    let projectRoot =
-      AskTheLlmBindings.Process.env->Js.Dict.get("PWD")->Belt.Option.getWithDefault(".")
+    let projectRoot = Bindings.Process.env->Dict.get("PWD")->Option.getOr(".")
     let agent = Agent.make(projectRoot)
     let _shutdown = Agent.run(agent)
     agentInstance := Some(agent)
@@ -77,11 +77,11 @@ let createChatHandler = (): apiHandler => {
       res->ApiResponse.status(405)->ApiResponse.json({"error": "Method not allowed"})
     } else {
       let body = ApiRequest.body(req)
-      switch Js.Json.decodeObject(body) {
+      switch JSON.Decode.object(body) {
       | Some(obj) =>
-        switch Js.Dict.get(obj, "message") {
+        switch Dict.get(obj, "message") {
         | Some(messageJson) =>
-          switch Js.Json.decodeString(messageJson) {
+          switch JSON.Decode.string(messageJson) {
           | Some(str) =>
             if str === "" {
               res->ApiResponse.status(400)->ApiResponse.json({"error": "Message cannot be empty"})
@@ -89,7 +89,7 @@ let createChatHandler = (): apiHandler => {
               let agent = getOrCreateAgent()
               let message = Agent.sendMessage(
                 agent,
-                Agent.TaskMessage.make(~role=User, ~parts=[Agent.Part.text(~text=str)]),
+                Agent.TaskMessage.User({taskId: None, content: String(str)}),
               )
               switch message {
               | Ok(task) => res->ApiResponse.status(200)->ApiResponse.json({"task": task})
@@ -119,15 +119,16 @@ let createStreamHandler = (): apiHandler => {
     let _ = res->ApiResponse.setHeader("Cache-Control", "no-cache, no-transform")
     let _ = res->ApiResponse.setHeader("Connection", "keep-alive")
 
-    let send = (msg) => {
-      let data = msg->S.reverseConvertToJsonStringOrThrow(Agent.TaskMessage.schema)
+    let send = (msg: Agent.TaskMessage.t) => {
+      let jsonValue = msg->S.reverseConvertOrThrow(Agent.TaskMessage.schema)
+      let data = JSON.stringify(jsonValue->Obj.magic)
       res->ApiResponse.write(`data: ${data}\n\n`)
     }
 
     let unsubsribe = agent.eventBus->Agent.EventBus.on(event => {
       switch event {
       | TaskMessageAdded({task: _task, message}) =>
-        Console.log("taskMessageAdded")
+        Console.log2("taskMessageAdded", message)
         send(message)
       | _ => Console.log("other event")
       }
@@ -138,6 +139,8 @@ let createStreamHandler = (): apiHandler => {
       res->ApiResponse.end("")
     })
 
-    res->ApiResponse.write(`data: ${Js.Json.stringify(Js.Json.object_(Js.Dict.fromArray([("type", Js.Json.string("connected"))])))}\n\n`)
+    res->ApiResponse.write(
+      `data: ${JSON.stringifyAny({"type": "connected"})->Option.getOr("{}")}\n\n`,
+    )
   }
 }
