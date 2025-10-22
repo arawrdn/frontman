@@ -97,6 +97,24 @@ __metadata:
   languageName: unknown
   linkType: soft
 
+"@ask-the-llm/client@workspace:libs/client":
+  version: 0.0.0-use.local
+  resolution: "@ask-the-llm/client@workspace:libs/client"
+  dependencies:
+    "@rescript/react": "npm:^0.14.0"
+    "@vitest/ui": "npm:^3.2.4"
+    react: "npm:^19.2.0"
+    react-dom: "npm:^19.2.0"
+    rescript: "catalog:"
+    rescript-vitest: "catalog:"
+    vite: "npm:^7.1.11"
+    vitest: "catalog:"
+  peerDependencies:
+    react: ^19.2.0
+    react-dom: ^19.2.0
+  languageName: unknown
+  linkType: soft
+
 "@ask-the-llm/nextjs@npm:*, @ask-the-llm/nextjs@workspace:libs/nextjs":
   version: 0.0.0-use.local
   resolution: "@ask-the-llm/nextjs@workspace:libs/nextjs"
@@ -1530,24 +1548,6 @@ __metadata:
   checksum: 10c0/9d6cfd0c19e1c96a434605added99dff48482152af791ec4172fb912a71cff9027ff174efd8cdb2160cc7f377543e0537ffc462d4f279bc4701de3f2a3c4b358
   languageName: node
   linkType: hard
-
-"client-rescript@workspace:libs/client":
-  version: 0.0.0-use.local
-  resolution: "client-rescript@workspace:libs/client"
-  dependencies:
-    "@rescript/react": "npm:^0.14.0"
-    "@vitest/ui": "npm:^3.2.4"
-    react: "npm:^19.2.0"
-    react-dom: "npm:^19.2.0"
-    rescript: "catalog:"
-    rescript-vitest: "catalog:"
-    vite: "npm:^7.1.11"
-    vitest: "catalog:"
-  peerDependencies:
-    react: ^19.2.0
-    react-dom: ^19.2.0
-  languageName: unknown
-  linkType: soft
 
 "color-convert@npm:^2.0.1":
   version: 2.0.1

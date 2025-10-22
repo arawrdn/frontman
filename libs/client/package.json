@@ -1,5 +1,5 @@
 {
-	"name": "client-rescript",
+	"name": "@ask-the-llm/client",
 	"private": true,
 	"version": "0.0.0",
 	"type": "module",

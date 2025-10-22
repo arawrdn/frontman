@@ -1,10 +1,20 @@
 {
 	"name": "ask-the-llm",
 	"namespace": true,
-	"dependencies": ["@ask-the-llm/agent", "@ask-the-llm/bindings", "@ask-the-llm/nextjs"],
+	"dependencies": ["@ask-the-llm/agent", "@ask-the-llm/bindings", "@ask-the-llm/nextjs", "@ask-the-llm/client"],
 	"package-specs": {
 		"module": "esmodule",
 		"in-source": true
+	},
+	"jsx": {
+		"version": 4
+	},
+	"gentypeconfig": {
+		"language": "typescript",
+		"module": "esmodule",
+		"shims": {
+			"JsxDOM": "JsxDOM"
+		}
 	},
 	"suffix": ".res.mjs",
 	"compiler-flags": []

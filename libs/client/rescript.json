@@ -1,5 +1,6 @@
 {
-	"name": "client-rescript",
+	"name": "@ask-the-llm/client",
+	"namespace": true,
 	"sources": [
 		{
 			"dir": "src",
@@ -9,10 +10,10 @@
 	"package-specs": [
 		{
 			"module": "esmodule",
-			"in-source": true
+			"in-source": true,
+			"suffix": ".res.mjs"
 		}
 	],
-	"suffix": ".res.mjs",
 	"dependencies": ["@rescript/react"],
 	"compiler-flags": [],
 	"jsx": {
