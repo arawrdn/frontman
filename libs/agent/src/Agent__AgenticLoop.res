@@ -24,7 +24,6 @@ let run = async (
 
   // Start the agent loop
   let rec loop = async (currentTask: Agent__Task.t) => {
-    %debugger
     let history = currentTask->Agent__Task.getHistory
     Console.log(`=== Loop iteration starting with ${history->Array.length->Int.toString} messages`)
     let result = await Adapter.streamText(llm, history)

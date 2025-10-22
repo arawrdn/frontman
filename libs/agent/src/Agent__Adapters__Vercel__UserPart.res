@@ -32,8 +32,7 @@ let convertVercelData = (data: 'a): convertedData => {
   } else if %raw(`data instanceof URL`) {
     UrlResult(Obj.magic(data)->WebAPI.URL.toJSON)
   } else {
-    // Fallback: treat as string
-    DataResult(String((Obj.magic(data): string)))
+    throw(Invalid_argument("weird data type for data: " + data))
   }
 }
 
