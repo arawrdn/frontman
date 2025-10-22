@@ -27,10 +27,13 @@ let systemMessage = "You are an AI coding assistant helping with a Next.js proje
 let make = (~history: history=[], ~metadata=None): t => {
   let taskId = Agent__Id.make()
 
-  let history = Array.concat(
-    [Agent__Task__Message.make(~role=System, ~parts=[Part.text(~text=systemMessage)])],
-    history,
-  )
+  let systemMsg = Agent__Task__Message.System({
+    id: Agent__Id.make(),
+    taskId: Some(taskId),
+    content: systemMessage,
+  })
+
+  let history = Array.concat([systemMsg], history)
 
   {
     id: taskId,

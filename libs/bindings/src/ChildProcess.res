@@ -5,7 +5,7 @@ type childProcess
 type spawnOptions = {
   stdio?: array<string>,
   cwd?: string,
-  env?: Js.Dict.t<string>,
+  env?: Dict.t<string>,
 }
 
 // Spawn a child process

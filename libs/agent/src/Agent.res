@@ -36,12 +36,11 @@ let make = (projectRoot: string) => {
 
   // Verify OpenAI API key is set
   let _apiKey = AskTheLlmBindings.Dotenv.getExn("OPENAI_API_KEY")
-  let model = Agent__Bindings__VercelAI.OpenAI.gpt4o()
+  let model = Agent__Bindings__Vercel.OpenAI.gpt4o()
 
   let toolRegistry = Agent__Tools__Registry.make(projectRoot)
   let llm = Agent__Adapters__Vercel.makeLLM(~model, ~toolRegistry)
 
-  // Note: Don't use Console.debug/log here - stdout is used for IPC
   Console.log(`Agent initialized with ${toolRegistry->Array.length->Int.toString} tools`)
 
   {

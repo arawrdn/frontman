@@ -19,3 +19,4 @@
 - **Error handling**: Use Result types in ReScript, try/catch in TypeScript.
 - **Testing**: Vitest with Node environment. Test files: `*.test.res.mjs`
 - **Task runner**: Makefiles only - never use yarn/npm scripts directly.
+- never run via yarn or any other task runner, we use makefile only!

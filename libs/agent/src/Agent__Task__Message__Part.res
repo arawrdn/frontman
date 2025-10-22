@@ -1,55 +1,104 @@
-S.enableJson()
 // Part types - opaque construction for type safety
+
+// Enable JSON support in Sury
+S.enableJson()
 
 // ============ TextPart ============
 
 module TextPart = {
   @schema
-  type t = {
-    text: string,
-    metadata: option<Dict.t<JSON.t>>,
-  }
-
-  let make = (~text, ~metadata=None) => {
-    {text, metadata}
-  }
-
-  let getText = (part: t): string => part.text
-  let getMetadata = (part: t): option<Dict.t<JSON.t>> => part.metadata
+  type t = {content: string}
 }
+
+// ============ Shared Data Content Types ============
+
+// Data content - can be string (base64, etc) or binary data
+type dataContent =
+  | String(string)
+  | Uint8Array(Uint8Array.t)
+  | ArrayBuffer(ArrayBuffer.t)
+
+// Base64 encoding/decoding helpers
+let base64Encode: Uint8Array.t => string = %raw(`
+  (uint8Array) => {
+    if (typeof Buffer !== 'undefined') {
+      // Node.js environment
+      return Buffer.from(uint8Array).toString('base64');
+    } else {
+      // Browser environment
+      const binary = String.fromCharCode.apply(null, Array.from(uint8Array));
+      return btoa(binary);
+    }
+  }
+`)
+
+let base64Decode: string => Uint8Array.t = %raw(`
+  (base64) => {
+    if (typeof Buffer !== 'undefined') {
+      // Node.js environment
+      return new Uint8Array(Buffer.from(base64, 'base64'));
+    } else {
+      // Browser environment
+      const binary = atob(base64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) {
+        bytes[i] = binary.charCodeAt(i);
+      }
+      return bytes;
+    }
+  }
+`)
+
+// Type for JSON representation of dataContent
+type dataContentJson = {\"type": string, value: string}
+
+// Custom schema for dataContent with base64 transformation
+// This schema automatically converts binary data to/from base64 for JSON serialization
+let dataContentSchema: S.t<dataContent> = S.object(s => {
+  \"type": s.field("type", S.string),
+  value: s.field("value", S.string),
+})->S.transform(s => {
+  // Parser: JSON -> dataContent (convert base64 to binary if needed)
+  parser: json => {
+    switch json.\"type" {
+    | "string" => String(json.value)
+    | "base64" => Uint8Array(base64Decode(json.value))
+    | invalidType => s.fail(`Invalid dataContent type: ${invalidType}`)
+    }
+  },
+  // Serializer: dataContent -> JSON (convert binary to base64)
+  serializer: dataContent => {
+    switch dataContent {
+    | String(str) => {\"type": "string", value: str}
+    | Uint8Array(arr) => {\"type": "base64", value: base64Encode(arr)}
+    | ArrayBuffer(buf) => {
+        let uint8 = Uint8Array.fromBuffer(buf)
+        {\"type": "base64", value: base64Encode(uint8)}
+      }
+    }
+  },
+})
 
 // ============ FilePart ============
-
-module File = {
-  @schema
-  type t = {
-    name: option<string>,
-    mimeType: string,
-    bytes: string, // base64 encoded
-  }
-
-  let make = (~name=None, ~mimeType, ~bytes) => {
-    {name, mimeType, bytes}
-  }
-
-  let getName = (file: t): option<string> => file.name
-  let getMimeType = (file: t): string => file.mimeType
-  let getBytes = (file: t): string => file.bytes
-}
-
 module FilePart = {
   @schema
+  type data =
+    | Data({content: @s.matches(dataContentSchema) dataContent})
+    | Url({url: string})
+
+  @schema
   type t = {
-    file: File.t,
-    metadata: option<Dict.t<JSON.t>>,
+    filename: option<string>,
+    mediaType: string,
+    data: data,
   }
+}
 
-  let make = (~file, ~metadata=None) => {
-    {file, metadata}
-  }
-
-  let getFile = (part: t): File.t => part.file
-  let getMetadata = (part: t): option<Dict.t<JSON.t>> => part.metadata
+module ImagePart = {
+  @schema
+  type t =
+    | Data({content: @s.matches(dataContentSchema) dataContent, mediaType: option<string>})
+    | Url({url: string, mediaType: option<string>})
 }
 
 // ============ DataPart ============
@@ -60,72 +109,53 @@ module DataPart = {
     data: JSON.t,
     metadata: option<Dict.t<JSON.t>>,
   }
-
-  let make = (~data, ~metadata=None) => {
-    {data, metadata}
-  }
-
-  let getData = (part: t): JSON.t => part.data
-  let getMetadata = (part: t): option<Dict.t<JSON.t>> => part.metadata
 }
 
 // ============ ToolUsePart ============
 
-module ToolUsePart = {
+module ToolCallPart = {
   @schema
   type t = {
     toolCallId: string,
     toolName: string,
     args: JSON.t,
-    metadata: option<Dict.t<JSON.t>>,
   }
-
-  let make = (~toolCallId, ~toolName, ~args, ~metadata=None) => {
-    {toolCallId, toolName, args, metadata}
-  }
-
-  let getToolCallId = (part: t): string => part.toolCallId
-  let getToolName = (part: t): string => part.toolName
-  let getArgs = (part: t): JSON.t => part.args
-  let getMetadata = (part: t): option<Dict.t<JSON.t>> => part.metadata
 }
 
 // ============ ToolResultPart ============
 
 module ToolResultPart = {
+  module Content = {
+    @schema
+    type t = Text(string) | Media({data: string, mediaType: string})
+  }
+
+  module Output = {
+    @schema
+    type t =
+      | Text(string)
+      | JSON(JSON.t)
+      | ErrorText(string)
+      | ErrorJSON(JSON.t)
+      | Content(array<Content.t>)
+  }
+
   @schema
   type t = {
     toolCallId: string,
     toolName: string,
-    result: JSON.t,
-    metadata: option<Dict.t<JSON.t>>,
+    output: Output.t,
+    providerOptions: option<JSON.t>,
   }
-
-  let make = (~toolCallId, ~toolName, ~result, ~metadata=None) => {
-    {toolCallId, toolName, result, metadata}
-  }
-
-  let getToolCallId = (part: t): string => part.toolCallId
-  let getToolName = (part: t): string => part.toolName
-  let getResult = (part: t): JSON.t => part.result
-  let getMetadata = (part: t): option<Dict.t<JSON.t>> => part.metadata
 }
 
 // ============ Part Union ============
 
-@schema 
+// Now has @schema - binary data is handled via base64 transformation
+@schema
 type t =
-  | @as("text") Text(TextPart.t)
-  | @as("file") File(FilePart.t)
-  | @as("data") Data(DataPart.t)
-  | @as("toolUse") ToolUse(ToolUsePart.t)
-  | @as("toolResult") ToolResult(ToolResultPart.t)
-
-// Convenience constructors
-let text = (~text, ~metadata=None) => Text(TextPart.make(~text, ~metadata))
-let file = (~file, ~metadata=None) => File(FilePart.make(~file, ~metadata))
-let data = (~data, ~metadata=None) => Data(DataPart.make(~data, ~metadata))
-let toolUse = (~toolCallId, ~toolName, ~args, ~metadata=None) =>
-  ToolUse(ToolUsePart.make(~toolCallId, ~toolName, ~args, ~metadata))
-let toolResult = (~toolCallId, ~toolName, ~result, ~metadata=None) =>
-  ToolResult(ToolResultPart.make(~toolCallId, ~toolName, ~result, ~metadata))
+  | Text(TextPart.t)
+  | File(FilePart.t)
+  | Data(DataPart.t)
+  | ToolCall(ToolCallPart.t)
+  | ToolResult(ToolResultPart.t)
