@@ -1,28 +1,50 @@
 .DEFAULT_GOAL := help
-.PHONY: help build clean dev test test-watch format lint
+.PHONY: help install test lint dev dev-hot build build-lib clean serve preview check
 
 SHELL := /bin/bash
+PATH := ./node_modules/.bin:$(PATH)
 
 help: ## Display this help message
-	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z_-]+:.*##/ { printf "  %-15s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
+	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z_-]+:.*##/ { printf "  %-20s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
 
-build: ## Compile ReScript code
-	yarn rescript
+install: ## Install project dependencies
+	npm install
 
-clean: ## Clean ReScript build artifacts
-	yarn rescript clean
+test: ## Run test suite
+	# Add test commands here when tests are implemented
 
-dev: ## Watch and recompile ReScript code
-	yarn rescript watch
+lint: ## Run linters and code formatters
+	eslint .
 
-test: ## Run tests
-	yarn vitest run
+dev: ## Start development server with build watch
+	$(MAKE) clean
+	$(MAKE) -j2 dev-build-watch preview
 
-test-watch: ## Run tests in watch mode
-	yarn vitest
+dev-build-watch: ## Watch and build in development mode
+	yarn vite build --mode development --watch
 
-format: ## Format code with rescript format
-	yarn rescript format -all
+dev-server: ## Start vite dev server
+	yarn vite
 
-lint: ## Check code formatting
-	yarn rescript format -all -check
+dev-hot: ## Start development server with hot reload
+	yarn vite --mode development
+
+build: ## Build the project for production
+	$(MAKE) clean
+	tsc -b
+	yarn vite build
+
+build-lib: ## Build the project as a library
+	$(MAKE) clean
+	yarn vite build --mode library
+
+clean: ## Clean build artifacts and temporary files
+	rm -rf dist
+
+serve: ## Serve production build
+	yarn vite preview --port 5173 --host
+
+preview: ## Preview production build
+	yarn vite preview
+
+check: lint ## Run all checks (lint + test)
