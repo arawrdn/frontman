@@ -1,6 +1,37 @@
 // Task aggregate root - immutable
-module Status = Agent__Task__Status
+//
 module Part = Agent__Task__Message__Part
+
+// Status types
+module Status = {
+  type t =
+    | Submitted
+    | Working({message: option<Agent__Task__Message.t>})
+    | InputRequired({message: Agent__Task__Message.t})
+    | Completed({message: option<Agent__Task__Message.t>})
+    | Failed({message: Agent__Task__Message.t})
+    | Rejected({message: Agent__Task__Message.t})
+    | Canceled({message: option<Agent__Task__Message.t>})
+
+  let isTerminal = (status: t): bool => {
+    switch status {
+    | Completed(_) | Failed(_) | Rejected(_) | Canceled(_) => true
+    | Submitted | Working(_) | InputRequired(_) => false
+    }
+  }
+
+  let toString = (status: t): string => {
+    switch status {
+    | Submitted => "Submitted"
+    | Working(_) => "Working"
+    | InputRequired(_) => "InputRequired"
+    | Completed(_) => "Completed"
+    | Failed(_) => "Failed"
+    | Rejected(_) => "Rejected"
+    | Canceled(_) => "Canceled"
+    }
+  }
+}
 
 // Domain-specific ID type alias
 @schema
@@ -13,6 +44,11 @@ type t = {
   artifacts: array<Agent__Artifact.t>,
   metadata: option<Dict.t<JSON.t>>,
 }
+
+type id = Agent__Task__Id.t
+type cmd = Agent__Task__Commands.t
+type evt = Agent__Task__Events.t
+
 let systemMessage = "You are an AI coding assistant helping with a Next.js project.
   The project uses TypeScript, React, and Tailwind CSS.
   \nIMPORTANT Tool Usage Guidelines:
@@ -26,40 +62,140 @@ let systemMessage = "You are an AI coding assistant helping with a Next.js proje
 // Constructors
 let make = (~history: history=[], ~metadata=None): t => {
   let taskId = Agent__Id.make()
-
   let systemMsg = Agent__Task__Message.System({
     id: Agent__Id.make(),
     taskId: Some(taskId),
     content: systemMessage,
   })
-
   let history = Array.concat([systemMsg], history)
-
   {
     id: taskId,
-    status: Status.initial(),
+    status: Submitted,
     history,
     artifacts: [],
     metadata,
   }
 }
 
-// State transitions - return new Task
-let transition = (task: t, event: Status.event): result<t, string> => {
-  Status.transition(task.status, event)->Result.map(newStatus => {...task, status: newStatus})
-}
+// Decide: validate command against current state and produce events
+// PURE FUNCTION
+let decide = (state: option<t>, command: cmd): result<list<evt>, string> => {
+  switch (state, command) {
+  // === Creation ===
+  | (None, Create({initialMessage})) => {
+      let id = Agent__Id.make()
+      Ok(list{Created({id, initialMessage})})
+    }
+  | (Some(_), Create(_)) => Error("Task already exists - cannot create again")
 
-// Mutations - return new Task
-let addMessage = (task: t, message: Agent__Task__Message.t): result<t, string> => {
-  let updated_task = {...task, history: Array.concat(task.history, [message])}
-  switch updated_task.status {
-  | InputRequired(_) => transition(updated_task, Agent__Task__Status.Resume(Some(message)))
-  | _ => Ok(updated_task)
+  // === Status Transitions ===
+  | (Some({status: Submitted, _}), StartProcessing({message})) =>
+    Ok(list{ProcessingStarted({message: message})})
+
+  | (Some({status: Working(_), _}), Complete({message})) => Ok(list{Completed({message: message})})
+
+  | (Some({status: Working(_), _}), RequestInput({question})) =>
+    Ok(list{InputRequested({question: question})})
+
+  | (Some({status: InputRequired(_), _}), Resume({message})) =>
+    Ok(list{Resumed({message: message})})
+
+  | (Some({status: Submitted, _}), Reject({reason})) => Ok(list{Rejected({reason: reason})})
+
+  | (Some({status, _}), Fail({error})) =>
+    if Status.isTerminal(status) {
+      Error("Cannot fail - task already in terminal state")
+    } else {
+      Ok(list{Failed({error: error})})
+    }
+
+  | (Some({status, _}), Cancel({reason})) =>
+    if Status.isTerminal(status) {
+      Error("Cannot cancel - task already in terminal state")
+    } else {
+      Ok(list{Canceled({reason: reason})})
+    }
+
+  // === Message Handling ===
+  | (Some({status, _}), AddMessage({message})) =>
+    // Business rule: if task is InputRequired, also resume it
+    switch status {
+    | InputRequired(_) =>
+      // Emit BOTH events: message added AND status changed
+      Ok(list{MessageAdded({message: message}), Resumed({message: Some(message)})})
+    | _ => Ok(list{MessageAdded({message: message})})
+    }
+
+  | (None, AddMessage(_)) => Error("Cannot add message to non-existent task")
+
+  // === Artifact Handling ===
+  | (Some(_), AddArtifact({artifact})) => Ok(list{ArtifactAdded({artifact: artifact})})
+
+  | (None, AddArtifact(_)) => Error("Cannot add artifact to non-existent task")
+
+  // === Invalid Transitions ===
+  | (Some({status: Completed(_), _}), _) => Error("Cannot modify completed task")
+  | (Some({status: Failed(_), _}), _) => Error("Cannot modify failed task")
+  | (Some({status: Canceled(_), _}), _) => Error("Cannot modify canceled task")
+  | (Some({status: Rejected(_), _}), _) => Error("Cannot modify rejected task")
+
+  | (Some({status, _}), _) =>
+    Error(`Invalid command for current status: ${Status.toString(status)}`)
+
+  | (None, _) => Error("Cannot execute command on non-existent task")
   }
 }
 
-let addArtifact = (task: t, artifact: Agent__Artifact.t): t => {
-  {...task, artifacts: Array.concat(task.artifacts, [artifact])}
+// Evolve: apply event to state
+// PURE FUNCTION
+let evolve = (state: option<t>, event: evt): option<t> => {
+  switch (state, event) {
+  // === Creation ===
+  | (None, Created({id, initialMessage})) => {
+      let systemMsg = Agent__Task__Message.System({
+        id: Agent__Id.make(),
+        taskId: Some(id),
+        content: systemMessage,
+      })
+
+      Some({
+        id,
+        status: Status.Submitted,
+        history: [systemMsg, initialMessage],
+        artifacts: [],
+        metadata: None,
+      })
+    }
+
+  // === Status Changes ===
+  | (Some(task), ProcessingStarted({message})) =>
+    Some({...task, status: Working({message: message})})
+
+  | (Some(task), Completed({message})) => Some({...task, status: Completed({message: message})})
+
+  | (Some(task), Failed({error})) => Some({...task, status: Failed({message: error})})
+
+  | (Some(task), Canceled({reason})) => Some({...task, status: Canceled({message: reason})})
+
+  | (Some(task), InputRequested({question})) =>
+    Some({...task, status: InputRequired({message: question})})
+
+  | (Some(task), Resumed({message})) => Some({...task, status: Working({message: message})})
+
+  | (Some(task), Rejected({reason})) => Some({...task, status: Rejected({message: reason})})
+
+  // === Message Handling ===
+  | (Some(task), MessageAdded({message, _})) =>
+    Some({...task, history: Array.concat(task.history, [message])})
+
+  // === Artifact Handling ===
+  | (Some(task), ArtifactAdded({artifact, _})) =>
+    Some({...task, artifacts: Array.concat(task.artifacts, [artifact])})
+
+  // === Invalid ===
+  | (None, _) => None
+  | (Some(_), Created(_)) => %todo("implement this")
+  }
 }
 
 // Queries

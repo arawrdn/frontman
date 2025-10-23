@@ -25,5 +25,11 @@
 		"@rescript/webapi",
 		"rescript-vitest"
 	],
+
+	"reanalyze": {
+		"analysis": ["dce"],
+		"unsuppress": [],
+		"transitive": true
+	},
 	"compiler-flags": []
 }

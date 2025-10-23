@@ -6,20 +6,21 @@
 module Adapter = Agent__Adapters__Vercel
 let run = async (
   llm: Adapter.t,
-  tasks: Agent__Tasks.t,
-  eventBus: Agent__EventBus.t,
+  executeCommand: (Agent__Task__Id.t, Agent__Task__Commands.t) => result<Agent__Task.t, string>,
   task: Agent__Task.t,
 ) => {
   Console.log("=== Starting agentic loop")
 
   // Transition task to Working status to prevent re-triggering
-  let workingTask = switch Agent__Task.transition(task, Agent__Task__Status.StartProcessing(None)) {
-  | Ok(t) => {
-      Agent__Tasks.update(tasks, t)
-      Agent__EventBus.emit(eventBus, TaskStateChanged(t))
-      t
+  let workingTask = switch executeCommand(
+    task.id,
+    Agent__Task__Commands.StartProcessing({message: None}),
+  ) {
+  | Ok(t) => t
+  | Error(e) => {
+      Console.error(`Failed to start processing: ${e}`)
+      task
     }
-  | Error(_) => task
   }
 
   // Start the agent loop
@@ -42,13 +43,14 @@ let run = async (
 
     // Convert ALL messages (assistant + tool) to domain format and add to task
     let taskWithNewMessages = response.messages->Array.reduce(currentTask, (task, vercelMsg) => {
-      //Note(Danni) - the getOrThrow here is to make sure we dont get unexpected messages, once we gain better understanding
-      // we should refactor this
       let domainMessage = Adapter.messageFromVercel(vercelMsg)->Option.getOrThrow
-      let task = task->Agent__Task.addMessage(domainMessage)->Result.getOr(task)
-      Agent__Tasks.update(tasks, task)
-      Agent__EventBus.emit(eventBus, TaskMessageAdded({task, message: domainMessage}))
-      task
+      switch executeCommand(task.id, Agent__Task__Commands.AddMessage({message: domainMessage})) {
+      | Ok(updatedTask) => updatedTask
+      | Error(e) => {
+          Console.error(`Failed to add message: ${e}`)
+          task
+        }
+      }
     })
 
     // Check finish reason to decide whether to continue
@@ -79,13 +81,10 @@ let run = async (
       let lastMessage = history->Array.at(-1)
 
       // Transition task to complete
-      let _ = Agent__Task.transition(
-        taskWithNewMessages,
-        Complete(lastMessage),
-      )->Result.map(completedTask => {
-        Agent__Tasks.update(tasks, completedTask)
-        Agent__EventBus.emit(eventBus, TaskStateChanged(completedTask))
-      })
+      let _ = executeCommand(
+        taskWithNewMessages.id,
+        Agent__Task__Commands.Complete({message: lastMessage}),
+      )
 
       Console.log("=== Agentic loop completed successfully")
     }

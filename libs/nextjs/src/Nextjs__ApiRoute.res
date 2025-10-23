@@ -4,6 +4,7 @@
 S.enableJson()
 module Agent = AskTheLlmAgent.Agent
 module Bindings = AskTheLlmBindings
+module Dotenv = AskTheLlmBindings.Dotenv
 // Next.js API Route Request type (Pages Router)
 module ApiRequest = {
   type t
@@ -38,7 +39,8 @@ let getOrCreateAgent = () => {
   | Some(agent) => agent
   | None =>
     let projectRoot = Bindings.Process.env->Dict.get("PWD")->Option.getOr(".")
-    let agent = Agent.make(projectRoot)
+    let apiKey = Dotenv.getExn("OPENAI_API_KEY")
+    let agent = Agent.make({projectRoot, apiKey})
     let _shutdown = Agent.run(agent)
     agentInstance := Some(agent)
     agent

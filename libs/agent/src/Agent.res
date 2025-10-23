@@ -1,8 +1,5 @@
-S.enableJson()
 // Main Agent module - entry point
-
-// Load environment variables from .env file
-let _ = AskTheLlmBindings.Dotenv.config()
+S.enableJson()
 
 module Bindings = AskTheLlmBindings
 
@@ -22,6 +19,8 @@ module Artifact = Agent__Artifact
 module Id = Agent__Id
 module TaskId = Agent__Task__Id
 module EventBus = Agent__EventBus
+module TaskCommands = Agent__Task__Commands
+module TaskEvents = Agent__Task__Events
 
 type t = {
   projectRoot: string,
@@ -29,26 +28,68 @@ type t = {
   tasks: Agent__Tasks.t,
   llm: Adapters.Vercel.t,
 }
+type config = {
+  projectRoot: string,
+  apiKey: string,
+}
 
-let make = (projectRoot: string) => {
-  Console.log(`Initializing agent for project: ${projectRoot}`)
+let make = (config: config) => {
+  Console.log(`Initializing agent for project: ${config.projectRoot}`)
   let eventBus = EventBus.make()
 
-  // Verify OpenAI API key is set
-  let _apiKey = AskTheLlmBindings.Dotenv.getExn("OPENAI_API_KEY")
-  let model = Agent__Bindings__Vercel.OpenAI.gpt4o()
+  let model = Agent__Bindings__Vercel.OpenAI.gpt4o(config.apiKey)
 
-  let toolRegistry = Agent__Tools__Registry.make(projectRoot)
+  let toolRegistry = Agent__Tools__Registry.make(config.projectRoot)
   let llm = Agent__Adapters__Vercel.makeLLM(~model, ~toolRegistry)
 
   Console.log(`Agent initialized with ${toolRegistry->Array.length->Int.toString} tools`)
 
   {
-    projectRoot,
+    projectRoot: config.projectRoot,
     eventBus,
     tasks: Agent__Tasks.make(),
     llm,
   }
+}
+
+// Execute a task command using Command → Decide → Events → Evolve
+let executeTaskCommand = (agent: t, taskId: Agent__Task__Id.t, cmd: TaskCommands.t): result<
+  Agent__Task.t,
+  string,
+> => {
+  let currentTask = Agent__Tasks.get(agent.tasks, taskId)
+
+  Agent__Task.decide(currentTask, cmd)->Result.map(events => {
+    let newTask = events->List.reduce(currentTask, Agent__Task.evolve)
+
+    switch newTask {
+    | Some(task) => {
+        Agent__Tasks.update(agent.tasks, task)
+
+        // Emit EventBus events for each domain event
+        events->List.forEach(event => {
+          switch event {
+          | Created(_) => agent.eventBus->EventBus.emit(TaskCreated(task))
+          | ProcessingStarted(_)
+          | Completed(_)
+          | Failed(_)
+          | Canceled(_)
+          | InputRequested(_)
+          | Resumed(_)
+          | Rejected(_) =>
+            agent.eventBus->EventBus.emit(TaskStateChanged(task))
+          | MessageAdded({message}) =>
+            agent.eventBus->EventBus.emit(TaskMessageAdded({task, message}))
+          | ArtifactAdded(_) => () // No EventBus event for artifacts yet
+          }
+        })
+
+        task
+      }
+    | None =>
+      JsError.throwWithMessage("Internal error: evolve returned None after decide succeeded")
+    }
+  })
 }
 
 let run = (agent: t) => {
@@ -58,25 +99,20 @@ let run = (agent: t) => {
     switch event {
     | TaskCreated(task) => {
         Console.log("=== TaskCreated event - starting agentic loop")
-        Agent__AgenticLoop.run(agent.llm, agent.tasks, agent.eventBus, task)->ignore
+        Agent__AgenticLoop.run(
+          agent.llm,
+          (taskId, cmd) => executeTaskCommand(agent, taskId, cmd),
+          task,
+        )->ignore
       }
     | TaskStateChanged(task) => {
-        let statusStr = switch task.status {
-        | Submitted(_) => "Submitted"
-        | Working(_) => "Working"
-        | InputRequired(_) => "InputRequired"
-        | Completed(_) => "Completed"
-        | Failed(_) => "Failed"
-        | Rejected(_) => "Rejected"
-        | Canceled(_) => "Canceled"
-        }
-        Console.log2("=== TaskStateChanged event - status:", statusStr)
+        Console.log2("=== TaskStateChanged event - status:", task.status->Task.Status.toString)
 
         // Handle state transitions (but TaskCreated already handles initial Submitted)
         switch task.status {
-        | Agent__Task__Status.Working(_) =>
+        | Agent__Task.Status.Working(_) =>
           Console.log("Task working (resumed) - NOT starting loop (commented out)")
-        // Agent__AgenticLoop.run(agent.llm, agent.tasks, agent.eventBus, task)->ignore
+        // Agent__AgenticLoop.run(agent.llm, (taskId, cmd) => executeTaskCommand(agent, taskId, cmd), task)->ignore
         | _ => ()
         }
       }
@@ -87,40 +123,14 @@ let run = (agent: t) => {
   unsubscribe
 }
 
-let addTask = (agent: t, task: Agent__Task.t) => {
-  Agent__Tasks.add(agent.tasks, task)
-  Agent__EventBus.emit(agent.eventBus, TaskStateChanged(task))
-}
-
 // Send a message to the agent
 // Creates a new task if message.taskId is None, or continues existing task if present
 let sendMessage = (agent: t, message: Agent__Task__Message.t): result<Agent__Task.t, string> => {
-  // Task continuation logic: if message.taskId is present, continue existing task
-  // If absent, create new task implicitly
-  let task = switch message->Agent__Task__Message.getTaskId {
-  | Some(id) =>
-    let task = Agent__Tasks.get(agent.tasks, id)->Option.getOrThrow
-    Agent__Task.addMessage(task, message)->Result.map(updatedTask => {
-      Agent__Tasks.update(agent.tasks, updatedTask)
-      Agent__EventBus.emit(agent.eventBus, TaskMessageAdded({task: updatedTask, message}))
-      updatedTask
-    })
-
-  | None =>
-    Console.info("Task not found, creating new task")
-    let newTask = Agent__Task.make(~history=[message])
-    Agent__Tasks.add(agent.tasks, newTask)
-    Agent__EventBus.emit(agent.eventBus, TaskCreated(newTask))
-    Ok(newTask)
-  }
-
-  task
-}
-
-// Get a task by ID
-let getTask = (agent: t, taskId: Agent__Task__Id.t): result<Agent__Task.t, string> => {
-  switch Agent__Tasks.get(agent.tasks, taskId) {
-  | Some(task) => Ok(task)
-  | None => Error("Task not found")
+  switch message->Agent__Task__Message.getTaskId {
+  | Some(id) => executeTaskCommand(agent, id, TaskCommands.AddMessage({message: message}))
+  | None => {
+      let newId = Agent__Id.make()
+      executeTaskCommand(agent, newId, TaskCommands.Create({initialMessage: message}))
+    }
   }
 }

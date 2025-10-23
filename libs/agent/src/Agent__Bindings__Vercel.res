@@ -266,8 +266,18 @@ module Anthropic = {
 }
 
 module OpenAI = {
-  @module("@ai-sdk/openai") @scope("openai")
-  external model: string => languageModel = "chat"
+  type openaiProvider
 
-  let gpt4o = () => model("gpt-4o")
+  type createOpenAIConfig = {apiKey: string}
+
+  @module("@ai-sdk/openai")
+  external createOpenAI: createOpenAIConfig => openaiProvider = "createOpenAI"
+
+  @send
+  external chat: (openaiProvider, string) => languageModel = "chat"
+
+  let gpt4o = apiKey => {
+    let provider = createOpenAI({apiKey: apiKey})
+    provider->chat("gpt-4o")
+  }
 }
