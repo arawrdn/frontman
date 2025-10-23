@@ -1,20 +1,9 @@
-// Event bus - publishes domain events
-type artifactChunkGenerated = {
-  taskId: Agent__Id.t,
-  artifact: Agent__Artifact.t,
-  isComplete: bool,
-}
-
-type taskMessageAdded = {
-  task: Agent__Task.t,
-  message: Agent__Task__Message.t,
-}
+// Event bus - publishes domain events using reactor pattern
+// Wraps aggregate domain events with the aggregate state for reactors
 
 type events =
-  | TaskCreated(Agent__Task.t)
-  | TaskStateChanged(Agent__Task.t)
-  | ArtifactChunkGenerated(artifactChunkGenerated)
-  | TaskMessageAdded(taskMessageAdded)
+  | TaskEvent(Agent__Task.t, Agent__Task__Events.t)
+  // Future: ProjectEvent, UserEvent, etc.
 
 type t = {handlers: ref<array<events => unit>>}
 

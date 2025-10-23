@@ -66,22 +66,9 @@ let executeTaskCommand = (agent: t, taskId: Agent__Task__Id.t, cmd: TaskCommands
     | Some(task) => {
         Agent__Tasks.update(agent.tasks, task)
 
-        // Emit EventBus events for each domain event
+        // Emit domain events on EventBus wrapped with aggregate state
         events->List.forEach(event => {
-          switch event {
-          | Created(_) => agent.eventBus->EventBus.emit(TaskCreated(task))
-          | ProcessingStarted(_)
-          | Completed(_)
-          | Failed(_)
-          | Canceled(_)
-          | InputRequested(_)
-          | Resumed(_)
-          | Rejected(_) =>
-            agent.eventBus->EventBus.emit(TaskStateChanged(task))
-          | MessageAdded({message}) =>
-            agent.eventBus->EventBus.emit(TaskMessageAdded({task, message}))
-          | ArtifactAdded(_) => () // No EventBus event for artifacts yet
-          }
+          agent.eventBus->EventBus.emit(TaskEvent(task, event))
         })
 
         task
@@ -97,27 +84,54 @@ let run = (agent: t) => {
   let unsubscribe = agent.eventBus->EventBus.on(event => {
     Console.log2("Got EventBus Event: ", event)
     switch event {
-    | TaskCreated(task) => {
-        Console.log("=== TaskCreated event - starting agentic loop")
-        Agent__AgenticLoop.run(
+    | TaskEvent(task, Created(_)) => {
+        Console.log("=== Created event - transitioning to Working")
+        // Transition task to Working - will emit ProcessingStarted event
+        let _ = executeTaskCommand(agent, task.id, TaskCommands.StartProcessing({message: None}))
+      }
+    | TaskEvent(task, ProcessingStarted(_)) => {
+        Console.log("=== ProcessingStarted event - starting iteration")
+        // Start first iteration
+        Agent__AgenticLoop.runIteration(
           agent.llm,
           (taskId, cmd) => executeTaskCommand(agent, taskId, cmd),
           task,
         )->ignore
       }
-    | TaskStateChanged(task) => {
-        Console.log2("=== TaskStateChanged event - status:", task.status->Task.Status.toString)
+    | TaskEvent(task, MessageAdded({message})) => {
+        Console.log3("=== MessageAdded event", task.id, message)
 
-        // Handle state transitions (but TaskCreated already handles initial Submitted)
-        switch task.status {
-        | Agent__Task.Status.Working(_) =>
-          Console.log("Task working (resumed) - NOT starting loop (commented out)")
-        // Agent__AgenticLoop.run(agent.llm, (taskId, cmd) => executeTaskCommand(agent, taskId, cmd), task)->ignore
-        | _ => ()
+        // Check if message has tool calls
+        if message->Agent__Task__Message.hasToolCalls {
+          Console.log("=== Assistant message has tool calls - continuing iteration")
+          Agent__AgenticLoop.runIteration(
+            agent.llm,
+            (taskId, cmd) => executeTaskCommand(agent, taskId, cmd),
+            task,
+          )->ignore
+        } else if message->Agent__Task__Message.isAssistantMessage {
+          // Assistant message without tool calls - complete task if still working
+          switch task.status {
+          | Agent__Task.Status.Working(_) => {
+              Console.log("=== Assistant message complete - finishing task")
+              let _ = executeTaskCommand(
+                agent,
+                task.id,
+                TaskCommands.Complete({message: Some(message)}),
+              )
+            }
+          | _ => Console.log("=== Task not in Working status, skipping completion")
+          }
         }
+        // Ignore System, User, and Tool messages
       }
-    | ArtifactChunkGenerated(_) => ()
-    | TaskMessageAdded({task, message}) => Console.log3("Task message added", task, message)
+    | TaskEvent(_, Completed(_)) => Console.log("=== Task completed")
+    | TaskEvent(_, Failed(_)) => Console.log("=== Task failed")
+    | TaskEvent(_, Canceled(_)) => Console.log("=== Task canceled")
+    | TaskEvent(_, Rejected(_)) => Console.log("=== Task rejected")
+    | TaskEvent(_, InputRequested(_)) => Console.log("=== Input requested")
+    | TaskEvent(_, Resumed(_)) => Console.log("=== Task resumed")
+    | TaskEvent(_, ArtifactAdded(_)) => () // No reactor for artifacts yet
     }
   })
   unsubscribe

@@ -67,3 +67,22 @@ let getTaskId = (message: t): option<Agent__Task__Id.t> => {
   | Tool({taskId}) => taskId
   }
 }
+let isAssistantMessage = message => {
+  switch message {
+  | Assistant(_) => true
+  | _ => false
+  }
+}
+
+let hasToolCalls = (message: t): bool => {
+  switch message {
+  | Assistant({content: List(parts), _}) =>
+    parts->Array.some(part =>
+      switch part {
+      | ToolCall(_) => true
+      | _ => false
+      }
+    )
+  | _ => false
+  }
+}

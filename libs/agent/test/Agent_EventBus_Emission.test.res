@@ -25,16 +25,16 @@ describe("EventBus emission", () => {
     | Error(err) => t->expect(err)->Expect.toBe("Expected Ok, got Error")
     }
 
-    // Verify TaskCreated event was emitted
+    // Verify Created domain event was emitted
     t->expect(receivedEvents.contents->Array.length)->Expect.toBe(1)
 
     switch receivedEvents.contents->Array.at(0) {
-    | Some(TaskCreated(_)) => () // Success
+    | Some(TaskEvent(_, Created(_))) => () // Success
     | _ => t->expect(false)->Expect.toBe(true) // Fail the test
     }
   })
 
-  test("TaskStateChanged event is emitted when StartProcessing command succeeds", t => {
+  test("ProcessingStarted event is emitted when StartProcessing command succeeds", t => {
     let agent = Agent.make({projectRoot: ".", apiKey: "test-api-key"})
     let receivedEvents: ref<array<Agent.EventBus.events>> = ref([])
 
@@ -71,16 +71,16 @@ describe("EventBus emission", () => {
     | Error(err) => t->expect(err)->Expect.toBe("Expected Ok, got Error")
     }
 
-    // Verify TaskStateChanged event was emitted
+    // Verify ProcessingStarted event was emitted
     t->expect(receivedEvents.contents->Array.length)->Expect.toBe(1)
 
     switch receivedEvents.contents->Array.at(0) {
-    | Some(TaskStateChanged(_)) => () // Success
+    | Some(TaskEvent(_, ProcessingStarted(_))) => () // Success
     | _ => t->expect(false)->Expect.toBe(true) // Fail the test
     }
   })
 
-  test("TaskMessageAdded event is emitted when AddMessage command succeeds", t => {
+  test("MessageAdded event is emitted when AddMessage command succeeds", t => {
     let agent = Agent.make({projectRoot: ".", apiKey: "test-api-key"})
     let receivedEvents: ref<array<Agent.EventBus.events>> = ref([])
 
@@ -121,11 +121,11 @@ describe("EventBus emission", () => {
     | Error(err) => t->expect(err)->Expect.toBe("Expected Ok, got Error")
     }
 
-    // Verify TaskMessageAdded event was emitted
+    // Verify MessageAdded event was emitted
     t->expect(receivedEvents.contents->Array.length)->Expect.toBe(1)
 
     switch receivedEvents.contents->Array.at(0) {
-    | Some(TaskMessageAdded({task: _, message: _})) => () // Success
+    | Some(TaskEvent(_, MessageAdded({message: _}))) => () // Success
     | _ => t->expect(false)->Expect.toBe(true) // Fail the test
     }
   })
@@ -186,21 +186,21 @@ describe("EventBus emission", () => {
     // Verify both events were emitted
     t->expect(receivedEvents.contents->Array.length)->Expect.toBe(2)
 
-    // Should have TaskMessageAdded and TaskStateChanged
+    // Should have MessageAdded and Resumed domain events
     let hasMessageAdded = receivedEvents.contents->Array.some(event => {
       switch event {
-      | TaskMessageAdded(_) => true
+      | TaskEvent(_, MessageAdded(_)) => true
       | _ => false
       }
     })
-    let hasStateChanged = receivedEvents.contents->Array.some(event => {
+    let hasResumed = receivedEvents.contents->Array.some(event => {
       switch event {
-      | TaskStateChanged(_) => true
+      | TaskEvent(_, Resumed(_)) => true
       | _ => false
       }
     })
 
     t->expect(hasMessageAdded)->Expect.toBe(true)
-    t->expect(hasStateChanged)->Expect.toBe(true)
+    t->expect(hasResumed)->Expect.toBe(true)
   })
 })
