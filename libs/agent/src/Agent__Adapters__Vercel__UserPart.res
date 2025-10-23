@@ -22,7 +22,7 @@ type convertedData =
   | UrlResult(string) // URL string
   | DataResult(DomainPart.dataContent) // Data content
 
-let convertVercelData = (data: 'a): convertedData => {
+let convertVercelData = (type a, data: a): convertedData => {
   if %raw(`data instanceof URL`) {
     UrlResult(%raw(`data.href`))
   } else if %raw(`data instanceof Uint8Array`) {
@@ -32,7 +32,7 @@ let convertVercelData = (data: 'a): convertedData => {
   } else if %raw(`data instanceof URL`) {
     UrlResult(Obj.magic(data)->WebAPI.URL.toJSON)
   } else {
-    throw(Invalid_argument("weird data type for data: " + data))
+    throw(Invalid_argument("weird data type for data: " + data->Obj.magic))
   }
 }
 
