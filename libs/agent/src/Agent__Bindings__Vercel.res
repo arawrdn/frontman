@@ -100,11 +100,9 @@ module AssistantPart = {
   @tag("type")
   type t =
     | @as("text") Text({text: string})
-    | @as("tool-call") ToolCall({toolCallId: string, toolName: string, args: JSON.t})
+    | @as("tool-call") ToolCall({toolCallId: string, toolName: string, input: JSON.t})
 
   let text = (text: string): t => Text({text: text})
-
-  let toolCall = (~toolCallId, ~toolName, ~args): t => ToolCall({toolCallId, toolName, args})
 }
 
 module ToolResultPart = {
@@ -205,11 +203,64 @@ module AsyncIterableStream = {
   @send external releaseLock: defaultReader<'a> => unit = "releaseLock"
 }
 
+// Supporting types for streamPart
+type generatedFile = {
+  base64: string,
+  uint8Array: Uint8Array.t,
+  mediaType: string,
+}
+
+type requestMetadata = {
+  body: string,
+}
+
+type responseMetadata = {
+  id: string,
+  model: string,
+  timestamp: Date.t,
+  headers?: Dict.t<string>,
+}
+
+// Complete streamText fullStream types
+// Represents all possible chunks from streamText().fullStream
+// Based on official Vercel AI SDK documentation
+@tag("type")
 type streamPart =
-  | @as("text-delta") TextDelta({textDelta: string})
-  | @as("tool-call") ToolCall({toolCallId: string, toolName: string, args: JSON.t})
-  | @as("finish-step") FinishStep({finishReason: finishReason, usage: usage})
-  | @as("finish") Finish
+  | @as("start") Start({messageId: string})
+  | @as("start-step") StartStep({request: requestMetadata, warnings: array<JSON.t>})
+  | @as("text-start") TextStart({id: string})
+  | @as("text-delta") TextDelta({id: string, delta: string})
+  | @as("text-end") TextEnd({id: string})
+  | @as("reasoning-start") ReasoningStart({id: string})
+  | @as("reasoning-delta") ReasoningDelta({id: string, delta: string})
+  | @as("reasoning-end") ReasoningEnd({id: string})
+  | @as("source")
+  Source({
+      sourceType: string, // Always "url" in current API
+      id: string,
+      url: string,
+      title?: string,
+      providerMetadata?: JSON.t,
+    })
+  | @as("file") File({file: generatedFile})
+  | @as("tool-call") ToolCall({toolCallId: string, toolName: string, input: JSON.t})
+  | @as("tool-input-start") ToolInputStart({toolCallId: string, toolName: string})
+  | @as("tool-input-delta")
+  ToolInputDelta({toolCallId: string, toolName: string, inputTextDelta: string})
+  | @as("tool-input-end") ToolInputEnd({toolCallId: string, toolName: string})
+  | @as("tool-result")
+  ToolResult({toolCallId: string, toolName: string, input: JSON.t, result: JSON.t})
+  | @as("tool-error") ToolError({toolCallId: string, toolName: string, error: JSON.t})
+  | @as("finish-step")
+  FinishStep({
+      response: responseMetadata,
+      usage: usage,
+      finishReason: finishReason,
+      providerMetadata?: JSON.t,
+    })
+  | @as("finish") Finish({finishReason: finishReason, totalUsage: usage})
+  | @as("error") Error({error: JSON.t})
+  | @as("raw") Raw({value: JSON.t})
 
 @get external fullStream: streamTextResult => AsyncIterableStream.t<streamPart> = "fullStream"
 @get external finishReason: streamTextResult => promise<finishReason> = "finishReason"

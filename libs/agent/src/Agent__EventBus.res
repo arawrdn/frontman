@@ -1,31 +1,28 @@
-// Event bus - publishes domain events using reactor pattern
-// Wraps aggregate domain events with the aggregate state for reactors
+// Pure Pub/Sub Event Bus
+
+// System events - don't affect task state, just notify clients
+// Just alias to the Vercel bindings type - no need to redefine
+type streamEvent = Agent__Bindings__Vercel.streamPart
 
 type events =
-  | TaskEvent(Agent__Task.t, Agent__Task__Events.t)
-  // Future: ProjectEvent, UserEvent, etc.
+  | TaskEvent(Agent__Task.t, Agent__Task.evt) // Domain events (existing)
+  | StreamEvent(Agent__Task.t, streamEvent) // System events (NEW)
 
-type t = {handlers: ref<array<events => unit>>}
+type subscriber = events => unit
+type t = {subs: array<subscriber>}
 
-let make = () => {
-  handlers: ref([]),
+let make = (): t => {
+  subs: [],
 }
 
-let subscribe = (bus: t, handler: events => unit): unit => {
-  bus.handlers := Array.concat(bus.handlers.contents, [handler])
+let emit = (bus: t, event: events): unit => {
+  bus.subs->Array.forEach(sub => sub(event))
 }
 
-// Emit event
-let emit = (bus: t, event: events) => {
-  bus.handlers.contents->Array.forEach(handler => handler(event))
+let on = (bus: t, handler: subscriber): t => {
+  {subs: Array.concat(bus.subs, [handler])}
 }
 
-// Subscribe to events (alias with unsubscribe support)
-let on = (bus: t, handler: events => unit) => {
-  let _ = bus.handlers.contents->Array.push(handler)
-
-  // Return unsubscribe function
-  () => {
-    bus.handlers := bus.handlers.contents->Array.filter(h => h !== handler)
-  }
+let off = (bus: t, handler: subscriber): t => {
+  {subs: bus.subs->Array.filter(h => h !== handler)}
 }
