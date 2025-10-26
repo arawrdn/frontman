@@ -24,19 +24,22 @@ type streamEvent = Bindings.streamPart
 
 // ============ Tool Conversion ============
 
-let toVercelTools = (registry: Agent__ToolsRegistry.t): Dict.t<Bindings.toolDef> => {
+let toVercelTools = (registry: Agent__Tools__Registry.t): Dict.t<Bindings.toolDef> => {
   let vercelTools = Dict.make()
 
   registry->Array.forEach(tool => {
-    module Tool = unpack(tool: Agent__Tool.T)
-    let aiSchemaWrapped = Bindings.jsonSchema(Tool.inputSchema->S.toJSONSchema)
-    let toolDef: Bindings.toolDef = {
-      description: Tool.description,
-      parameters: aiSchemaWrapped,
-      inputSchema: aiSchemaWrapped,
-    }
+    switch tool {
+    | Agent__Tools__Registry.Tool({name, description, inputSchema}) =>
+      let jsonSchemaObj = inputSchema->S.toJSONSchema
+      let aiSchemaWrapped = Bindings.jsonSchema(jsonSchemaObj)
+      let toolDef: Bindings.toolDef = {
+        description,
+        parameters: aiSchemaWrapped,
+        inputSchema: aiSchemaWrapped,
+      }
 
-    vercelTools->Dict.set(Tool.name, toolDef)
+      vercelTools->Dict.set(name, toolDef)
+    }
   })
 
   vercelTools
@@ -103,11 +106,11 @@ let messageToVercel = (msg: Message.t): Bindings.modelMessage => {
         switch part {
         | Message.Assistant.Text({content}) => Bindings.AssistantPart.text(content)
         | Message.Assistant.ToolCall(toolCallPart) =>
-          Bindings.AssistantPart.ToolCall({
-            toolCallId: toolCallPart.toolCallId,
-            toolName: toolCallPart.toolName,
-            input: toolCallPart.args,
-          })
+          Bindings.AssistantPart.toolCall(
+            ~toolCallId=toolCallPart.toolCallId,
+            ~toolName=toolCallPart.toolName,
+            ~args=toolCallPart.args,
+          )
         }
       })
       let content: Bindings.assistantContent = Parts(vercelParts)
@@ -143,7 +146,7 @@ let messageFromVercel = (msg: Bindings.modelMessage, ~taskId: option<Agent__Task
   Agent__Task__Message.t,
 > => {
   switch msg {
-  | SystemMessage({content}) =>
+  | SystemMessage({content, _}) =>
     Some(
       Agent__Task__Message.System({
         taskId,
@@ -152,15 +155,15 @@ let messageFromVercel = (msg: Bindings.modelMessage, ~taskId: option<Agent__Task
       }),
     )
 
-  | UserMessage({content: String(text)}) =>
-    Some(Agent__Task__Message.User({?taskId, content: String(text)}))
+  | UserMessage({content: String(text), _}) =>
+    Some(Agent__Task__Message.User({taskId, content: String(text)}))
 
   | UserMessage({content: Parts(parts), _}) => {
       let domainParts = UserPart.arrayFromVercel(parts)
-      Some(Agent__Task__Message.User({?taskId, content: List(domainParts)}))
+      Some(Agent__Task__Message.User({taskId, content: List(domainParts)}))
     }
 
-  | AssistantMessage({content: String(text)}) =>
+  | AssistantMessage({content: String(text), _}) =>
     Some(
       Agent__Task__Message.Assistant({
         taskId,
@@ -168,20 +171,17 @@ let messageFromVercel = (msg: Bindings.modelMessage, ~taskId: option<Agent__Task
       }),
     )
 
-  | AssistantMessage({content: Parts(parts)}) => {
-      Console.log2("Converting AssistantMessage with parts:", parts)
+  | AssistantMessage({content: Parts(parts), _}) => {
       let domainParts = parts->Array.map(part => {
         switch part {
         | Bindings.AssistantPart.Text({text}) =>
           Agent__Task__Message.Assistant.Text({content: text})
-        | Bindings.AssistantPart.ToolCall({toolCallId, toolName, input}) => {
-            Console.log3("ToolCall part:", toolName, input)
-            Agent__Task__Message.Assistant.ToolCall({
-              toolCallId,
-              toolName,
-              args: input,
-            })
-          }
+        | Bindings.AssistantPart.ToolCall({toolCallId, toolName, args}) =>
+          Agent__Task__Message.Assistant.ToolCall({
+            toolCallId,
+            toolName,
+            args,
+          })
         }
       })
       Some(
@@ -192,17 +192,45 @@ let messageFromVercel = (msg: Bindings.modelMessage, ~taskId: option<Agent__Task
       )
     }
 
-  | ToolMessage({content: Parts(parts)}) =>
-    // We execute tools ourselves via Reactor, but Vercel is still returning tool results
-    // This shouldn't happen with maxSteps: 1, but we filter them out anyway
-    Console.error2("Vercel returned tool result message (filtered out):", parts)
+  | ToolMessage({content: Parts(parts), _}) =>
+    // let domainParts: array<Part.ToolResultPart.t> = parts->Array.map(part => {
+    //   let Bindings.ToolResultPart.ToolResult(record) = part
+    //   let domainOutput = switch record.output {
+    //   | Bindings.ToolResultPart.Text({value}) => Part.ToolResultPart.Output.Text(value)
+    //   | Bindings.ToolResultPart.Json({value}) => Part.ToolResultPart.Output.JSON(value)
+    //   | Bindings.ToolResultPart.ErrorText({value}) => Part.ToolResultPart.Output.ErrorText(value)
+    //   | Bindings.ToolResultPart.ErrorJson({value}) => Part.ToolResultPart.Output.ErrorJSON(value)
+    //   | Bindings.ToolResultPart.Content({value}) => {
+    //       let contentParts = value->Array.map(contentPart => {
+    //         switch contentPart {
+    //         | Bindings.ToolResultPart.TextContent({text}) =>
+    //           Part.ToolResultPart.Content.Text(text)
+    //         | Bindings.ToolResultPart.MediaContent({data, mediaType}) =>
+    //           Part.ToolResultPart.Content.Media({data, mediaType})
+    //         }
+    //       })
+    //       Part.ToolResultPart.Output.Content(contentParts)
+    //     }
+    //   }
+    //   {
+    //     Part.ToolResultPart.toolCallId: record.toolCallId,
+    //     toolName: record.toolName,
+    //     output: domainOutput,
+    //     providerOptions: record.providerOptions,
+    //   }
+    // })
+    // Agent__Task__Message.Tool({taskId, content: domainParts})
+    Console.error2(
+      "We're executing tools ourselves, but for some reason Vercel returned a toolResult msg",
+      parts,
+    )
     None
   }
 }
 
 // ============ LLM Creation ============
 
-let makeLLM = (~model: Bindings.languageModel, ~toolRegistry: Agent__ToolsRegistry.t): t => {
+let makeLLM = (~model: Bindings.languageModel, ~toolRegistry: Agent__Tools__Registry.t): t => {
   let tools = toVercelTools(toolRegistry)
   {model, tools}
 }
@@ -240,6 +268,5 @@ let streamText = async (llm: t, messages: array<Agent__Task__Message.t>): stream
     model: llm.model,
     messages,
     tools: llm.tools,
-    maxSteps: 1, // Prevent Vercel from auto-executing tools - we handle execution via Reactor
   })
 }

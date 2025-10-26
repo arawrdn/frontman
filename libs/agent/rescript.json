@@ -1,9 +1,6 @@
 {
 	"name": "@ask-the-llm/agent",
 	"namespace": true,
-	"exposed-modules": [
-		"Agent"
-	],
 	"sources": [
 		{
 			"dir": "src",

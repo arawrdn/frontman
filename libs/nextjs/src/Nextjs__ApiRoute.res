@@ -41,7 +41,7 @@ let getOrCreateAgent = () => {
     let projectRoot = Bindings.Process.env->Dict.get("PWD")->Option.getOr(".")
     let apiKey = Dotenv.getExn("OPENAI_API_KEY")
     let agent = Agent.make({projectRoot, apiKey})
-    let _shutdown = Agent.initialize(agent)
+    let _shutdown = Agent.run(agent)
     agentInstance := Some(agent)
     agent
   }
@@ -89,16 +89,14 @@ let createChatHandler = (): apiHandler => {
               res->ApiResponse.status(400)->ApiResponse.json({"error": "Message cannot be empty"})
             } else {
               let agent = getOrCreateAgent()
-              agent
-              ->Agent.sendMessage(Agent.TaskMessage.User({content: String(str)}))
-              ->ignore
-              // Message is now processed asynchronously via command queue
-              res
-              ->ApiResponse.status(202)
-              ->ApiResponse.json({
-                "status": "accepted",
-                "message": "Message received and processing started",
-              })
+              let message = Agent.sendMessage(
+                agent,
+                Agent.TaskMessage.User({taskId: None, content: String(str)}),
+              )
+              switch message {
+              | Ok(task) => res->ApiResponse.status(200)->ApiResponse.json({"task": task})
+              | Error(error) => res->ApiResponse.status(500)->ApiResponse.json({"error": error})
+              }
             }
           | None =>
             res
@@ -129,7 +127,7 @@ let createStreamHandler = (): apiHandler => {
       res->ApiResponse.write(`data: ${data}\n\n`)
     }
 
-    let unsubsribe = agent->Agent.subscribe(event => {
+    let unsubsribe = agent.eventBus->Agent.EventBus.on(event => {
       switch event {
       | TaskEvent(_task, MessageAdded({message})) =>
         Console.log2("taskMessageAdded", message)

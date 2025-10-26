@@ -13,7 +13,6 @@
 	},
 	"devDependencies": {
 		"@vitest/ui": "catalog:",
-		"msw": "^2.7.0",
 		"rescript": "catalog:",
 		"rescript-vitest": "catalog:",
 		"vite": "catalog:",

@@ -36,7 +36,7 @@ module User = {
   type userContent = String(string) | List(array<contentParts>)
 
   @schema
-  type t = {taskId?: TaskId.t, content: userContent}
+  type t = {taskId: option<TaskId.t>, content: userContent}
 }
 
 module Assistant = {
@@ -62,8 +62,7 @@ type t = System(System.t) | User(User.t) | Assistant(Assistant.t) | Tool(Tool.t)
 let getTaskId = (message: t): option<Agent__Task__Id.t> => {
   switch message {
   | System({taskId}) => taskId
-  | User({taskId, content: _, _}) => Some(taskId)
-  | User({content: _}) => None
+  | User({taskId, content: _, _}) => taskId
   | Assistant({taskId}) => taskId
   | Tool({taskId}) => taskId
   }
@@ -71,13 +70,6 @@ let getTaskId = (message: t): option<Agent__Task__Id.t> => {
 let isAssistantMessage = message => {
   switch message {
   | Assistant(_) => true
-  | _ => false
-  }
-}
-
-let isToolMessage = message => {
-  switch message {
-  | Tool(_) => true
   | _ => false
   }
 }
@@ -92,18 +84,5 @@ let hasToolCalls = (message: t): bool => {
       }
     )
   | _ => false
-  }
-}
-
-let extractToolCalls = (message: t): array<Part.ToolCallPart.t> => {
-  switch message {
-  | Assistant({content: List(parts), _}) =>
-    parts->Array.filterMap(part =>
-      switch part {
-      | ToolCall(toolCall) => Some(toolCall)
-      | _ => None
-      }
-    )
-  | _ => []
   }
 }
