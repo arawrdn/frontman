@@ -94,3 +94,17 @@ module SelectElement = {
     }
   }
 }
+
+module ChatRequest = {
+  type t = {
+    message: string,
+    selectedElement: option<SelectElement.t>,
+  }
+
+  let make = (~message: string, ~selectedElement: option<SelectElement.t>) => {
+    {
+      message,
+      selectedElement,
+    }
+  }
+}

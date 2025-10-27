@@ -17,21 +17,41 @@ let make = () => {
     None
   }, [setIframeUrl])
 
-  let handleSSEMessage = React.useCallback((msg: Agent.TaskMessage.t) => {
+  let handleSSEMessage = React.useCallback0((msg: Agent.TaskMessage.t) => {
     Console.log2("[SSE] Message received:", msg)
-  }, ())
+  })
 
   Client__Hooks__UseSSE.useSSE(handleSSEMessage)
 
   let handleSendMessage = React.useCallback(() => {
     // Console.log2("[SSE] Sending message:", msg)
+    let runner = async () => {
+      let chatRequest =
+        Types.ChatRequest.make(~message, ~selectedElement)
+        ->JSON.stringifyAny
+        ->Option.getOrThrow(~message="Failed to serialize chat request")
+      let _response = await WebAPI.Global.fetch(
+        "/api/ask-the-llm/chat",
+        ~init={
+          method: "POST",
+          headers: WebAPI.HeadersInit.fromKeyValueArray([
+            ("Content-Type", "application/json"),
+            ("Accept", "text/event-stream"),
+          ]),
+          body: WebAPI.BodyInit.fromString(chatRequest),
+        },
+      )
+      Console.log2("[Chat] Response received:", _response)
 
-    setMessages((prev: array<Agent.TaskMessage.t>)=> {
-        let userMessage: Agent.TaskMessage.t = Agent.TaskMessage.User({content: Agent.TaskMessage.User.String(message)})
+      setMessages((prev: array<Agent.TaskMessage.t>) => {
+        let userMessage: Agent.TaskMessage.t = Agent.TaskMessage.User({
+          content: Agent.TaskMessage.User.String(message),
+        })
         prev->Array.concat([userMessage])
-    })
-
-  }, [message])
+      })
+    }
+    runner()->Promise.ignore
+  }, (message, selectedElement, setMessages))
 
   let handleElementSelected = React.useCallback((element: Types.SelectElement.t) => {
     Console.log2("Element selected:", element)
@@ -59,39 +79,36 @@ let make = () => {
     Console.log("Settings clicked")
   }, ())
 
+  <div
+    style={{
+      display: "flex",
+      height: "100vh",
+      width: "100vw",
+      fontFamily: `-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`,
+      position: "fixed",
+      top: "0",
+      left: "0",
+      zIndex: "999999",
+      backgroundColor: "#fff",
+    }}
+  >
+    <Client__ChatPanel
+      message={message}
+      onMessageChange={message => setMessage(_ => message)}
+      onSendMessage={handleSendMessage}
+      messages={messages}
+      onLearnMoreClick={handleLearnMoreClick}
+      onSettingsClick={handleSettingsClick}
+      onElementSelected={handleElementSelected}
+      selectedElement={selectedElement}
+      onClearSelection={handleClearSelection}
+      onAcceptProposal={handleAcceptProposal}
+      onRejectProposal={handleRejectProposal}
+    />
 
-    <div
-        style={{
-            display: "flex",
-            height: "100vh",
-            width: "100vw",
-            fontFamily:
-                `-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`,
-            position: "fixed",
-            top: "0",
-            left: "0",
-            zIndex: "999999",
-            backgroundColor: "#fff",
-        }}
-    >
-        <Client__ChatPanel
-            message={message}
-            onMessageChange={message => setMessage(_ => message)}
-            onSendMessage={handleSendMessage}
-            messages={messages}
-            onLearnMoreClick={handleLearnMoreClick}
-            onSettingsClick={handleSettingsClick}
-            onElementSelected={handleElementSelected}
-            selectedElement={selectedElement}
-            onClearSelection={handleClearSelection}
-            onAcceptProposal={handleAcceptProposal}
-            onRejectProposal={handleRejectProposal}
-        />
-
-    
-     {switch iframeUrl {
-        | Some(iframeUrl) => <Client__ContentPanel iframeUrl={iframeUrl} />
-        | None => React.null
-     }}
-    </div>
+    {switch iframeUrl {
+    | Some(iframeUrl) => <Client__ContentPanel iframeUrl={iframeUrl} />
+    | None => React.null
+    }}
+  </div>
 }
