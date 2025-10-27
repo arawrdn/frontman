@@ -34,5 +34,5 @@ let useSSE = (newEventCallback: AgentTaskMessage.t => unit) => {
         eventSource->WebAPI.EventSource.close
       },
     )
-  }, newEventCallback)
+  }, [newEventCallback])
 }

@@ -343,7 +343,7 @@ let make = (
       | None => ()
       }
     })
-  }, setIsSelecting)
+  }, [setIsSelecting])
 
   let handleButtonClick = React.useCallback(_event => {
     switch (disabled->Option.getOr(false), selectedElement->Option.isSome, isSelecting) {

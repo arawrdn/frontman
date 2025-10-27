@@ -5,7 +5,7 @@ module Types = Client__Types
 @react.component
 let make = () => {
   let (message, setMessage) = React.useState(_ => "")
-  let (iframeUrl, setIframeUrl) = React.useState(_ => "")
+  let (iframeUrl, setIframeUrl) = React.useState(_ => None)
   let (selectedElement, setSelectedElement) = React.useState(_ => None)
   let (messages, setMessages) = React.useState(_ => [])
   let (isLoading, setIsLoading) = React.useState(_ => false)
@@ -13,9 +13,9 @@ let make = () => {
   React.useEffect(() => {
     let currentUrl = window->WebAPI.Window.location->WebAPI.Location.href->WebAPI.URL.make(~url=_)
     let originUrl = `${currentUrl.protocol}//${currentUrl.host}`
-    setIframeUrl(_ => originUrl)
+    setIframeUrl(_ => Some(originUrl))
     None
-  }, (setIframeUrl))
+  }, [setIframeUrl])
 
   let handleSSEMessage = React.useCallback((msg: Agent.TaskMessage.t) => {
     Console.log2("[SSE] Message received:", msg)
@@ -31,7 +31,7 @@ let make = () => {
         prev->Array.concat([userMessage])
     })
 
-  }, (message))
+  }, [message])
 
   let handleElementSelected = React.useCallback((element: Types.SelectElement.t) => {
     Console.log2("Element selected:", element)
@@ -88,6 +88,10 @@ let make = () => {
             onRejectProposal={handleRejectProposal}
         />
 
-        <Client__ContentPanel iframeUrl={iframeUrl} />
+    
+     {switch iframeUrl {
+        | Some(iframeUrl) => <Client__ContentPanel iframeUrl={iframeUrl} />
+        | None => React.null
+     }}
     </div>
 }
