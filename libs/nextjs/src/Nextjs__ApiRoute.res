@@ -143,6 +143,7 @@ let createStreamHandler = (): apiHandler => {
       res->ApiResponse.end("")
     })
 
+    //NOTE(Itay): This is needed to keep the connection alive.
     res->ApiResponse.write(
       `data: ${JSON.stringifyAny({"type": "connected"})->Option.getOr("{}")}\n\n`,
     )

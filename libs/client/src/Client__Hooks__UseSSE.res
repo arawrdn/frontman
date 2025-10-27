@@ -9,9 +9,14 @@ let useSSE = (newEventCallback: AgentTaskMessage.t => unit) => {
     }
     let onMessage = event => {
       Console.log2("[SSE] Message received:", event->WebAPI.MessageEvent.data)
-      let msg = event->WebAPI.MessageEvent.data->S.parseOrThrow(AgentTaskMessage.schema)
-      Console.log2("[SSE] Parsed message:", msg)
-      newEventCallback(msg)
+      let dataAsString: string = event->WebAPI.MessageEvent.dataAsString
+      switch dataAsString {
+        | `{"type":"connected"}` => ()
+        | _ => 
+        let msg = event->WebAPI.MessageEvent.data->S.parseOrThrow(AgentTaskMessage.schema)
+        Console.log2("[SSE] Parsed message:", msg)
+        newEventCallback(msg)
+      }
     }
     let onError = error => {
       Console.log2("[SSE] Error occurred:", error)
