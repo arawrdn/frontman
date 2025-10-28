@@ -1,6 +1,6 @@
 // Part types - opaque construction for type safety
 
-// Enable JSON support in Sury
+module Base64 = Agent__Base64
 S.enableJson()
 
 // ============ TextPart ============
@@ -13,77 +13,17 @@ module TextPart = {
 // ============ Shared Data Content Types ============
 
 // Data content - can be string (base64, etc) or binary data
+@schema
 type dataContent =
   | String(string)
-  | Uint8Array(Uint8Array.t)
-  | ArrayBuffer(ArrayBuffer.t)
-
-// Base64 encoding/decoding helpers
-let base64Encode: Uint8Array.t => string = %raw(`
-  (uint8Array) => {
-    if (typeof Buffer !== 'undefined') {
-      // Node.js environment
-      return Buffer.from(uint8Array).toString('base64');
-    } else {
-      // Browser environment
-      const binary = String.fromCharCode.apply(null, Array.from(uint8Array));
-      return btoa(binary);
-    }
-  }
-`)
-
-let base64Decode: string => Uint8Array.t = %raw(`
-  (base64) => {
-    if (typeof Buffer !== 'undefined') {
-      // Node.js environment
-      return new Uint8Array(Buffer.from(base64, 'base64'));
-    } else {
-      // Browser environment
-      const binary = atob(base64);
-      const bytes = new Uint8Array(binary.length);
-      for (let i = 0; i < binary.length; i++) {
-        bytes[i] = binary.charCodeAt(i);
-      }
-      return bytes;
-    }
-  }
-`)
-
-// Type for JSON representation of dataContent
-type dataContentJson = {\"type": string, value: string}
-
-// Custom schema for dataContent with base64 transformation
-// This schema automatically converts binary data to/from base64 for JSON serialization
-let dataContentSchema: S.t<dataContent> = S.object(s => {
-  \"type": s.field("type", S.string),
-  value: s.field("value", S.string),
-})->S.transform(s => {
-  // Parser: JSON -> dataContent (convert base64 to binary if needed)
-  parser: json => {
-    switch json.\"type" {
-    | "string" => String(json.value)
-    | "base64" => Uint8Array(base64Decode(json.value))
-    | invalidType => s.fail(`Invalid dataContent type: ${invalidType}`)
-    }
-  },
-  // Serializer: dataContent -> JSON (convert binary to base64)
-  serializer: dataContent => {
-    switch dataContent {
-    | String(str) => {\"type": "string", value: str}
-    | Uint8Array(arr) => {\"type": "base64", value: base64Encode(arr)}
-    | ArrayBuffer(buf) => {
-        let uint8 = Uint8Array.fromBuffer(buf)
-        {\"type": "base64", value: base64Encode(uint8)}
-      }
-    }
-  },
-})
+  | Uint8Array(@s.matches(Base64.schema) Uint8Array.t)
+  | ArrayBuffer(@s.matches(Base64.arrayBufferSchema) ArrayBuffer.t)
 
 // ============ FilePart ============
 module FilePart = {
   @schema
   type data =
-    | Data({content: @s.matches(dataContentSchema) dataContent})
+    | Data({content: dataContent})
     | Url({url: string})
 
   @schema
@@ -97,8 +37,8 @@ module FilePart = {
 module ImagePart = {
   @schema
   type t =
-    | Data({content: @s.matches(dataContentSchema) dataContent, mediaType: option<string>})
-    | Url({url: string, mediaType: option<string>})
+    | Data({content: dataContent, mediaType: @s.nullable option<string>})
+    | Url({url: string, mediaType: @s.nullable option<string>})
 }
 
 // ============ DataPart ============
@@ -145,7 +85,7 @@ module ToolResultPart = {
     toolCallId: string,
     toolName: string,
     output: Output.t,
-    providerOptions: option<JSON.t>,
+    providerOptions: @s.nullable option<JSON.t>,
   }
 }
 

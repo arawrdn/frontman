@@ -20,7 +20,7 @@ module Id = Agent__Id
 module System = {
   @schema
   type t = {
-    taskId: option<TaskId.t>,
+    taskId: TaskId.t,
     content: string,
   }
 }
@@ -35,7 +35,7 @@ module User = {
   type userContent = String(string) | List(array<contentParts>)
 
   @schema
-  type t = {taskId?: TaskId.t, content: userContent}
+  type t = {taskId: TaskId.t, content: userContent}
 
   let contentAsString = (content: userContent): string => {
     switch content {
@@ -61,7 +61,7 @@ module Assistant = {
   type content = String(string) | List(array<contentParts>)
 
   @schema
-  type t = {taskId: option<TaskId.t>, content: content}
+  type t = {taskId: TaskId.t, content: content}
 
   let contentAsString = (content: content): string => {
     switch content {
@@ -82,7 +82,7 @@ module Tool = {
   @schema
   type content = array<Part.ToolResultPart.t>
   @schema
-  type t = {taskId: option<TaskId.t>, content: content}
+  type t = {taskId: TaskId.t, content: content}
 
   let contentAsString = (content: content): string => {
     content
@@ -99,26 +99,12 @@ module Tool = {
 @schema
 type t = System(System.t) | User(User.t) | Assistant(Assistant.t) | Tool(Tool.t)
 
-let getTaskId = (message: t): option<Agent__Task__Id.t> => {
+let getTaskId = (message: t): Agent__Task__Id.t => {
   switch message {
   | System({taskId}) => taskId
-  | User({taskId, content: _, _}) => Some(taskId)
-  | User({content: _}) => None
   | Assistant({taskId}) => taskId
+  | User({taskId}) => taskId
   | Tool({taskId}) => taskId
-  }
-}
-let isAssistantMessage = message => {
-  switch message {
-  | Assistant(_) => true
-  | _ => false
-  }
-}
-
-let isToolMessage = message => {
-  switch message {
-  | Tool(_) => true
-  | _ => false
   }
 }
 
@@ -161,7 +147,6 @@ let isAssistantMessage = (message: t): bool => {
   | _ => false
   }
 }
-
 
 let isToolMessage = (message: t): bool => {
   switch message {

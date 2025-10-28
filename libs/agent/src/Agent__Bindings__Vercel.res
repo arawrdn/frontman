@@ -4,6 +4,10 @@
 // Enable JSON support in Sury
 S.enableJson()
 
+// Import utilities
+module Base64 = Agent__Base64
+module DateISO = Agent__DateISO
+
 // ============================================================================
 // Core Types
 // ============================================================================
@@ -18,12 +22,14 @@ type role =
   | @as("system") System
   | @as("tool") Tool
 
+@schema
 type usage = {
   promptTokens: int,
   completionTokens: int,
   totalTokens: int,
 }
 
+@schema
 type finishReason =
   | @as("stop") Stop
   | @as("length") Length
@@ -204,27 +210,29 @@ module AsyncIterableStream = {
 }
 
 // Supporting types for streamPart
+
+@schema
 type generatedFile = {
   base64: string,
-  uint8Array: Uint8Array.t,
+  uint8Array: @s.matches(Base64.schema) Uint8Array.t,
   mediaType: string,
 }
 
-type requestMetadata = {
-  body: string,
-}
+@schema
+type requestMetadata = {body: string}
 
+@schema
 type responseMetadata = {
   id: string,
   model: string,
-  timestamp: Date.t,
+  timestamp: @s.matches(DateISO.schema) Date.t,
   headers?: Dict.t<string>,
 }
 
 // Complete streamText fullStream types
 // Represents all possible chunks from streamText().fullStream
 // Based on official Vercel AI SDK documentation
-@tag("type")
+@tag("type") @schema
 type streamPart =
   | @as("start") Start({messageId: string})
   | @as("start-step") StartStep({request: requestMetadata, warnings: array<JSON.t>})
@@ -246,10 +254,19 @@ type streamPart =
   | @as("tool-call") ToolCall({toolCallId: string, toolName: string, input: JSON.t})
   | @as("tool-input-start") ToolInputStart({toolCallId: string, toolName: string})
   | @as("tool-input-delta")
-  ToolInputDelta({toolCallId: string, toolName: string, inputTextDelta: string})
+  ToolInputDelta({
+      toolCallId: string,
+      toolName: string,
+      inputTextDelta: string,
+    })
   | @as("tool-input-end") ToolInputEnd({toolCallId: string, toolName: string})
   | @as("tool-result")
-  ToolResult({toolCallId: string, toolName: string, input: JSON.t, result: JSON.t})
+  ToolResult({
+      toolCallId: string,
+      toolName: string,
+      input: JSON.t,
+      result: JSON.t,
+    })
   | @as("tool-error") ToolError({toolCallId: string, toolName: string, error: JSON.t})
   | @as("finish-step")
   FinishStep({

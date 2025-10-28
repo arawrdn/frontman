@@ -1,7 +1,8 @@
 module Types = Client__Types
-module AgentTaskMessage = AskTheLlmAgent.Agent__Task__Message
+module Agent = AskTheLlmAgent.Agent
+module AgentEventBus = AskTheLlmAgent.Agent__EventBus
 
-let useSSE = (newEventCallback: AgentTaskMessage.t => unit) => {
+let useSSE = (newEventCallback: AgentEventBus.events => unit) => {
   React.useEffect(() => {
     let eventSource = WebAPI.EventSource.make(~url="/api/ask-the-llm/chat-sse")
     let onOpen = _ => {
@@ -11,9 +12,9 @@ let useSSE = (newEventCallback: AgentTaskMessage.t => unit) => {
       Console.log2("[SSE] Message received:", event->WebAPI.MessageEvent.data)
       let dataAsString: string = event->WebAPI.MessageEvent.dataAsString
       switch dataAsString {
-        | `{"type":"connected"}` => ()
-        | _ => 
-        let msg = event->WebAPI.MessageEvent.data->S.parseOrThrow(AgentTaskMessage.schema)
+      | `{"type":"connected"}` => ()
+      | _ =>
+        let msg = event->WebAPI.MessageEvent.data->S.parseOrThrow(AgentEventBus.eventsSchema)
         Console.log2("[SSE] Parsed message:", msg)
         newEventCallback(msg)
       }

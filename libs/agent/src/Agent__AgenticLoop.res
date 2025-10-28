@@ -52,7 +52,7 @@ let runIteration = async (
   // Convert messages to domain commands, filtering out None (tool results we don't want)
   let commands =
     response.messages
-    ->Array.filterMap(vercelMsg => Adapter.messageFromVercel(vercelMsg))
+    ->Array.filterMap(vercelMsg => Adapter.messageFromVercel(vercelMsg, task.id))
     ->Array.map(domainMessage => {
       Agent__Task.AddMessage({task, message: domainMessage})
     })

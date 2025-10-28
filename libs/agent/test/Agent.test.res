@@ -85,7 +85,7 @@ module TestHelpers = {
     let _unsubscribe = agent->Agent.initialize
 
     let context = makeTestContext(agent)
-    await agent->Agent.sendMessage(Message.User({content: String(userMessage)}))
+    await agent->Agent.sendMessage(Message.User({taskId: Agent.TaskId.make(), content: String(userMessage)}))
     await waitForContextTask(context)
     context
   }
@@ -101,7 +101,7 @@ module TestHelpers = {
     let _unsubscribe = agent->Agent.initialize
 
     let context = makeTestContext(agent)
-    await agent->Agent.sendMessage(Message.User({content: String(userMessage)}))
+    await agent->Agent.sendMessage(Message.User({taskId: Agent.TaskId.make(), content: String(userMessage)}))
     await waitForContextTask(context)
     context
   }

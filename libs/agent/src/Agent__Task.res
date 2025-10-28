@@ -1,12 +1,12 @@
-// Task aggregate root - immutable
-
 module Part = Agent__Task__Message__Part
+// S.enableJson()
 
 module Status = {
+  @schema
   type t =
     | Submitted
-    | Working({message: option<Agent__Task__Message.t>})
-    | Completed({message: option<Agent__Task__Message.t>})
+    | Working({message: @s.nullable option<Agent__Task__Message.t>})
+    | Completed({message: @s.nullable option<Agent__Task__Message.t>})
 
   let isTerminal = (status: t): bool => {
     switch status {
@@ -26,19 +26,21 @@ module Status = {
 
 @schema
 type id = Agent__Task__Id.t
+@schema
 type t = {
   id: id,
   status: Status.t,
   history: array<Agent__Task__Message.t>,
   artifacts: array<Agent__Artifact.t>,
-  metadata: option<Dict.t<JSON.t>>,
+  metadata: @s.nullable option<Dict.t<JSON.t>>,
 }
 
+@schema
 type evt =
   // Lifecycle events
   | Created({id: id, initialMessage: Agent__Task__Message.t})
-  | ProcessingStarted({task: t, message: option<Agent__Task__Message.t>})
-  | Completed({task: t, message: option<Agent__Task__Message.t>})
+  | ProcessingStarted({task: t, message: @s.nullable option<Agent__Task__Message.t>})
+  | Completed({task: t, message: @s.nullable option<Agent__Task__Message.t>})
   // Message events
   | MessageAdded({task: t, message: Agent__Task__Message.t})
 
@@ -62,7 +64,7 @@ let systemMessage = `You are an AI coding assistant helping with a Next.js proje
 // Constructors
 let make = (id, initialMessage): t => {
   let systemMsg = Agent__Task__Message.System({
-    taskId: Some(id),
+    taskId: id,
     content: systemMessage,
   })
 

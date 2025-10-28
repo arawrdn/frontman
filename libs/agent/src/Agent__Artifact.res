@@ -1,10 +1,11 @@
 // Artifact - opaque type with safe construction
 module Part = Agent__Task__Message__Part
+@schema
 type t = {
   artifactId: Agent__Id.t,
-  name: option<string>,
+  name: @s.nullable option<string>,
   parts: array<Part.t>,
-  metadata: option<Dict.t<JSON.t>>,
+  metadata: @s.nullable option<Dict.t<JSON.t>>,
 }
 
 let make = (

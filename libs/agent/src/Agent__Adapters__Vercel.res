@@ -139,7 +139,7 @@ let messagesToVercel = (messages: array<Agent__Task__Message.t>): array<vercelMe
 }
 
 // Convert Vercel modelMessage back to domain message
-let messageFromVercel = (msg: Bindings.modelMessage, ~taskId: option<Agent__Task__Id.t>=?): option<
+let messageFromVercel = (msg: Bindings.modelMessage, taskId: Agent__Task__Id.t): option<
   Agent__Task__Message.t,
 > => {
   switch msg {
@@ -152,11 +152,11 @@ let messageFromVercel = (msg: Bindings.modelMessage, ~taskId: option<Agent__Task
     )
 
   | UserMessage({content: String(text)}) =>
-    Some(Agent__Task__Message.User({?taskId, content: String(text)}))
+    Some(Agent__Task__Message.User({taskId, content: String(text)}))
 
   | UserMessage({content: Parts(parts), _}) => {
       let domainParts = UserPart.arrayFromVercel(parts)
-      Some(Agent__Task__Message.User({?taskId, content: List(domainParts)}))
+      Some(Agent__Task__Message.User({taskId, content: List(domainParts)}))
     }
 
   | AssistantMessage({content: String(text)}) =>

@@ -61,7 +61,9 @@ let executeSingleTool = async (
       switch Tool.decodeInput(toolCall.args) {
       | Error(error) => {
           Console.log2("=== Tool execution failed (decode error):", error.message)
-          makeResult(ErrorText(`Invalid arguments for tool '${toolCall.toolName}': ${error.message}`))
+          makeResult(
+            ErrorText(`Invalid arguments for tool '${toolCall.toolName}': ${error.message}`),
+          )
         }
       | Ok(input) =>
         try {
@@ -102,7 +104,7 @@ let executeToolCalls = async (
   ->Promise.all
 
   Agent__Task__Message.Tool({
-    taskId: Some(task.id),
+    taskId: task.id,
     content: results,
   })
 }

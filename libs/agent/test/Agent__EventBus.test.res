@@ -19,6 +19,7 @@ describe("EventBus emission", () => {
 
     // Create a task
     let message = Agent.TaskMessage.User({
+      taskId: Agent.TaskId.make(),
       content: String("test message"),
     })
     agent->Agent.sendMessage(message)->ignore
@@ -55,6 +56,7 @@ describe("EventBus emission", () => {
 
     // Create a task
     let message = Agent.TaskMessage.User({
+      taskId: Agent.TaskId.make(),
       content: String("test message"),
     })
     agent->Agent.sendMessage(message)->ignore

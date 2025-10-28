@@ -3,6 +3,7 @@
 
 S.enableJson()
 module Agent = AskTheLlmAgent.Agent
+module AgentEventBus = AskTheLlmAgent.Agent__EventBus
 module Bindings = AskTheLlmBindings
 module Dotenv = AskTheLlmBindings.Dotenv
 // Next.js API Route Request type (Pages Router)
@@ -90,7 +91,12 @@ let createChatHandler = (): apiHandler => {
             } else {
               let agent = getOrCreateAgent()
               agent
-              ->Agent.sendMessage(Agent.TaskMessage.User({content: String(str)}))
+              ->Agent.sendMessage(
+                Agent.TaskMessage.User({
+                  taskId: Agent.TaskId.make(),
+                  content: String(str),
+                }),
+              )
               ->ignore
               // Message is now processed asynchronously via command queue
               res
@@ -119,24 +125,26 @@ let createChatHandler = (): apiHandler => {
 // Handler for /api/ask-the-llm/stream (SSE streaming endpoint)
 let createStreamHandler = (): apiHandler => {
   async (req, res) => {
+    Console.log("[SSE] createStreamHandler called - new connection")
     let _ = res->ApiResponse.setHeader("Content-Type", "text/event-stream")
     let _ = res->ApiResponse.setHeader("Cache-Control", "no-cache, no-transform")
     let _ = res->ApiResponse.setHeader("Connection", "keep-alive")
 
-    let send = (msg: Agent.TaskMessage.t) => {
-      let jsonValue = msg->S.reverseConvertOrThrow(Agent.TaskMessage.schema)
-      let data = JSON.stringify(jsonValue->Obj.magic)
-      res->ApiResponse.write(`data: ${data}\n\n`)
-    }
+    // let send = (msg: Agent.TaskMessage.t) => {
+    //   let jsonValue = msg->S.reverseConvertOrThrow(Agent.TaskMessage.schema)
+    //   let data = JSON.stringifyAny(jsonValue)->Option.getOr("{}")
+    //   res->ApiResponse.write(`data: ${data}\n\n`)
+    // }
 
+    Console.log("[SSE] About to subscribe to agent events")
     let unsubsribe = agent->Agent.subscribe(event => {
-      switch event {
-      | TaskEvent(_task, MessageAdded({message})) =>
-        Console.log2("taskMessageAdded", message)
-        send(message)
-      | _ => Console.log("other event")
-      }
+      Console.log2("[SSE] Event received in subscription:", event)
+      let jsonValue = event->S.reverseConvertOrThrow(AgentEventBus.eventsSchema)
+      let data = JSON.stringifyAny(jsonValue)->Option.getOr("{}")
+      Console.log2("[SSE] Writing data to response:", data)
+      res->ApiResponse.write(`data: ${data}\n\n`)
     })
+    Console.log("[SSE] Subscribed to agent events")
 
     req->ApiRequest.on("close", () => {
       unsubsribe()

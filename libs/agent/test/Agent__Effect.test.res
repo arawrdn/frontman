@@ -1,6 +1,5 @@
 // Tool execution tests using REAL file system operations
 // These tests execute actual tools against the filesystem.
-//
 // For tests that mock LLM responses, see Agent__Mocking.test.res
 
 open Vitest
@@ -19,7 +18,7 @@ describe("extractToolCalls", () => {
     }
 
     let message = Agent__Task__Message.Assistant({
-      taskId: Some(taskId),
+      taskId,
       content: List([ToolCall(toolCall), Text({content: "Let me list the files..."})]),
     })
 
@@ -32,7 +31,7 @@ describe("extractToolCalls", () => {
   testAsync("returns empty array for assistant message without tool calls", async t => {
     let taskId = Agent__Id.make()
     let message = Agent__Task__Message.Assistant({
-      taskId: Some(taskId),
+      taskId,
       content: String("Hello, I'm the assistant"),
     })
 

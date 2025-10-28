@@ -2,8 +2,11 @@
 
 // System events - don't affect task state, just notify clients
 // Just alias to the Vercel bindings type - no need to redefine
+
+@schema
 type streamEvent = Agent__Bindings__Vercel.streamPart
 
+@schema
 type events =
   | TaskEvent(Agent__Task.t, Agent__Task.evt) // Domain events (existing)
   | StreamEvent(Agent__Task.t, streamEvent) // System events (NEW)

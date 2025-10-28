@@ -59,7 +59,10 @@ let make = (config: config) => {
 
 // Subscribe to events and return unsubscribe function
 let subscribe = (agent: t, handler: Agent__EventBus.subscriber): (unit => unit) => {
-  agent.eventBus := agent.eventBus.contents->Agent__EventBus.on(handler)
+  let oldBus = agent.eventBus.contents
+  let newBus = oldBus->Agent__EventBus.on(handler)
+  agent.eventBus := newBus
+  Console.log2("[Agent] Subscribed - subscriber count:", newBus.subs->Array.length)
 
   // Return unsubscribe function
   () => {
@@ -69,7 +72,9 @@ let subscribe = (agent: t, handler: Agent__EventBus.subscriber): (unit => unit) 
 
 // Emit event to all subscribers
 let emit = (agent: t, event: Agent__EventBus.events): unit => {
-  agent.eventBus.contents->Agent__EventBus.emit(event)
+  let bus = agent.eventBus.contents
+  Console.log2("[Agent] Emitting event to subscribers:", bus.subs->Array.length)
+  bus->Agent__EventBus.emit(event)
 }
 
 // Main execution loop - drains command queue
@@ -138,7 +143,7 @@ let sendMessage = async (agent: t, message: Agent__Task__Message.t) => {
   let command =
     message
     ->Agent__Task__Message.getTaskId
-    ->Option.flatMap(taskId => agent.tasks->Agent__Tasks.get(taskId))
+    ->Agent__Tasks.get(agent.tasks, _)
     ->Option.map(task => {
       Agent__Command.Domain({task: Some(task), cmd: AddMessage({task, message})})
     })
