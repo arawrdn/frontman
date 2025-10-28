@@ -5,8 +5,6 @@ This is a multi-language project with ReScript, TypeScript, and JavaScript compo
 
 ## Build/Test Commands
 - **Build all**: `make build` (ReScript compilation)
-- **Client build**: `cd apps/client && make build` (TypeScript + Vite)
-- **Client lint**: `cd apps/client && make lint` (ESLint)
 - **Agent test**: `cd libs/agent && make test` (Vitest)
 - **Agent test single**: `cd libs/agent && yarn vitest run --run path/to/test`
 - **Agent test watch**: `cd libs/agent && make test-watch`
@@ -81,7 +79,7 @@ This is a multi-language project with ReScript, TypeScript, and JavaScript compo
 
 ### File Structure
 - Components: `Client__ComponentName.res`
-- Types: `Client__Types.res` 
+- Types: `Client__Types.res`
 - Main export: `Client.res` with module exports
 - Use flat folder structure with ReScript namespacing convention
 - Bindings: `Client__Bindings__LibraryName.res`
@@ -95,7 +93,7 @@ let make = (
   ~onClick=?,
 ) => {
   let title = title->Option.getOr("Default Title")
-  
+
   <div
     style={
       padding: "20px",
@@ -140,12 +138,10 @@ let make = (
 - `libs/agent/` - ReScript agent library
 - `libs/bindings/` - ReScript bindings for Node.js APIs
 - `libs/nextjs/` - ReScript Next.js utilities
-- `apps/client/` - TypeScript Vite app (being converted to use ReScript library)
 - `test/sites/` - Test sites for development
 
 ## Development Workflow
 1. Make changes to ReScript files in `libs/client/src/`
 2. Run `cd libs/client && make build` to compile
-3. Test changes in the TypeScript app at `apps/client/`
-4. Use `make build` from project root to build all ReScript libraries
-5. Follow the conversion checklist when converting TypeScript components to ReScript
+3. Use `make build` from project root to build all ReScript libraries
+4. Follow the conversion checklist when converting TypeScript components to ReScript

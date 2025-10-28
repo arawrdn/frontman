@@ -2,8 +2,6 @@
 
 ## Build/Test Commands
 - **Build all**: `make build` (ReScript compilation)
-- **Client build**: `cd apps/client && make build` (TypeScript + Vite)
-- **Client lint**: `cd apps/client && make lint` (ESLint)
 - **Agent test**: `cd libs/agent && make test` (Vitest)
 - **Agent test single**: `cd libs/agent && yarn vitest run --run path/to/test`
 - **Agent test watch**: `cd libs/agent && make test-watch`
