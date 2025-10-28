@@ -1,25 +1,25 @@
 module Part = Agent__Task__Message__Part
-// S.enableJson()
+S.enableJson()
 
 module Status = {
   @schema
   type t =
     | Submitted
-    | Working({message: @s.null option<Agent__Task__Message.t>})
-    | Completed({message: @s.null option<Agent__Task__Message.t>})
+    | Working
+    | Completed
 
   let isTerminal = (status: t): bool => {
     switch status {
-    | Completed(_) => true
-    | Submitted | Working(_) => false
+    | Completed => true
+    | Submitted | Working => false
     }
   }
 
   let toString = (status: t): string => {
     switch status {
     | Submitted => "Submitted"
-    | Working(_) => "Working"
-    | Completed(_) => "Completed"
+    | Working => "Working"
+    | Completed => "Completed"
     }
   }
 }
@@ -32,14 +32,13 @@ type t = {
   status: Status.t,
   history: array<Agent__Task__Message.t>,
   artifacts: array<Agent__Artifact.t>,
-  metadata: @s.null option<Dict.t<JSON.t>>,
 }
 
 @schema
 type evt =
   // Lifecycle events
   | Created({id: id, initialMessage: Agent__Task__Message.t})
-  | ProcessingStarted({task: t, message: @s.null option<Agent__Task__Message.t>})
+  | ProcessingStarted({task: t})
   | Completed({task: t, message: @s.null option<Agent__Task__Message.t>})
   // Message events
   | MessageAdded({task: t, message: Agent__Task__Message.t})
@@ -73,7 +72,6 @@ let make = (id, initialMessage): t => {
     status: Status.Submitted,
     history: [systemMsg, initialMessage],
     artifacts: [],
-    metadata: None,
   }
 }
 
@@ -85,7 +83,7 @@ let decide = (state: option<t>, command: cmd): result<list<evt>, string> => {
       let id = Agent__Id.make()
       let task = make(id, initialMessage)
       // Emit both Created and ProcessingStarted to immediately start processing
-      Ok(list{Created({id, initialMessage}), ProcessingStarted({task, message: None})})
+      Ok(list{Created({id, initialMessage}), ProcessingStarted({task: task})})
     }
   | (Some(_), Create(_)) => Error("Task already exists - cannot create again")
 
@@ -116,10 +114,9 @@ let evolve = (state: option<t>, event: evt): option<t> => {
   | (Some(_), Created(_)) => %todo("cannot reach this case")
 
   // === Status Changes ===
-  | (Some(task), ProcessingStarted({message})) =>
-    Some({...task, status: Working({message: message})})
+  | (Some(task), ProcessingStarted(_)) => Some({...task, status: Working})
 
-  | (Some(task), Completed({message})) => Some({...task, status: Completed({message: message})})
+  | (Some(task), Completed(_)) => Some({...task, status: Completed})
 
   // === Message Handling ===
   | (Some(task), MessageAdded({message, _})) =>

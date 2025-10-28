@@ -24,15 +24,7 @@ The data sent by the message emitter.
 [Read more on MDN](https://developer.mozilla.org/docs/Web/API/MessageEvent/data)
 */
 @get
-external data: messageEvent<'t> => {..} = "data"
-
-/**
-The data sent by the message emitter.
-
-[Read more on MDN](https://developer.mozilla.org/docs/Web/API/MessageEvent/data)
-*/
-@get
-external dataAsString: messageEvent<'t> => string = "data"
+external data: messageEvent<'t> => string = "data"
 
 /**
 When dispatched in a tree, invoking this method prevents event from reaching any objects other than the current object.

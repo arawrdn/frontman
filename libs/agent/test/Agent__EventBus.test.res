@@ -74,3 +74,63 @@ describe("EventBus emission", () => {
     }
   })
 })
+
+describe("EventBus serialization", () => {
+  test("StreamEvent with Start - create using ReScript types", t => {
+    // Create the task ID
+    let taskId = "0ed58ac2-d443-411f-bb9a-c81005fb2040"
+
+    // Create System message
+    let systemMessage = Agent__Task__Message.System({
+      taskId,
+      content: ``,
+    })
+
+    // Create User message
+    let userMessage = Agent__Task__Message.User({
+      taskId: "0c938b43-b1ca-4636-b6c7-bc4116e2231e",
+      content: String("test"),
+    })
+
+    // Create the task
+    let task: Agent__Task.t = {
+      id: taskId,
+      status: Agent__Task.Status.Working,
+      history: [systemMessage, userMessage],
+      artifacts: [],
+    }
+
+    // Create the stream event (Start event)
+    let streamEvent: Agent__EventBus.streamEvent = Start({})
+
+    // Create the full EventBus event
+    let event: Agent__EventBus.events = StreamEvent(task, streamEvent)
+
+    // Serialize to JSON using Sury (handles Date.t and other complex types)
+    let obj = event->S.reverseConvertOrThrow(Agent__EventBus.eventsSchema)
+    let jsonString = JSON.stringifyAny(obj)->Option.getOrThrow
+
+    Js.log2("Serialized StreamEvent:", jsonString)
+
+    // Now deserialize it back using Sury
+    let parsed = JSON.parseOrThrow(jsonString)
+    let deserialized = parsed->S.parseOrThrow(Agent__EventBus.eventsSchema)
+
+    // Verify the structure
+    switch deserialized {
+    | StreamEvent(deserializedTask, streamEvt) => {
+        // Verify task
+        t->expect(deserializedTask.id)->Expect.toBe(taskId)
+        t->expect(deserializedTask.status)->Expect.toBe(Agent__Task.Status.Working)
+        t->expect(Array.length(deserializedTask.history))->Expect.toBe(2)
+
+        // Verify stream event
+        switch streamEvt {
+        | Start(_) => t->expect(true)->Expect.toBe(true)
+        | _ => t->expect(false)->Expect.toBe(true) // Should be Start
+        }
+      }
+    | _ => t->expect(false)->Expect.toBe(true) // Should be StreamEvent
+    }
+  })
+})

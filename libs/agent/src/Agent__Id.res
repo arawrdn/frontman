@@ -1,3 +1,4 @@
+S.enableJson()
 @schema
 type t = string
 

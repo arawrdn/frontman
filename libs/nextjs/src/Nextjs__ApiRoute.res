@@ -130,23 +130,18 @@ let createStreamHandler = (): apiHandler => {
     let _ = res->ApiResponse.setHeader("Cache-Control", "no-cache, no-transform")
     let _ = res->ApiResponse.setHeader("Connection", "keep-alive")
 
-    // let send = (msg: Agent.TaskMessage.t) => {
-    //   let jsonValue = msg->S.reverseConvertOrThrow(Agent.TaskMessage.schema)
-    //   let data = JSON.stringifyAny(jsonValue)->Option.getOr("{}")
-    //   res->ApiResponse.write(`data: ${data}\n\n`)
-    // }
-
-    Console.log("[SSE] About to subscribe to agent events")
+    // Console.log("[SSE] About to subscribe to agent events")
     let unsubsribe = agent->Agent.subscribe(event => {
-      Console.log2("[SSE] Event received in subscription:", event)
+      // Console.log2("[SSE] Event received in subscription:", event)
       let jsonValue = event->S.reverseConvertOrThrow(AgentEventBus.eventsSchema)
-      let data = JSON.stringifyAny(jsonValue)->Option.getOr("{}")
-      Console.log2("[SSE] Writing data to response:", data)
+      let data = JSON.stringifyAny(jsonValue)->Option.getOrThrow
+      // Console.log2("[SSE] Writing json to response:", data)
       res->ApiResponse.write(`data: ${data}\n\n`)
     })
     Console.log("[SSE] Subscribed to agent events")
 
     req->ApiRequest.on("close", () => {
+      Console.log("[SSE] close")
       unsubsribe()
       res->ApiResponse.end("")
     })

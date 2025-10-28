@@ -234,13 +234,13 @@ type responseMetadata = {
 // Based on official Vercel AI SDK documentation
 @tag("type") @schema
 type streamPart =
-  | @as("start") Start({messageId: string})
+  | @as("start") Start({})
   | @as("start-step") StartStep({request: requestMetadata, warnings: array<JSON.t>})
   | @as("text-start") TextStart({id: string})
-  | @as("text-delta") TextDelta({id: string, delta: string})
+  | @as("text-delta") TextDelta({id: string, text: string})
   | @as("text-end") TextEnd({id: string})
   | @as("reasoning-start") ReasoningStart({id: string})
-  | @as("reasoning-delta") ReasoningDelta({id: string, delta: string})
+  | @as("reasoning-delta") ReasoningDelta({id: string, text: string})
   | @as("reasoning-end") ReasoningEnd({id: string})
   | @as("source")
   Source({
@@ -252,14 +252,20 @@ type streamPart =
     })
   | @as("file") File({file: generatedFile})
   | @as("tool-call") ToolCall({toolCallId: string, toolName: string, input: JSON.t})
-  | @as("tool-input-start") ToolInputStart({toolCallId: string, toolName: string})
+  | @as("tool-input-start")
+  ToolInputStart({
+      id: string,
+      toolName: string,
+      providerExecuted?: bool,
+      dynamic?: bool,
+      title?: string,
+    })
   | @as("tool-input-delta")
   ToolInputDelta({
-      toolCallId: string,
-      toolName: string,
-      inputTextDelta: string,
+      id: string,
+      delta: string,
     })
-  | @as("tool-input-end") ToolInputEnd({toolCallId: string, toolName: string})
+  | @as("tool-input-end") ToolInputEnd({id: string})
   | @as("tool-result")
   ToolResult({
       toolCallId: string,
@@ -276,6 +282,7 @@ type streamPart =
       providerMetadata?: JSON.t,
     })
   | @as("finish") Finish({finishReason: finishReason, totalUsage: usage})
+  | @as("abort") Abort({})
   | @as("error") Error({error: JSON.t})
   | @as("raw") Raw({value: JSON.t})
 

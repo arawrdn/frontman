@@ -18,32 +18,9 @@ let runIteration = async (
 
   // Process stream and emit ALL events to EventBus
   await Adapter.processAsyncIterable(stream, async event => {
-    // Emit to EventBus FIRST
+    Console.log("stream event:")
+    Console.dir(event, ~options={depth: Null})
     emitEvent(StreamEvent(task, event))
-
-    // Then log for debugging (keep existing console logs)
-    switch event {
-    | TextDelta({delta, _}) => Console.log(delta)
-    | ToolCall({toolName, _}) => Console.log(`\nCalling tool: ${toolName}`)
-    | Start(_)
-    | StartStep(_)
-    | TextStart(_)
-    | TextEnd(_)
-    | ReasoningStart(_)
-    | ReasoningDelta(_)
-    | ReasoningEnd(_)
-    | Source(_)
-    | File(_)
-    | ToolInputStart(_)
-    | ToolInputDelta(_)
-    | ToolInputEnd(_)
-    | ToolResult(_)
-    | ToolError(_)
-    | FinishStep(_)
-    | Finish(_)
-    | Error(_)
-    | Raw(_) => ()
-    }
   })
 
   // Get LLM generated messages

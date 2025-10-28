@@ -45,10 +45,7 @@ module ImagePart = {
 
 module DataPart = {
   @schema
-  type t = {
-    data: JSON.t,
-    metadata: @s.null option<Dict.t<JSON.t>>,
-  }
+  type t = {data: JSON.t}
 }
 
 // ============ ToolUsePart ============

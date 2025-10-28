@@ -9,12 +9,11 @@ let useSSE = (newEventCallback: AgentEventBus.events => unit) => {
       Console.log("[SSE] Connection opened")
     }
     let onMessage = event => {
-      Console.log2("[SSE] Message received:", event->WebAPI.MessageEvent.data)
-      let dataAsString: string = event->WebAPI.MessageEvent.dataAsString
-      switch dataAsString {
+      let data = event->WebAPI.MessageEvent.data
+      switch data {
       | `{"type":"connected"}` => ()
       | _ =>
-        let msg = event->WebAPI.MessageEvent.data->S.parseOrThrow(AgentEventBus.eventsSchema)
+        let msg = data->JSON.parseOrThrow->S.parseOrThrow(AgentEventBus.eventsSchema)
         Console.log2("[SSE] Parsed message:", msg)
         newEventCallback(msg)
       }
