@@ -5,7 +5,7 @@ module Status = {
   @schema
   type t =
     | Submitted
-    | Working({message: @s.nullable option<Agent__Task__Message.t>})
+    | Working({message: @s.null option<Agent__Task__Message.t>})
     | Completed({message: @s.nullable option<Agent__Task__Message.t>})
 
   let isTerminal = (status: t): bool => {

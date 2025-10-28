@@ -1,5 +1,5 @@
-open WebAPI.Global
 module Agent = AskTheLlmAgent.Agent
+module AgentEventBus = AskTheLlmAgent.Agent__EventBus
 module Types = Client__Types
 
 @react.component
@@ -8,17 +8,17 @@ let make = () => {
   let (iframeUrl, setIframeUrl) = React.useState(_ => None)
   let (selectedElement, setSelectedElement) = React.useState(_ => None)
   let (messages, setMessages) = React.useState(_ => [])
-  let (isLoading, setIsLoading) = React.useState(_ => false)
 
   React.useEffect(() => {
-    let currentUrl = window->WebAPI.Window.location->WebAPI.Location.href->WebAPI.URL.make(~url=_)
+    let currentUrl =
+      WebAPI.Global.window->WebAPI.Window.location->WebAPI.Location.href->WebAPI.URL.make(~url=_)
     let originUrl = `${currentUrl.protocol}//${currentUrl.host}`
     setIframeUrl(_ => Some(originUrl))
     None
   }, [setIframeUrl])
 
-  let handleSSEMessage = React.useCallback0((msg: Agent.TaskMessage.t) => {
-    Console.log2("[SSE] Message received:", msg)
+  let handleSSEMessage = React.useCallback0((event: AgentEventBus.events) => {
+    Console.log2("[SSE] Event received:", event)
   })
 
   Client__Hooks__UseSSE.useSSE(handleSSEMessage)
@@ -45,6 +45,7 @@ let make = () => {
 
       setMessages((prev: array<Agent.TaskMessage.t>) => {
         let userMessage: Agent.TaskMessage.t = Agent.TaskMessage.User({
+          taskId: Agent.TaskId.make(),
           content: Agent.TaskMessage.User.String(message),
         })
         prev->Array.concat([userMessage])
@@ -60,15 +61,6 @@ let make = () => {
 
   let handleClearSelection = React.useCallback(() => {
     setSelectedElement(_ => None)
-  }, ())
-
-  let handleAcceptProposal = React.useCallback((messageId: string, toolIndex: int) => {
-    // let message = messages->Array.find(m => m.messageId == messageId)
-    Console.log(`Accepting proposal for message: ${messageId} ${toolIndex->Int.toString}`)
-  }, ())
-
-  let handleRejectProposal = React.useCallback((messageId: string, toolIndex: int) => {
-    Console.log(`Rejecting proposal for message: ${messageId} ${toolIndex->Int.toString}`)
   }, ())
 
   let handleLearnMoreClick = React.useCallback(() => {
@@ -103,8 +95,6 @@ let make = () => {
       onElementSelected={handleElementSelected}
       selectedElement={selectedElement}
       onClearSelection={handleClearSelection}
-      onAcceptProposal={handleAcceptProposal}
-      onRejectProposal={handleRejectProposal}
     />
 
     {switch iframeUrl {

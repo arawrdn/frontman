@@ -1,24 +1,29 @@
-let resetDocumentCursor: unit => unit = %raw(`function() { 
-  document.body.style.cursor = "default" 
+let resetDocumentCursor: unit => unit = %raw(`function() {
+  document.body.style.cursor = "default"
 }`)
 
 external asIFrameElement: WebAPI.DOMAPI.element => WebAPI.DOMAPI.htmliFrameElement = "%identity"
 external asJSON: 'a => JSON.t = "%identity"
 
 module IFrameMessage = {
-  type t = {
-    @as("type") type_: [#ELEMENT_SELECTED | #SELECTION_CANCELLED],
-    data?: {
-      selector: string,
-      reactComponent: {
-        name: string,
-        sourceLocation: {
-          status: string,
-          file: option<string>,
-          line: option<int>,
-        },
+  type elementType =
+    | ELEMENT_SELECTED
+    | SELECTION_CANCELLED
+  type data = {
+    selector: string,
+    reactComponent: {
+      name: string,
+      sourceLocation: {
+        status: string,
+        file: option<string>,
+        line: option<int>,
       },
     },
+  }
+
+  type t = {
+    @as("type") type_: elementType,
+    data: data,
   }
 }
 let getIFrame = (document: WebAPI.DOMAPI.document) => {

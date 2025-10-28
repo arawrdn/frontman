@@ -28,7 +28,7 @@ module FilePart = {
 
   @schema
   type t = {
-    filename: option<string>,
+    filename: @s.null option<string>,
     mediaType: string,
     data: data,
   }
@@ -37,8 +37,8 @@ module FilePart = {
 module ImagePart = {
   @schema
   type t =
-    | Data({content: dataContent, mediaType: @s.nullable option<string>})
-    | Url({url: string, mediaType: @s.nullable option<string>})
+    | Data({content: dataContent, mediaType: @s.null option<string>})
+    | Url({url: string, mediaType: @s.null option<string>})
 }
 
 // ============ DataPart ============
@@ -47,7 +47,7 @@ module DataPart = {
   @schema
   type t = {
     data: JSON.t,
-    metadata: option<Dict.t<JSON.t>>,
+    metadata: @s.null option<Dict.t<JSON.t>>,
   }
 }
 
@@ -85,7 +85,7 @@ module ToolResultPart = {
     toolCallId: string,
     toolName: string,
     output: Output.t,
-    providerOptions: @s.nullable option<JSON.t>,
+    providerOptions: @s.null option<JSON.t>,
   }
 }
 

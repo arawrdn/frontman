@@ -3,9 +3,9 @@ module Part = Agent__Task__Message__Part
 @schema
 type t = {
   artifactId: Agent__Id.t,
-  name: @s.nullable option<string>,
+  name: @s.null option<string>,
   parts: array<Part.t>,
-  metadata: @s.nullable option<Dict.t<JSON.t>>,
+  metadata: @s.null option<Dict.t<JSON.t>>,
 }
 
 let make = (

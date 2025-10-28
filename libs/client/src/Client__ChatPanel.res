@@ -11,8 +11,6 @@ let make = (
   ~onElementSelected: option<Client__Types.SelectElement.t => unit>=?,
   ~selectedElement: option<Client__Types.SelectElement.t>,
   ~onClearSelection: option<unit => unit>=?,
-  ~onAcceptProposal: option<(string, int) => unit>=?,
-  ~onRejectProposal: option<(string, int) => unit>=?,
 ) => {
   <div
     data="widget-ui"
@@ -25,26 +23,18 @@ let make = (
       display: "flex",
       flexDirection: "column",
       borderRight: "1px solid #374151",
-    }>
-    <Client__ChatHeader 
-      onLearnMoreClick={onLearnMoreClick}
-    />
-    
-    <Client__ChatMessages
-      messages={messages}
-      onAcceptProposal={onAcceptProposal}
-      onRejectProposal={onRejectProposal}
-    />
-    
+    }
+  >
+    <Client__ChatHeader onLearnMoreClick={onLearnMoreClick} />
+
+    <Client__ChatMessages messages={messages} />
+
     <Client__ChatSelectedElement
-      selectedElement={selectedElement}
-      onClearSelection={onClearSelection}
+      selectedElement={selectedElement} onClearSelection={onClearSelection}
     />
-    
-    <Client__ChatTextLength
-      messages={messages}
-    />
-    
+
+    <Client__ChatTextLength messages={messages} />
+
     <Client__ChatInput
       message={message}
       onMessageChange={onMessageChange}
