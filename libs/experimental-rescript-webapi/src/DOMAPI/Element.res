@@ -97,7 +97,7 @@ Returns the first (starting at element) inclusive ancestor that matches selector
 [Read more on MDN](https://developer.mozilla.org/docs/Web/API/Element/closest)
 */
   @send
-  external closest: (T.t, string) => 'e = "closest"
+  external closest: (T.t, string) => Null.t<element> = "closest"
 
   /**
 [Read more on MDN](https://developer.mozilla.org/docs/Web/API/Element/computedStyleMap)
@@ -485,7 +485,7 @@ Sets the value of element's attribute whose namespace is namespace and local nam
    The id property of the Element interface represents the element's identifier, reflecting the id global attribute.
 [Read more on MDN](https://developer.mozilla.org/docs/Web/API/Element/id)
 */
-  @send
+  @set
   external setId: (T.t, ~value: string) => unit = "id"
 
   @send

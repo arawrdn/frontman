@@ -14,7 +14,7 @@ include Node.Impl({type t = document})
  Returns the <body> or <frameset> node of the current document.
  [Read more on MDN](https://developer.mozilla.org/docs/Web/API/Document/body)
 */
-@send
+@get
 external body: (document) => Null.t<element> = "body"
 
 /**

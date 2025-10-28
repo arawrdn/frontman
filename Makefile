@@ -30,3 +30,6 @@ dev-nextjs: ## Start development server for Next.js test site
 
 pull-webapi: ## Pull latest changes from experimental-rescript-webapi subtree
 	git subtree pull --prefix libs/experimental-rescript-webapi git@github.com:itayadler/experimental-rescript-webapi.git main --squash
+
+kill-all-processes: ## Kill all processes
+	ps aux | grep "make dev" | awk -F ' ' '{print $$2}' | xargs kill

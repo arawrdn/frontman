@@ -8,6 +8,8 @@ module Impl = (
   include Element.Impl({type t = T.t})
 
   external asHTMLElement: T.t => htmlElement = "%identity"
+
+  @get
   external style: T.t => cssStyleDeclaration = "style"
   /**
 [Read more on MDN](https://developer.mozilla.org/docs/Web/API/HTMLElement/attachInternals)

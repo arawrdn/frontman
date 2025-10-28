@@ -110,7 +110,7 @@ __metadata:
     "@rescript/webapi": "catalog:"
     "@vitest/ui": "catalog:"
     "@zumer/snapdom": "npm:^1.9.11"
-    dom-element-to-component-source: "npm:^0.1.4"
+    dom-element-to-component-source: "npm:^0.1.6"
     react: "npm:^19.2.0"
     react-dom: "npm:^19.2.0"
     rescript: "catalog:"
@@ -2745,13 +2745,13 @@ __metadata:
   languageName: node
   linkType: hard
 
-"dom-element-to-component-source@npm:^0.1.4":
-  version: 0.1.4
-  resolution: "dom-element-to-component-source@npm:0.1.4"
+"dom-element-to-component-source@npm:^0.1.6":
+  version: 0.1.6
+  resolution: "dom-element-to-component-source@npm:0.1.6"
   dependencies:
     error-stack-parser: "npm:^2.1.4"
     stacktrace-gps: "npm:^3.1.2"
-  checksum: 10c0/4a2c9843e77bcc45a961d654b39c1482a0c65cad8698104e731ab38488cfe017088a6cb70a7c9c37e038e1fd1f6cdb1049bfceee21ed5b7d03563d699290cdd3
+  checksum: 10c0/d01ca1d60e2e8b3bccc6e1beab1b0a03a52dcc1f1ca919d0a5bb5037f8b26e8c9f7214cea5500fa5f24331d3ed477a7ee091416a98158e23a296d36ab0da3f44
   languageName: node
   linkType: hard
 

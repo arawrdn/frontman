@@ -80,6 +80,7 @@ let make = () => {
   }, ())
 
   <div
+    id="ask-the-llm-widget"
     style={{
       display: "flex",
       height: "100vh",

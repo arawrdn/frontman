@@ -521,3 +521,17 @@ external cancelIdleCallback: (window, int) => unit = "cancelIdleCallback"
 */
 @send
 external getSelection: window => selection = "getSelection"
+
+/**
+Returns the horizontal scroll offset of the window.
+[Read more on MDN](https://developer.mozilla.org/docs/Web/API/Window/scrollX)
+*/
+@get
+external scrollX: window => float = "scrollX"
+
+/**
+Returns the vertical scroll offset of the window.
+[Read more on MDN](https://developer.mozilla.org/docs/Web/API/Window/scrollY)
+*/
+@get
+external scrollY: window => float = "scrollY"

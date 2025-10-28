@@ -37,31 +37,33 @@ let make = (
   ~onClearSelection: option<unit => unit>=?,
 ) => {
   let (isSelecting, setIsSelecting) = React.useState(_ => false)
-  let (hasIframe, setHasIframe) = React.useState(_ => false)
+  let (hasIframe, _setHasIframe) = React.useState(_ => false)
   let (selectionSuccessful, setSelectionSuccessful) = React.useState(_ => false)
   let cleanupFunctionRef = React.useRef(Nullable.null)
 
   let cleanup = React.useCallback(() => {
     setIsSelecting(_ => false)
     resetDocumentCursor()
-    let iframe = WebAPI.Global.document->WebAPI.Document.querySelector("#main-content-iframe")
-    switch iframe->Null.toOption {
-    | Some(iframe) =>
-      let iframe = iframe->asIFrameElement
-      switch iframe.contentWindow->Null.toOption {
-      | Some(contentWindow) =>
-        let message: Client__IframeUtils.iframeMessage = {
-          type_: "STOP_ELEMENT_SELECTION",
-        }
-        contentWindow->WebAPI.Window.postMessage(~message=message->asJSON, ~targetOrigin="*")
-      | None => ()
-      }
-    | None => ()
-    }
 
     let overlay = WebAPI.Global.document->WebAPI.Document.querySelector("#select-element-overlay")
     switch overlay->Null.toOption {
     | Some(overlay) => overlay->WebAPI.Element.remove
+    | None => ()
+    }
+
+    let iframe = getIFrame(WebAPI.Global.document)
+    switch iframe {
+    | Some(iframe) =>
+      let iframeContentDoc = iframe->WebAPI.HTMLIFrameElement.contentDocument->Null.toOption
+      switch iframeContentDoc {
+      | Some(iframeContentDoc) =>
+        let overlay = iframeContentDoc->WebAPI.Document.querySelector("#select-element-overlay")
+        switch overlay->Null.toOption {
+          | Some(overlay) => overlay->WebAPI.Element.remove
+          | None => ()
+        }
+      | None => ()
+      }
     | None => ()
     }
 
@@ -75,8 +77,8 @@ let make = (
       event->ReactEvent.Mouse.preventDefault
       event->ReactEvent.Mouse.stopPropagation
       let element = event->ReactEvent.Mouse.target->WebAPI.EventTarget.asElement
-      switch targetDocument->WebAPI.Document.body->Null.toOption {
-      | Some(body) =>
+      switch (targetDocument->WebAPI.Document.body->Null.toOption, element->WebAPI.Element.hasAttribute("data-widget-ui")) {
+      | (Some(body), false) =>
         let selector = Finder.finder(
           ~element,
           ~options={
@@ -111,10 +113,11 @@ let make = (
         onElementSelected(selectElement)
         setSelectionSuccessful(_ => true)
         let _timeoutId = setTimeout(() => setSelectionSuccessful(_ => false), 2000)
-      | None => ()
+        cleanup()
+      | (_, _) => ()
       }
     },
-    (onElementSelected, setSelectionSuccessful),
+    (onElementSelected, setSelectionSuccessful, cleanup),
   )
 
   let startSelection = React.useCallback(() => {
@@ -160,7 +163,7 @@ let make = (
           ~property="box-shadow",
           ~value="0 0 10px rgba(59, 130, 246, 0.5)",
         )
-        switch WebAPI.Global.document->WebAPI.Document.body->Null.toOption {
+        switch document->WebAPI.Document.body->Null.toOption {
         | Some(body) => body->WebAPI.Element.appendChild(overlay)->ignore
         | None => ()
         }
@@ -171,6 +174,9 @@ let make = (
     let updateHighlight = (element: WebAPI.DOMAPI.element, document: WebAPI.DOMAPI.document) => {
       let highlightOverlay = getOrCreateHighlight(document)
       let rect = element->WebAPI.Element.getBoundingClientRect
+      let offsetX = ref(0.0)
+      let offsetY = ref(0.0)
+      
       if document !== WebAPI.Global.document {
         let iframe =
           WebAPI.Global.document
@@ -183,38 +189,39 @@ let make = (
             iframe
             ->WebAPI.HTMLIFrameElement.asHTMLElement
             ->WebAPI.HTMLElement.getBoundingClientRect
-          let offsetX = iframeRect.left
-          let offsetY = iframeRect.top
-          highlightOverlay
-          ->WebAPI.HTMLElement.style
-          ->WebAPI.CSSStyleDeclaration.setProperty(
-            ~property="left",
-            ~value=`${(rect.left + offsetX)->Float.toString}px`,
-          )
-          highlightOverlay
-          ->WebAPI.HTMLElement.style
-          ->WebAPI.CSSStyleDeclaration.setProperty(
-            ~property="top",
-            ~value=`${(rect.top + offsetY)->Float.toString}px`,
-          )
-          highlightOverlay
-          ->WebAPI.HTMLElement.style
-          ->WebAPI.CSSStyleDeclaration.setProperty(
-            ~property="width",
-            ~value=`${rect.width->Float.toString}px`,
-          )
-          highlightOverlay
-          ->WebAPI.HTMLElement.style
-          ->WebAPI.CSSStyleDeclaration.setProperty(
-            ~property="height",
-            ~value=`${rect.height->Float.toString}px`,
-          )
-          highlightOverlay
-          ->WebAPI.HTMLElement.style
-          ->WebAPI.CSSStyleDeclaration.setProperty(~property="display", ~value="block")
+          offsetX.contents = iframeRect.left
+          offsetY.contents = iframeRect.top
         | None => ()
         }
       }
+      
+      highlightOverlay
+      ->WebAPI.HTMLElement.style
+      ->WebAPI.CSSStyleDeclaration.setProperty(
+        ~property="left",
+        ~value=`${(rect.left + offsetX.contents)->Float.toString}px`,
+      )
+      highlightOverlay
+      ->WebAPI.HTMLElement.style
+      ->WebAPI.CSSStyleDeclaration.setProperty(
+        ~property="top",
+        ~value=`${(rect.top + offsetY.contents)->Float.toString}px`,
+      )
+      highlightOverlay
+      ->WebAPI.HTMLElement.style
+      ->WebAPI.CSSStyleDeclaration.setProperty(
+        ~property="width",
+        ~value=`${rect.width->Float.toString}px`,
+      )
+      highlightOverlay
+      ->WebAPI.HTMLElement.style
+      ->WebAPI.CSSStyleDeclaration.setProperty(
+        ~property="height",
+        ~value=`${rect.height->Float.toString}px`,
+      )
+      highlightOverlay
+      ->WebAPI.HTMLElement.style
+      ->WebAPI.CSSStyleDeclaration.setProperty(~property="display", ~value="block")
     }
 
     let removeHighlight = () => {
@@ -223,39 +230,48 @@ let make = (
     }
 
     let handleMainDocumentClick = (event: ReactEvent.Mouse.t) => {
-      removeHighlight()
-      handleElementSelection(event, WebAPI.Global.document)->ignore
+      let element = event->ReactEvent.Mouse.target->WebAPI.EventTarget.asElement
+      // Only handle clicks on widget UI elements or outside the iframe
+      if element->WebAPI.Element.closest("#ask-the-llm-widget")->Null.toOption->Option.isSome {
+        // Clicked on widget UI - just cancel selection
+        removeHighlight()
+        cleanup()
+      }
     }
 
     let handleMainDocumentMouseOver = (event: ReactEvent.Mouse.t) => {
       let element = event->ReactEvent.Mouse.target->WebAPI.EventTarget.asElement
-      updateHighlight(element, WebAPI.Global.document)
+      // Don't show highlights for main document elements - only for iframe content
+      // Hide highlight when hovering over non-iframe elements
+      if element->WebAPI.Element.closest("#ask-the-llm-widget")->Null.toOption->Option.isSome {
+        removeHighlight()
+      }
     }
 
     let handleIframeClick = (event: ReactEvent.Mouse.t) => {
       let iframe = getIFrame(WebAPI.Global.document)
-      let iframe =
+      let iframeContentDoc =
         iframe->Option.flatMap(iframe =>
           iframe->WebAPI.HTMLIFrameElement.contentDocument->Null.toOption
         )
-      switch iframe {
-      | Some(iframe) =>
+      switch iframeContentDoc {
+      | Some(iframeContentDoc) =>
         removeHighlight()
-        handleElementSelection(event, iframe)->ignore
+        handleElementSelection(event, iframeContentDoc)->ignore
       | None => ()
       }
     }
 
     let handleIframeMouseOver = (event: ReactEvent.Mouse.t) => {
       let iframe = getIFrame(WebAPI.Global.document)
-      let iframe =
+      let iframeContentDoc =
         iframe->Option.flatMap(iframe =>
           iframe->WebAPI.HTMLIFrameElement.contentDocument->Null.toOption
         )
-      switch iframe {
-      | Some(iframe) =>
+      switch iframeContentDoc {
+      | Some(iframeContentDoc) =>
         let element = event->ReactEvent.Mouse.target->WebAPI.EventTarget.asElement
-        updateHighlight(element, iframe)->ignore
+        updateHighlight(element, iframeContentDoc)->ignore
       | None => ()
       }
     }
@@ -350,7 +366,9 @@ let make = (
     | (true, _, _) => ()
     | (_, true, false) =>
       switch onClearSelection {
-      | Some(onClearSelection) => onClearSelection()
+      | Some(onClearSelection) => 
+        onClearSelection()
+        cleanup()
       | None => ()
       }
     | (_, _, true) => cleanup()
