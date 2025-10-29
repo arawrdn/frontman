@@ -10,7 +10,7 @@ document->WebAPI.Document.addEventListener(Custom("DOMContentLoaded"), _event =>
     let root = ReactDOM.Client.createRoot(rootElement->WebAPI.Element.asRescriptElement)
     root->ReactDOM.Client.Root.render(
       <React.StrictMode>
-        <Client__Chatbox />
+        <Client__App />
       </React.StrictMode>,
     )
   | None => ()

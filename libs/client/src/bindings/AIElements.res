@@ -480,3 +480,42 @@ module PromptInputSubmit = {
     @react.component @module("@/components/ai-elements/prompt-input")
     external make: (~disabled: bool, ~status: string) => React.element = "PromptInputSubmit"
 }
+
+// Web Preview components
+type consoleLogLevel = [#log | #warn | #error]
+
+type consoleLog = {
+  level: consoleLogLevel,
+  message: string,
+  timestamp: Js.Date.t,
+}
+
+module WebPreview = {
+    @react.component @module("@/components/ai-elements/web-preview")
+    external make: (~className: string=?, ~defaultUrl: string=?, ~onUrlChange: string => unit=?, ~children: React.element) => React.element = "WebPreview"
+}
+
+module WebPreviewNavigation = {
+    @react.component @module("@/components/ai-elements/web-preview")
+    external make: (~className: string=?, ~children: React.element) => React.element = "WebPreviewNavigation"
+}
+
+module WebPreviewNavigationButton = {
+    @react.component @module("@/components/ai-elements/web-preview")
+    external make: (~onClick: unit => unit=?, ~disabled: bool=?, ~tooltip: string=?, ~children: React.element) => React.element = "WebPreviewNavigationButton"
+}
+
+module WebPreviewUrl = {
+    @react.component @module("@/components/ai-elements/web-preview")
+    external make: (~value: string=?, ~onChange: ReactEvent.Form.t => unit=?, ~onKeyDown: ReactEvent.Keyboard.t => unit=?) => React.element = "WebPreviewUrl"
+}
+
+module WebPreviewBody = {
+    @react.component @module("@/components/ai-elements/web-preview")
+    external make: (~className: string=?, ~loading: React.element=?, ~src: string=?) => React.element = "WebPreviewBody"
+}
+
+module WebPreviewConsole = {
+    @react.component @module("@/components/ai-elements/web-preview")
+    external make: (~className: string=?, ~logs: array<consoleLog>=?, ~children: React.element=?) => React.element = "WebPreviewConsole"
+}

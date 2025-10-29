@@ -203,6 +203,7 @@ __metadata:
     "@rescript/react": "npm:^0.14.0"
     "@rescript/webapi": "catalog:"
     "@tailwindcss/vite": "npm:^4.1.16"
+    "@types/react": "npm:^19.2.2"
     "@vitest/ui": "catalog:"
     "@xyflow/react": "npm:^12.9.1"
     "@zumer/snapdom": "npm:^1.9.11"
@@ -4178,7 +4179,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@types/react@npm:*":
+"@types/react@npm:*, @types/react@npm:^19.2.2":
   version: 19.2.2
   resolution: "@types/react@npm:19.2.2"
   dependencies:
