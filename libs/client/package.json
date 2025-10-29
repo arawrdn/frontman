@@ -13,8 +13,7 @@
 		"@rescript/webapi": "catalog:",
 		"@zumer/snapdom": "^1.9.11",
 		"dom-element-to-component-source": "^0.1.10",
-		"sury": "catalog:",
-		"vite": "^7.1.12"
+		"sury": "catalog:"
 	},
 	"peerDependencies": {
 		"react": "^19.2.0",

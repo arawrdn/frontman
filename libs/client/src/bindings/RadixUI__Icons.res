@@ -5,26 +5,15 @@
 
 module PaperPlaneIcon = {
   @module("@radix-ui/react-icons") @react.component
-  external make: (
-    ~className: string=?,
-    ~style: {..}=?,
-  ) => React.element = "PaperPlaneIcon"
+  external make: (~className: string=?, ~style: {..}=?) => React.element = "PaperPlaneIcon"
 }
-
 
 module ReloadIcon = {
- @module("@radix-ui/react-icons") @react.component
-  external make: (
-    ~className: string=?,
-    ~style: {..}=?,
-  ) => React.element = "ReloadIcon"
+  @module("@radix-ui/react-icons") @react.component
+  external make: (~className: string=?, ~style: {..}=?) => React.element = "ReloadIcon"
 }
 
-
 module Crosshair1Icon = {
- @module("@radix-ui/react-icons") @react.component
-  external make: (
-    ~className: string=?,
-    ~style: {..}=?,
-  ) => React.element = "Crosshair1Icon"
+  @module("@radix-ui/react-icons") @react.component
+  external make: (~className: string=?, ~style: {..}=?) => React.element = "Crosshair1Icon"
 }
