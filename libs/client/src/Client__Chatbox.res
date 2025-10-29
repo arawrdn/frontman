@@ -1,9 +1,9 @@
 // Chatbox component using AI Elements and AI SDK
 // Based on the AI Elements example
 
-module AIElements = AIElements
-module Icons = RadixUI__Icons
-module AISDK = AISDK__React
+module AIElements = Bindings__AIElements
+module Icons = Bindings__RadixUI__Icons
+module AISDK = Bindings__AISDK__React
 
 type model = {
   name: string,
