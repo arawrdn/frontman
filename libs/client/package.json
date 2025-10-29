@@ -12,7 +12,7 @@
 		"@rescript/react": "^0.14.0",
 		"@rescript/webapi": "catalog:",
 		"@zumer/snapdom": "^1.9.11",
-		"dom-element-to-component-source": "^0.1.6",
+		"dom-element-to-component-source": "^0.1.10",
 		"sury": "catalog:",
 		"vite": "^7.1.12"
 	},
