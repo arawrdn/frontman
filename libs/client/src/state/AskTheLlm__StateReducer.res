@@ -20,9 +20,9 @@ let actionToString = action => {
 type effect =
   | SendMessage(string)
 
-let handleEffect = (effect, state, dispatch) => {
+let handleEffect = (effect, _state, _dispatch) => {
   switch effect {
-  | SendMessage(message) => ()
+  | SendMessage(_message) => ()
   }
 }
 
