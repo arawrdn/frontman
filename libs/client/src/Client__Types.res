@@ -13,7 +13,6 @@ type changeProposal = {
   currentLines: int,
   proposedLines: int,
   lineDiff: int,
-  proposedContent: string,
   diff: string,
   preview: {
     currentContent: string,

@@ -1,4 +1,6 @@
-let exampleLogs: array<AIElements.consoleLog> = [
+module AIElements = Bindings__AIElements
+module RadixUI__Icons = Bindings__RadixUI__Icons
+let exampleLogs: array<Bindings__AIElements.consoleLog> = [
   {
     level: #log,
     message: "Page loaded successfully",

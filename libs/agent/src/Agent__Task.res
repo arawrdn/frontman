@@ -87,8 +87,7 @@ let decide = (state: option<t>, command: cmd): result<list<evt>, string> => {
     }
   | (Some(_), Create(_)) => Error("Task already exists - cannot create again")
 
-  | (Some({status: Working(_), _} as task), Complete({message})) =>
-    Ok(list{Completed({task, message})})
+  | (Some({status: Working} as task), Complete({message})) => Ok(list{Completed({task, message})})
 
   // === Message Handling ===
   | (Some(task), AddMessage({message})) => Ok(list{MessageAdded({task, message})})
@@ -96,7 +95,7 @@ let decide = (state: option<t>, command: cmd): result<list<evt>, string> => {
   | (None, AddMessage(_)) => Error("Cannot add message to non-existent task")
 
   // === Invalid Transitions ===
-  | (Some({status: Completed(_), _}), _) => Error("Cannot modify completed task")
+  | (Some({status: Completed}), _) => Error("Cannot modify completed task")
 
   | (Some({status, _}), _) =>
     Error(`Invalid command for current status: ${Status.toString(status)}`)

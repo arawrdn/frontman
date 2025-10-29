@@ -42,7 +42,7 @@ let react = (event: Agent__EventBus.events): list<Command.t> => {
     }
 
   // Assistant response without tool calls (Working status) → task is complete
-  | TaskEvent({status: Working(_)} as task, MessageAdded({message: Assistant(_) as message})) => {
+  | TaskEvent({status: Working} as task, MessageAdded({message: Assistant(_) as message})) => {
       Console.log("=== Reactor: Assistant message complete - finishing task")
       let cmd: Agent__Task.cmd = Complete({task, message: Some(message)})
       list{Domain({task: Some(task), cmd})}
