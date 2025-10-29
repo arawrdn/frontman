@@ -1,4 +1,4 @@
-%%raw("import './index.css'")
+%%raw("import '@radix-ui/themes/styles.css'")
 open WebAPI.Global
 
 document->WebAPI.Document.addEventListener(Custom("DOMContentLoaded"), _event => {

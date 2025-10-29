@@ -26,7 +26,7 @@ let make = (
         alignItems: "center",
         gap: "8px",
       }>
-      <RadixUI__Icons.ReloadIcon width="16" height="16" />
+      <RadixUI__Icons.ReloadIcon style={"width": "16px", "height": "16px"} />
       {React.string(url)}
     </div>
 

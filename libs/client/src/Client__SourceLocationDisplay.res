@@ -12,9 +12,7 @@ let make = (~sourceLocation: option<Client__Types.sourceLocation>, ~compact: boo
         fontStyle: "italic",
       }>
       <RadixUI__Icons.ReloadIcon
-        width="12"
-        height="12"
-        style={"animation": "spin 1s linear infinite"}
+        style={"width": "12px", "height": "12px", "animation": "spin 1s linear infinite"}
       />
       <span> {React.string("Resolving source location...")} </span>
     </div>

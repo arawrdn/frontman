@@ -412,8 +412,9 @@ let make = (
         alignItems: "center",
         justifyContent: "center",
         transition: "background-color 0.2s",
-      }
-    />
-    <RadixUI__Icons.TargetIcon width="14" height="14" color="white" />
+        color: "white",
+      }>
+      <RadixUI__Icons.Crosshair1Icon style={"width": "14px", "height": "14px"} />
+    </button>
   </>
 }

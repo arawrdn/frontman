@@ -95,8 +95,9 @@ let make = (
               alignItems: "center",
               justifyContent: "center",
               transition: "background-color 0.2s",
+              color: "white",
             }>
-            <RadixUI__Icons.PaperPlaneIcon width="14" height="14" color="white" />
+            <RadixUI__Icons.PaperPlaneIcon style={"width": "14px", "height": "14px"} />
           </button>
         </div>
       </div>
