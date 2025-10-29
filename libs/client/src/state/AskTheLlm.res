@@ -2,7 +2,7 @@ let store = AskTheLlm__Store.store
 let dispatch = AskTheLlm__Store.dispatch
 
 let useSelector = selection =>
-  StateStore.useSelector(store, selection)
+  AskTheLlmReactStatestore.StateStore.useSelector(store, selection)
 
 // let emptyLiveDemo = LiveDemo__StateReducer.emptyLiveDemo
 

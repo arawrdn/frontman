@@ -13,7 +13,6 @@ let rec dispatch = (t, action) => {
   t.subscriptions.contents->Array.forEach(s => s())
   runEffects(t)
 }
-
 and runEffects = t => {
   let effects = t.effects.contents
   t.effects.contents = []
@@ -170,5 +169,11 @@ let useSelector:
   ) => selection =
   (~compare=compareFn, store: t<'state, 'action, 'effect>, selector: 'state => selection) => {
     let subscribeAdapter = React.useMemo(() => callback => subscribe(store, callback), [store])
-    useSyncExternalStoreWithSelector(subscribeAdapter, () => getState(store), None, selector, compare)
+    useSyncExternalStoreWithSelector(
+      subscribeAdapter,
+      () => getState(store),
+      None,
+      selector,
+      compare,
+    )
   }

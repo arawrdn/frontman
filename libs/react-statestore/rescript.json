@@ -1,9 +1,13 @@
 {
-	"name": "@ask-the-llm/client",
+	"name": "@ask-the-llm/react-statestore",
 	"namespace": true,
 	"sources": [
 		{
 			"dir": "src",
+			"subdirs": true
+		},
+		{
+			"dir": "test",
 			"subdirs": true
 		}
 	],
@@ -14,14 +18,8 @@
 			"suffix": ".res.mjs"
 		}
 	],
-	"dependencies": [
-		"@rescript/react",
-		"@rescript/webapi",
-		"@ask-the-llm/agent",
-		"@ask-the-llm/react-statestore",
-		"sury"
-	],
-	"dev-dependencies": ["rescript-vitest"],
+	"dependencies": ["@rescript/react", "@rescript/webapi", "rescript-vitest"],
+	"dev-dependencies": [],
 	"compiler-flags": [],
 	"jsx": {
 		"version": 4

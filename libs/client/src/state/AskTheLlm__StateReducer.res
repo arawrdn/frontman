@@ -28,8 +28,8 @@ let handleEffect = (effect, state, dispatch) => {
 
 let next = (state, action) => {
   switch action {
-  | SetUrl(url) => StateReducer.update({...state, url})
-  | AddMessage(message) => StateReducer.update({...state, messages: state.messages->Array.concat([message])})
+  | SetUrl(url) => AskTheLlmReactStatestore.StateReducer.update({...state, url})
+  | AddMessage(message) => AskTheLlmReactStatestore.StateReducer.update({...state, messages: state.messages->Array.concat([message])})
   }
 }
 

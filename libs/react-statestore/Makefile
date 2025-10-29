@@ -1,0 +1,31 @@
+.DEFAULT_GOAL := help
+.PHONY: help install test lint dev build clean check
+
+SHELL := /bin/bash
+PATH := ./node_modules/.bin:$(PATH)
+
+help: ## Display this help message
+	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z_-]+:.*##/ { printf "  %-20s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
+
+install: ## Install project dependencies
+	yarn
+
+test: build ## Run test suite
+	yarn vitest run
+
+test-watch: build ## Run tests in watch mode
+	yarn vitest
+
+lint: ## Run linters and code formatters
+	yarn rescript format --check
+
+dev: clean ## Start development server with build watch
+	yarn rescript watch
+
+build: clean ## Build the project for production
+	yarn rescript build
+
+clean: ## Clean build artifacts and temporary files
+	yarn rescript clean
+
+check: lint test ## Run all checks (lint + test)
