@@ -203,7 +203,7 @@ __metadata:
     "@rescript/react": "npm:^0.14.0"
     "@rescript/webapi": "catalog:"
     "@tailwindcss/vite": "npm:^4.1.16"
-    "@types/react": "npm:^19.2.2"
+    "@types/use-sync-external-store": "npm:^1"
     "@vitest/ui": "catalog:"
     "@xyflow/react": "npm:^12.9.1"
     "@zumer/snapdom": "npm:^1.9.11"
@@ -230,6 +230,7 @@ __metadata:
     tokenlens: "npm:^1.3.1"
     tw-animate-css: "npm:^1.4.0"
     use-stick-to-bottom: "npm:^1.1.1"
+    use-sync-external-store: "npm:^1.6.0"
     vite: "npm:^7.1.12"
     vitest: "catalog:"
     zod: "npm:^4.1.12"
@@ -4231,6 +4232,13 @@ __metadata:
   version: 2.0.11
   resolution: "@types/unist@npm:2.0.11"
   checksum: 10c0/24dcdf25a168f453bb70298145eb043cfdbb82472db0bc0b56d6d51cd2e484b9ed8271d4ac93000a80da568f2402e9339723db262d0869e2bf13bc58e081768d
+  languageName: node
+  linkType: hard
+
+"@types/use-sync-external-store@npm:^1":
+  version: 1.5.0
+  resolution: "@types/use-sync-external-store@npm:1.5.0"
+  checksum: 10c0/59790cc055c693b510c7c25bf326ce3faef103b0bce47da18e72d3d796618ea6339da432e4359fa6b28f920e0b0265c317bbe129d5fe50e8941f59a5138a96f3
   languageName: node
   linkType: hard
 
@@ -12551,7 +12559,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"use-sync-external-store@npm:^1.2.2, use-sync-external-store@npm:^1.4.0, use-sync-external-store@npm:^1.5.0":
+"use-sync-external-store@npm:^1.2.2, use-sync-external-store@npm:^1.4.0, use-sync-external-store@npm:^1.5.0, use-sync-external-store@npm:^1.6.0":
   version: 1.6.0
   resolution: "use-sync-external-store@npm:1.6.0"
   peerDependencies:
