@@ -18,6 +18,13 @@ include Node.Impl({type t = document})
 external body: (document) => Null.t<element> = "body"
 
 /**
+Returns the FontFaceSet interface of the document.
+[Read more on MDN](https://developer.mozilla.org/docs/Web/API/Document/fonts)
+*/
+@get
+external fonts: document => option<CSSFontLoadingAPI.fontFaceSet> = "fonts"
+
+/**
 Returns the first element within node's descendants whose ID is elementId.
 [Read more on MDN](https://developer.mozilla.org/docs/Web/API/Document/getElementById)
 */

@@ -83,7 +83,7 @@ type rec fontFaceSet = {
   /**
     [Read more on MDN](https://developer.mozilla.org/docs/Web/API/FontFaceSet/ready)
     */
-  ready: promise<fontFaceSet>,
+  ready: Nullable.t<promise<fontFaceSet>>,
   /**
     [Read more on MDN](https://developer.mozilla.org/docs/Web/API/FontFaceSet/status)
     */

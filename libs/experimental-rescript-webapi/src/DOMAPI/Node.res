@@ -9,6 +9,8 @@ module Impl = (
 
   external asNode: T.t => node = "%identity"
 
+  @get
+  external nodeType: T.t => int = "nodeType"
   /**
 Returns node's root.
 [Read more on MDN](https://developer.mozilla.org/docs/Web/API/Node/getRootNode)

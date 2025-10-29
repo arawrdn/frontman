@@ -10,6 +10,7 @@ module Impl = (
 
   external asElement: T.t => element = "%identity"
   external asHTMLElement: T.t => htmlElement = "%identity"
+  external unsafeAsHTMLIFrameElement: T.t => htmliFrameElement = "%identity"
   external asRescriptElement: T.t => Dom.element = "%identity"
 
   /**
