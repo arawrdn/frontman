@@ -41,3 +41,23 @@ module PlusIcon = {
     ~style: {..}=?,
   ) => React.element = "PlusIcon"
 }
+
+module ArrowLeftIcon = {
+  @module("@radix-ui/react-icons") @react.component
+  external make: (~className: string=?, ~style: {..}=?) => React.element = "ArrowLeftIcon"
+}
+
+module ArrowRightIcon = {
+  @module("@radix-ui/react-icons") @react.component
+  external make: (~className: string=?, ~style: {..}=?) => React.element = "ArrowRightIcon"
+}
+
+module OpenInNewWindowIcon = {
+  @module("@radix-ui/react-icons") @react.component
+  external make: (~className: string=?, ~style: {..}=?) => React.element = "OpenInNewWindowIcon"
+}
+
+module EnterFullScreenIcon = {
+  @module("@radix-ui/react-icons") @react.component
+  external make: (~className: string=?, ~style: {..}=?) => React.element = "EnterFullScreenIcon"
+}
