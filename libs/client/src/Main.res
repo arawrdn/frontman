@@ -1,4 +1,6 @@
 %%raw("import '@radix-ui/themes/styles.css'")
+%%raw("import './index.css'")
+
 open WebAPI.Global
 
 document->WebAPI.Document.addEventListener(Custom("DOMContentLoaded"), _event => {
@@ -8,7 +10,7 @@ document->WebAPI.Document.addEventListener(Custom("DOMContentLoaded"), _event =>
     let root = ReactDOM.Client.createRoot(rootElement->WebAPI.Element.asRescriptElement)
     root->ReactDOM.Client.Root.render(
       <React.StrictMode>
-        <Client__SplitLayoutWidget />
+        <Client__Chatbox />
       </React.StrictMode>,
     )
   | None => ()

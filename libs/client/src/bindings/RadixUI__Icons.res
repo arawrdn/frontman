@@ -17,3 +17,27 @@ module Crosshair1Icon = {
   @module("@radix-ui/react-icons") @react.component
   external make: (~className: string=?, ~style: {..}=?) => React.element = "Crosshair1Icon"
 }
+
+module CopyIcon = {
+  @module("@radix-ui/react-icons") @react.component
+  external make: (
+    ~className: string=?,
+    ~style: {..}=?,
+  ) => React.element = "CopyIcon"
+}
+
+module GlobeIcon = {
+  @module("@radix-ui/react-icons") @react.component
+  external make: (
+    ~className: string=?,
+    ~style: {..}=?,
+  ) => React.element = "GlobeIcon"
+}
+
+module PlusIcon = {
+  @module("@radix-ui/react-icons") @react.component
+  external make: (
+    ~className: string=?,
+    ~style: {..}=?,
+  ) => React.element = "PlusIcon"
+}
