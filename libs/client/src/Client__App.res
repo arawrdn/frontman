@@ -18,6 +18,8 @@ let exampleLogs: array<AIElements.consoleLog> = [
 
 @react.component
 let make = () => {
+  let url = AskTheLlm.useSelector(AskTheLlm.Selectors.url)
+  Console.log2("URL:", url)
   let currentUrl =
     WebAPI.Global.window->WebAPI.Window.location->WebAPI.Location.href->WebAPI.URL.make(~url=_)
   let originUrl = `${currentUrl.protocol}//${currentUrl.host}`
@@ -39,8 +41,8 @@ let make = () => {
     </div>
     <div className="grow h-full p-4">
       <AIElements.WebPreview
-        defaultUrl={originUrl}
-        onUrlChange={url => Js.Console.log2("URL changed to:", url)}>
+        defaultUrl={originUrl} onUrlChange={url => Js.Console.log2("URL changed to:", url)}
+      >
         <AIElements.WebPreviewNavigation>
           <AIElements.WebPreviewNavigationButton onClick={handleBack} tooltip="Go back">
             <RadixUI__Icons.ArrowLeftIcon className="size-4" />
@@ -56,7 +58,8 @@ let make = () => {
             <RadixUI__Icons.Crosshair1Icon className="size-4" />
           </AIElements.WebPreviewNavigationButton>
           <AIElements.WebPreviewNavigationButton
-            onClick={handleOpenInNewTab} tooltip="Open in new tab">
+            onClick={handleOpenInNewTab} tooltip="Open in new tab"
+          >
             <RadixUI__Icons.OpenInNewWindowIcon className="size-4" />
           </AIElements.WebPreviewNavigationButton>
           <AIElements.WebPreviewNavigationButton onClick={handleFullscreen} tooltip="Maximize">

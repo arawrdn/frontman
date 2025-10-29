@@ -3,7 +3,7 @@ let name = "AskTheLlm::StateReducer"
 open AskTheLlm__Types
 
 let defaultState: state = {
-    url: "",
+    url: "danni",
     messages: [],
 }
 
