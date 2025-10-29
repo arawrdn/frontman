@@ -1,13 +1,13 @@
-import { defineConfig } from 'vite';
-import createReScriptPlugin from '@jihchi/vite-plugin-rescript';
+import path from "node:path";
+import createReScriptPlugin from "@jihchi/vite-plugin-rescript";
 import tailwindcss from "@tailwindcss/vite";
-import path from 'path';
+import * as vite from "vite";
 
-export default defineConfig({
-  plugins: [createReScriptPlugin(), tailwindcss()],
-  resolve: {
-    alias: {
-      '@': path.resolve(__dirname, './src'),
-    },
-  },
+export default vite.defineConfig({
+	plugins: [createReScriptPlugin(), tailwindcss()],
+	resolve: {
+		alias: {
+			"@": path.resolve(__dirname, "./src"),
+		},
+	},
 });
