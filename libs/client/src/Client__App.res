@@ -36,7 +36,7 @@ let make = () => {
   }
 
   <div className="flex h-screen w-screen dark bg-background text-foreground">
-    <div className="w-1/2 h-full border-r flex flex-col">
+    <div className="h-full border-r flex flex-col">
       <Client__Chatbox />
     </div>
     <div className="grow h-full p-4">
