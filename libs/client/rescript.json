@@ -14,7 +14,13 @@
 			"suffix": ".res.mjs"
 		}
 	],
-	"dependencies": ["@rescript/react", "@rescript/webapi", "@ask-the-llm/agent", "sury"],
+	"dependencies": [
+		"@rescript/react",
+		"@rescript/webapi",
+		"@ask-the-llm/agent",
+		"sury"
+	],
+	"dev-dependencies": ["rescript-vitest"],
 	"compiler-flags": [],
 	"jsx": {
 		"version": 4
