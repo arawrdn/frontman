@@ -50,6 +50,10 @@ describe("Client State Reducer", () => {
 
   test("TextDeltaReceived appends to textBuffer", t => {
     let state: Reducer.state = {
+      previewDocument: {
+        url: "https://example.com",
+        document: None,
+      },
       messages: [
         Assistant(
           Streaming({
@@ -74,6 +78,10 @@ describe("Client State Reducer", () => {
 
   test("MessageCompleted transitions to Completed variant", t => {
     let state: Reducer.state = {
+      previewDocument: {
+        url: "https://example.com",
+        document: None,
+      },
       messages: [
         Assistant(
           Streaming({
@@ -144,6 +152,10 @@ describe("Client State Reducer", () => {
 
   test("Selectors.isStreaming detects streaming messages", t => {
     let state: Reducer.state = {
+      previewDocument: {
+        url: "https://example.com",
+        document: None,
+      },
       messages: [
         Assistant(
           Streaming({
@@ -161,6 +173,10 @@ describe("Client State Reducer", () => {
 
   test("Selectors.isStreaming false when no streaming", t => {
     let state: Reducer.state = {
+      previewDocument: {
+        url: "https://example.com",
+        document: None,
+      },
       messages: [
         Assistant(
           Completed({
@@ -177,6 +193,10 @@ describe("Client State Reducer", () => {
 
   test("ToolCallReceived adds tool call to streaming message", t => {
     let state: Reducer.state = {
+      previewDocument: {
+        url: "https://example.com",
+        document: None,
+      },
       messages: [
         Assistant(
           Streaming({
@@ -214,6 +234,10 @@ describe("Client State Reducer", () => {
 describe("Client State Reducer - MessageCompleted Content Conversion", () => {
   test("handles empty textBuffer correctly", t => {
     let state: Reducer.state = {
+      previewDocument: {
+        url: "https://example.com",
+        document: None,
+      },
       messages: [
         Assistant(
           Streaming({
@@ -237,6 +261,10 @@ describe("Client State Reducer - MessageCompleted Content Conversion", () => {
 
   test("converts toolCalls to ToolCall content parts", t => {
     let state: Reducer.state = {
+      previewDocument: {
+        url: "https://example.com",
+        document: None,
+      },
       messages: [
         Assistant(
           Streaming({
@@ -283,6 +311,10 @@ describe("Client State Reducer - MessageCompleted Content Conversion", () => {
 
   test("preserves message ID during streaming to completed transition", t => {
     let state: Reducer.state = {
+      previewDocument: {
+        url: "https://example.com",
+        document: None,
+      },
       messages: [
         Assistant(
           Streaming({

@@ -31,7 +31,16 @@ type message =
   | User({id: string, content: array<UserContentPart.t>, createdAt: float})
   | Assistant(assistantMessage)
 
-type state = {messages: array<message>}
+// Preview document with URL and optional loaded document
+type previewDocument = {
+  url: string,
+  document: option<WebAPI.DOMAPI.document>,
+}
+
+type state = {
+  messages: array<message>,
+  previewDocument: previewDocument,
+}
 
 type action =
   // User actions
@@ -42,12 +51,23 @@ type action =
   | ToolCallReceived({id: string, toolCall: toolCall})
   // Completion action
   | MessageCompleted({id: string})
+  // Preview document actions
+  | SetPreviewUrl({url: string})
+  | SetPreviewDocument({document: option<WebAPI.DOMAPI.document>})
 
 // Effects for side effects
 type effect = SendMessageToAPI({message: string})
 
+let getInitialUrl = () => {
+  let currentUrl =
+    WebAPI.Global.window->WebAPI.Window.location->WebAPI.Location.href->WebAPI.URL.make(~url=_)
+  let originUrl = `${currentUrl.protocol}//${currentUrl.host}`
+  originUrl
+}
+
 let defaultState: state = {
   messages: [],
+  previewDocument: {url: getInitialUrl(), document: None},
 }
 
 let actionToString = action => {
@@ -57,6 +77,8 @@ let actionToString = action => {
   | TextDeltaReceived({id, text}) => `TextDeltaReceived(${id}, "${text}")`
   | ToolCallReceived({id, toolCall}) => `ToolCallReceived(${id}, ${toolCall.toolName})`
   | MessageCompleted({id}) => `MessageCompleted(${id})`
+  | SetPreviewUrl({url}) => `SetPreviewUrl(${url})`
+  | SetPreviewDocument(_) => `SetPreviewDocument(document)`
   }
 }
 
@@ -116,6 +138,7 @@ let next = (state, action) => {
       AskTheLlmReactStatestore.StateReducer.update(
         {
           messages: Array.concat(state.messages, [message]),
+          previewDocument: state.previewDocument,
         },
         ~sideEffects=[SendMessageToAPI({message: textContent})],
       )
@@ -133,6 +156,7 @@ let next = (state, action) => {
       )
       AskTheLlmReactStatestore.StateReducer.update({
         messages: Array.concat(state.messages, [message]),
+        previewDocument: state.previewDocument,
       })
     }
 
@@ -154,6 +178,7 @@ let next = (state, action) => {
       })
       AskTheLlmReactStatestore.StateReducer.update({
         messages: updatedMessages,
+        previewDocument: state.previewDocument,
       })
     }
 
@@ -175,6 +200,7 @@ let next = (state, action) => {
       })
       AskTheLlmReactStatestore.StateReducer.update({
         messages: updatedMessages,
+        previewDocument: state.previewDocument,
       })
     }
 
@@ -217,8 +243,23 @@ let next = (state, action) => {
       })
       AskTheLlmReactStatestore.StateReducer.update({
         messages: updatedMessages,
+        previewDocument: state.previewDocument,
       })
     }
+
+  // Set preview URL (clears document)
+  | SetPreviewUrl({url}) =>
+    AskTheLlmReactStatestore.StateReducer.update({
+      messages: state.messages,
+      previewDocument: {url, document: None},
+    })
+
+  // Set preview document (keep existing URL)
+  | SetPreviewDocument({document}) =>
+    AskTheLlmReactStatestore.StateReducer.update({
+      messages: state.messages,
+      previewDocument: {...state.previewDocument, document: document},
+    })
   }
 }
 
@@ -265,4 +306,7 @@ module Selectors = {
     | Assistant(Completed({id, _})) => id
     }
   }
+
+  // Get preview document state
+  let previewDocument = (state: state) => state.previewDocument
 }

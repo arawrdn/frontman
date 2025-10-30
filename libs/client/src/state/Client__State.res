@@ -40,4 +40,10 @@ module Actions = {
     Client__State__Store.dispatch(ToolCallReceived({id, toolCall}))
 
   let messageCompleted = (~id) => Client__State__Store.dispatch(MessageCompleted({id: id}))
+
+  // Preview document actions
+  let setPreviewUrl = (~url) => Client__State__Store.dispatch(SetPreviewUrl({url: url}))
+
+  let setPreviewDocument = (~document) =>
+    Client__State__Store.dispatch(SetPreviewDocument({document: document}))
 }
