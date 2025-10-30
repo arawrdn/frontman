@@ -54,6 +54,8 @@ describe("Client State Reducer", () => {
         url: "https://example.com",
         document: None,
       },
+      webPreviewIsSelecting: false,
+      selectedElement: None,
       messages: [
         Assistant(
           Streaming({
@@ -82,6 +84,8 @@ describe("Client State Reducer", () => {
         url: "https://example.com",
         document: None,
       },
+      webPreviewIsSelecting: false,
+      selectedElement: None,
       messages: [
         Assistant(
           Streaming({
@@ -156,6 +160,8 @@ describe("Client State Reducer", () => {
         url: "https://example.com",
         document: None,
       },
+      webPreviewIsSelecting: false,
+      selectedElement: None,
       messages: [
         Assistant(
           Streaming({
@@ -177,6 +183,8 @@ describe("Client State Reducer", () => {
         url: "https://example.com",
         document: None,
       },
+      webPreviewIsSelecting: false,
+      selectedElement: None,
       messages: [
         Assistant(
           Completed({
@@ -197,6 +205,8 @@ describe("Client State Reducer", () => {
         url: "https://example.com",
         document: None,
       },
+      webPreviewIsSelecting: false,
+      selectedElement: None,
       messages: [
         Assistant(
           Streaming({
@@ -238,6 +248,8 @@ describe("Client State Reducer - MessageCompleted Content Conversion", () => {
         url: "https://example.com",
         document: None,
       },
+      webPreviewIsSelecting: false,
+      selectedElement: None,
       messages: [
         Assistant(
           Streaming({
@@ -265,6 +277,8 @@ describe("Client State Reducer - MessageCompleted Content Conversion", () => {
         url: "https://example.com",
         document: None,
       },
+      webPreviewIsSelecting: false,
+      selectedElement: None,
       messages: [
         Assistant(
           Streaming({
@@ -315,6 +329,8 @@ describe("Client State Reducer - MessageCompleted Content Conversion", () => {
         url: "https://example.com",
         document: None,
       },
+      webPreviewIsSelecting: false,
+      selectedElement: None,
       messages: [
         Assistant(
           Streaming({

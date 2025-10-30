@@ -37,9 +37,19 @@ type previewDocument = {
   document: option<WebAPI.DOMAPI.document>,
 }
 
+// Selected element data with selector, screenshot, and source location
+type selectedElementData = {
+  element: WebAPI.DOMAPI.element,
+  selector: option<string>,
+  screenshot: option<string>,
+  sourceLocation: option<Client__Types.sourceLocation>,
+}
+
 type state = {
   messages: array<message>,
   previewDocument: previewDocument,
+  webPreviewIsSelecting: bool,
+  selectedElement: option<selectedElementData>,
 }
 
 type action =
@@ -54,20 +64,30 @@ type action =
   // Preview document actions
   | SetPreviewUrl({url: string})
   | SetPreviewDocument({document: option<WebAPI.DOMAPI.document>})
+  // WebPreview selection actions
+  | ToggleWebPreviewSelection
+  | SetSelectedElement({selectedElement: option<selectedElementData>})
 
 // Effects for side effects
 type effect = SendMessageToAPI({message: string})
 
 let getInitialUrl = () => {
-  let currentUrl =
-    WebAPI.Global.window->WebAPI.Window.location->WebAPI.Location.href->WebAPI.URL.make(~url=_)
-  let originUrl = `${currentUrl.protocol}//${currentUrl.host}`
-  originUrl
+  // Check if window is available (browser environment)
+  switch %external(window) {
+  | Some(win) => {
+      let currentUrl =
+        win->WebAPI.Window.location->WebAPI.Location.href->WebAPI.URL.make(~url=_)
+      `${currentUrl.protocol}//${currentUrl.host}`
+    }
+  | None => "http://localhost:3000" // Default for test environment
+  }
 }
 
 let defaultState: state = {
   messages: [],
   previewDocument: {url: getInitialUrl(), document: None},
+  webPreviewIsSelecting: false,
+  selectedElement: None,
 }
 
 let actionToString = action => {
@@ -79,6 +99,8 @@ let actionToString = action => {
   | MessageCompleted({id}) => `MessageCompleted(${id})`
   | SetPreviewUrl({url}) => `SetPreviewUrl(${url})`
   | SetPreviewDocument(_) => `SetPreviewDocument(document)`
+  | ToggleWebPreviewSelection => `ToggleWebPreviewSelection`
+  | SetSelectedElement(_) => `SetSelectedElement`
   }
 }
 
@@ -139,6 +161,8 @@ let next = (state, action) => {
         {
           messages: Array.concat(state.messages, [message]),
           previewDocument: state.previewDocument,
+          webPreviewIsSelecting: state.webPreviewIsSelecting,
+          selectedElement: state.selectedElement,
         },
         ~sideEffects=[SendMessageToAPI({message: textContent})],
       )
@@ -157,6 +181,8 @@ let next = (state, action) => {
       AskTheLlmReactStatestore.StateReducer.update({
         messages: Array.concat(state.messages, [message]),
         previewDocument: state.previewDocument,
+        webPreviewIsSelecting: state.webPreviewIsSelecting,
+        selectedElement: state.selectedElement,
       })
     }
 
@@ -179,6 +205,8 @@ let next = (state, action) => {
       AskTheLlmReactStatestore.StateReducer.update({
         messages: updatedMessages,
         previewDocument: state.previewDocument,
+        webPreviewIsSelecting: state.webPreviewIsSelecting,
+        selectedElement: state.selectedElement,
       })
     }
 
@@ -201,6 +229,8 @@ let next = (state, action) => {
       AskTheLlmReactStatestore.StateReducer.update({
         messages: updatedMessages,
         previewDocument: state.previewDocument,
+        webPreviewIsSelecting: state.webPreviewIsSelecting,
+        selectedElement: state.selectedElement,
       })
     }
 
@@ -244,6 +274,8 @@ let next = (state, action) => {
       AskTheLlmReactStatestore.StateReducer.update({
         messages: updatedMessages,
         previewDocument: state.previewDocument,
+        webPreviewIsSelecting: state.webPreviewIsSelecting,
+        selectedElement: state.selectedElement,
       })
     }
 
@@ -252,6 +284,8 @@ let next = (state, action) => {
     AskTheLlmReactStatestore.StateReducer.update({
       messages: state.messages,
       previewDocument: {url, document: None},
+      webPreviewIsSelecting: state.webPreviewIsSelecting,
+      selectedElement: state.selectedElement,
     })
 
   // Set preview document (keep existing URL)
@@ -259,6 +293,31 @@ let next = (state, action) => {
     AskTheLlmReactStatestore.StateReducer.update({
       messages: state.messages,
       previewDocument: {...state.previewDocument, document: document},
+      webPreviewIsSelecting: state.webPreviewIsSelecting,
+      selectedElement: state.selectedElement,
+    })
+
+  // Toggle WebPreview selection mode
+  | ToggleWebPreviewSelection =>
+    AskTheLlmReactStatestore.StateReducer.update({
+      messages: state.messages,
+      previewDocument: state.previewDocument,
+      webPreviewIsSelecting: !state.webPreviewIsSelecting,
+      // Clear selected element when turning selection mode ON
+      selectedElement: if !state.webPreviewIsSelecting {
+        None // Turning ON - clear selection
+      } else {
+        state.selectedElement // Turning OFF - keep selection
+      },
+    })
+
+  // Set selected element and reset selection mode
+  | SetSelectedElement({selectedElement}) =>
+    AskTheLlmReactStatestore.StateReducer.update({
+      messages: state.messages,
+      previewDocument: state.previewDocument,
+      webPreviewIsSelecting: false, // Auto-reset selection mode
+      selectedElement: selectedElement,
     })
   }
 }
@@ -309,4 +368,10 @@ module Selectors = {
 
   // Get preview document state
   let previewDocument = (state: state) => state.previewDocument
+
+  // Get webPreview selection mode
+  let webPreviewIsSelecting = (state: state) => state.webPreviewIsSelecting
+
+  // Get selected element
+  let selectedElement = (state: state) => state.selectedElement
 }

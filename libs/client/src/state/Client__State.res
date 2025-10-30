@@ -46,4 +46,10 @@ module Actions = {
 
   let setPreviewDocument = (~document) =>
     Client__State__Store.dispatch(SetPreviewDocument({document: document}))
+
+  // WebPreview selection actions
+  let toggleWebPreviewSelection = () => Client__State__Store.dispatch(ToggleWebPreviewSelection)
+
+  let setSelectedElement = (~selectedElement) =>
+    Client__State__Store.dispatch(SetSelectedElement({selectedElement: selectedElement}))
 }

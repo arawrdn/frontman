@@ -6,7 +6,7 @@ open EventAPI
 @new
 external make: unit => eventTarget = "EventTarget"
 
-external asElement: {..} => DOMAPI.element = "%identity"
+external asElement: eventTarget => DOMAPI.element = "%identity"
 
 module Impl = (
   T: {

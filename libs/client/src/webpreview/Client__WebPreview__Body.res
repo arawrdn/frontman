@@ -6,6 +6,7 @@ let make = (~url) => {
     iframeRef.current
     ->Nullable.toOption
     ->Option.forEach(iframe => {
+      //TODO(itay): display error message if the content document is not found
       WebAPI.HTMLIFrameElement.contentDocument(iframe->Obj.magic)
       ->Null.toOption
       ->Option.forEach(
@@ -16,7 +17,7 @@ let make = (~url) => {
     })
   }, [])
 
-  <div className="flex-1">
+  <div className="flex-1 size-full">
     <iframe
       className={"size-full"}
       sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-presentation"
@@ -27,7 +28,6 @@ let make = (~url) => {
         iframeRef.current = iframe
         Some(() => {
           iframeRef.current = Nullable.null
-          Client__State.Actions.setPreviewDocument(~document=None)
         })
       })}
     />

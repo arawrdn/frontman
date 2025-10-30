@@ -425,7 +425,7 @@ module MouseEnter = {
     let (state, setState) = React.useState(() => None)
     React.useEffect(() => {
       let onMouseEnter = ev => {
-        let target = ReactEvent.Mouse.target(ev)
+        let target = WebAPI.MouseEvent.asMouseEvent(ev).target
 
         if WebAPI.Element.nodeType(target->Obj.magic) == 1 {
           setState(_ => Some(target))
@@ -488,7 +488,7 @@ module MouseMove = {
 
     React.useEffect(() => {
       let onMouseMove = ev => {
-        let target = ReactEvent.Mouse.target(ev)
+        let target = WebAPI.MouseEvent.asMouseEvent(ev).target
 
         if (
           WebAPI.Element.nodeType(target->Obj.magic) == 1 &&
@@ -844,4 +844,68 @@ let useIsOnline = () => {
     )
   }, [setIsOnline])
   isOnline
+}
+
+module Scroll = {
+  let useIFrameDocument = (
+    ~document: option<WebAPI.DOMAPI.document>,
+    ~withCapture=false,
+    (),
+  ) => {
+    let (scrollTimestamp, setScrollTimestamp) = React.useState(() => Js.Date.now())
+
+    React.useEffect(() => {
+      let onScroll = _ev => {
+        setScrollTimestamp(_ => Js.Date.now())
+      }
+
+      document
+      ->Option.map(document => {
+        WebAPI.Document.addEventListener(
+          document,
+          Custom("scroll"),
+          onScroll,
+          ~options={capture: withCapture},
+        )
+
+        EventHelpers.iframeExecuteEventListener(
+          (doc, handler) =>
+            WebAPI.Document.addEventListener(
+              doc,
+              Custom("scroll"),
+              handler,
+              ~options={capture: withCapture},
+            ),
+          onScroll,
+          Some(document),
+        )->Option.ignore
+
+        () => {
+          WebAPI.Document.removeEventListener(
+            document,
+            Custom("scroll"),
+            onScroll,
+            ~options={capture: withCapture},
+          )
+
+          EventHelpers.iframeExecuteEventListener(
+            (doc, handler) =>
+              WebAPI.Document.removeEventListener(
+                doc,
+                Custom("scroll"),
+                handler,
+                ~options={capture: withCapture},
+              ),
+            onScroll,
+            Some(document),
+          )->Option.ignore
+        }
+      })
+      ->ignore
+
+      None
+    }, (document, withCapture, setScrollTimestamp))
+
+    scrollTimestamp
+  }
 }
