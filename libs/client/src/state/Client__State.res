@@ -1,20 +1,43 @@
-// Re-export store and dispatch
-let store = Client__State__Store.store
-let dispatch = Client__State__Store.dispatch
-
 // Re-export types
 type state = Client__State__StateReducer.state
 type action = Client__State__StateReducer.action
 
 // Hook for selecting state
 let useSelector = selection =>
-  AskTheLlmReactStatestore.StateStore.useSelector(store, selection)
+  AskTheLlmReactStatestore.StateStore.useSelector(Client__State__Store.store, selection)
 
 // Re-export selectors
 module Selectors = Client__State__StateReducer.Selectors
 
+// Re-export content part modules for convenience
+module UserContentPart = Client__State__StateReducer.UserContentPart
+module AssistantContentPart = Client__State__StateReducer.AssistantContentPart
+
 // Action creators
 module Actions = {
-  let setUrl = (url: string) => dispatch(SetUrl(url))
-  let addMessage = (message: string) => dispatch(AddMessage(message))
+  // User message action
+  let addUserMessage = (~content) => {
+    let id = `user-${Date.now()->Float.toString}`
+    Client__State__Store.dispatch(AddUserMessage({id, content}))
+  }
+
+  // Convenience for text-only user messages
+  let addUserTextMessage = (~id, ~text) =>
+    Client__State__Store.dispatch(
+      AddUserMessage({
+        id,
+        content: [UserContentPart.Text({text: text})],
+      }),
+    )
+
+  // Streaming actions (typically called from SSE handlers)
+  let streamingStarted = (~id) => Client__State__Store.dispatch(StreamingStarted({id: id}))
+
+  let textDeltaReceived = (~id, ~text) =>
+    Client__State__Store.dispatch(TextDeltaReceived({id, text}))
+
+  let toolCallReceived = (~id, ~toolCall) =>
+    Client__State__Store.dispatch(ToolCallReceived({id, toolCall}))
+
+  let messageCompleted = (~id) => Client__State__Store.dispatch(MessageCompleted({id: id}))
 }

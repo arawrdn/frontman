@@ -44,8 +44,8 @@ let make:
     storeCreator(Reducer.next, initialState)
   }
 
-let getState = t => t.state.contents
-let addSubscription = (t, sub) => Array.push(t.subscriptions.contents, sub)->ignore
+let getState = store => store.state.contents
+let addSubscription = (store, sub) => Array.push(store.subscriptions.contents, sub)->ignore
 
 let removeSubscription = (t, sub) => {
   let subIdx = Array.indexOf(t.subscriptions.contents, sub)

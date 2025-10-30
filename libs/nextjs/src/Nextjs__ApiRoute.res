@@ -34,6 +34,8 @@ type apiHandler = (ApiRequest.t, ApiResponse.t) => promise<unit>
 
 // Singleton agent instance
 let agentInstance: ref<option<AskTheLlmAgent.Agent.t>> = ref(None)
+// Global event buffer - stores all events for late-connecting clients
+let eventBuffer: ref<array<AgentEventBus.events>> = ref([])
 
 let getOrCreateAgent = () => {
   switch agentInstance.contents {
@@ -43,22 +45,20 @@ let getOrCreateAgent = () => {
     let apiKey = Dotenv.getExn("OPENAI_API_KEY")
     let agent = Agent.make({projectRoot, apiKey})
     let _shutdown = Agent.initialize(agent)
+
+    // Subscribe buffer to agent events at module initialization
+    let _ = agent->Agent.subscribe(event => {
+      let newSize = eventBuffer.contents->Array.length + 1
+      Console.log(`[SSE Buffer] Event buffered, buffer size: ${newSize->Int.toString}`)
+      eventBuffer := Array.concat(eventBuffer.contents, [event])
+    })
+
     agentInstance := Some(agent)
     agent
   }
 }
 
 let agent = getOrCreateAgent()
-
-// Global event buffer - stores all events for late-connecting clients
-let eventBuffer: ref<array<AgentEventBus.events>> = ref([])
-
-// Subscribe buffer to agent events at module initialization
-let _ = agent->Agent.subscribe(event => {
-  let newSize = eventBuffer.contents->Array.length + 1
-  Console.log(`[SSE Buffer] Event buffered, buffer size: ${newSize->Int.toString}`)
-  eventBuffer := Array.concat(eventBuffer.contents, [event])
-})
 
 // Handler for /api/ask-the-llm (serves the UI)
 let createUIHandler = (isDev: bool): apiHandler => {

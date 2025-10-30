@@ -1,9 +1,7 @@
 {
 	"name": "@ask-the-llm/agent",
 	"namespace": true,
-	"exposed-modules": [
-		"Agent"
-	],
+	"exposed-modules": ["Agent", "Agent__Bindings__Vercel"],
 	"sources": [
 		{
 			"dir": "src",
@@ -11,7 +9,8 @@
 		},
 		{
 			"dir": "test",
-			"subdirs": true
+			"subdirs": true,
+			"type": "dev"
 		}
 	],
 	"package-specs": [

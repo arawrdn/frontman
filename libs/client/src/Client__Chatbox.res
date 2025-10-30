@@ -18,25 +18,22 @@ let make = () => {
   let (model, setModel) = React.useState(() => Array.getUnsafe(models, 0).value)
   let (webSearch, setWebSearch) = React.useState(() => false)
 
-  let {messages, sendMessage, status, regenerate} = AISDK.useChat()
+  // Get messages from our state store
+  let messages = Client__State.useSelector(Client__State.Selectors.messages)
+  let isStreaming = Client__State.useSelector(Client__State.Selectors.isStreaming)
 
   let handleSubmit = (message: {"text": string, "files": option<array<WebAPI.FileAPI.file>>}) => {
     let hasText = message["text"] !== ""
     let hasAttachments = message["files"]->Option.mapOr(false, files => files->Array.length > 0)
 
     if hasText || hasAttachments {
-      sendMessage(
-        {
-          "text": Some(message["text"]),
-          "files": message["files"],
-        },
-        {
-          "body": {
-            "model": model,
-            "webSearch": webSearch,
-          },
-        },
-      )
+      let content = {
+        let textPart = hasText ? [Client__State.UserContentPart.Text({text: message["text"]})] : []
+
+        // TODO: Handle file attachments when we add support
+        textPart
+      }
+      Client__State.Actions.addUserMessage(~content)
       setInput(_ => "")
     }
   }
@@ -45,94 +42,83 @@ let make = () => {
     <AIElements.Conversation className="flex-grow overflow-hidden">
       <AIElements.ConversationContent>
         {messages
-        ->Array.mapWithIndex((message, i) => {
-          let messageId = message.id
+        ->Array.map(message => {
+          let messageId = Client__State__StateReducer.Selectors.getMessageId(message)
 
-          // Filter source-url parts
-          let sourceUrls = message.parts->Array.filter(part => part.type_ === "source-url")
+          switch message {
+          | Client__State__StateReducer.User({content}) =>
+            // Render user message
+            <div key={messageId} className="max-w-full">
+              {content
+              ->Array.map(part => {
+                switch part {
+                | Text({text}) =>
+                  <AIElements.Message key={messageId} from="user">
+                    <AIElements.MessageContent>
+                      <AIElements.Response> {React.string(text)} </AIElements.Response>
+                    </AIElements.MessageContent>
+                  </AIElements.Message>
+                | _ => React.null // TODO: Handle Image and File parts
+                }
+              })
+              ->React.array}
+            </div>
 
-          <div key={messageId}>
-            {message.role === "assistant" && sourceUrls->Array.length > 0
-              ? <AIElements.Sources>
-                  <AIElements.SourcesTrigger count={sourceUrls->Array.length} />
-                  {sourceUrls
-                  ->Array.mapWithIndex((part, j) => {
-                    part.url->Option.mapOr(
-                      React.null,
-                      url =>
-                        <AIElements.SourcesContent key={`${messageId}-${j->Int.toString}`}>
-                          <AIElements.Source
-                            key={`${messageId}-${j->Int.toString}`} href={url} title={url}
-                          />
-                        </AIElements.SourcesContent>,
-                    )
-                  })
-                  ->React.array}
-                </AIElements.Sources>
-              : React.null}
-            {message.parts
-            ->Array.mapWithIndex((part, j) => {
-              let partKey = `${messageId}-${j->Int.toString}`
-
-              if part.type_ === "text" {
-                part.text->Option.mapOr(
-                  React.null,
-                  text =>
-                    <React.Fragment key={partKey}>
-                      <AIElements.Message from={message.role}>
-                        <AIElements.MessageContent>
-                          <AIElements.Response> {React.string(text)} </AIElements.Response>
-                        </AIElements.MessageContent>
-                      </AIElements.Message>
-                      {message.role === "assistant" && i === messages->Array.length - 1
-                        ? <AIElements.Actions className="mt-2">
-                            <AIElements.Action onClick={() => regenerate()} label="Retry">
-                              <Icons.ReloadIcon style={{"width": "12px", "height": "12px"}} />
-                            </AIElements.Action>
-                            <AIElements.Action
-                              onClick={() => {
-                                let _ =
-                                  WebAPI.Global.navigator.clipboard->WebAPI.Clipboard.writeText(
-                                    text,
-                                  )
-                              }}
-                              label="Copy"
-                            >
-                              <Icons.CopyIcon style={{"width": "12px", "height": "12px"}} />
-                            </AIElements.Action>
-                          </AIElements.Actions>
-                        : React.null}
-                    </React.Fragment>,
-                )
-              } else if part.type_ === "reasoning" {
-                part.text->Option.mapOr(
-                  React.null,
-                  text =>
-                    <AIElements.Reasoning
-                      key={partKey}
-                      className="w-full"
-                      isStreaming={status === "streaming" &&
-                      j === message.parts->Array.length - 1 &&
-                      message.id ===
-                        messages
-                        ->Array.get(messages->Array.length - 1)
-                        ->Option.mapOr("", m => m.id)}
+          | Assistant(Streaming({textBuffer, _})) =>
+            // Render streaming assistant message with visual indicator
+            <div key={messageId} className="max-w-full">
+              <AIElements.Message from="assistant">
+                <AIElements.MessageContent>
+                  <div
+                    className="border-l-2 border-blue-500 pl-3 bg-blue-50/30 dark:bg-blue-950/20 rounded"
+                  >
+                    <AIElements.Response> {React.string(textBuffer)} </AIElements.Response>
+                    <div
+                      className="mt-2 flex items-center gap-2 text-xs text-blue-600 dark:text-blue-400"
                     >
-                      <AIElements.ReasoningTrigger />
-                      <AIElements.ReasoningContent>
-                        {React.string(text)}
-                      </AIElements.ReasoningContent>
-                    </AIElements.Reasoning>,
-                )
-              } else {
-                React.null
-              }
-            })
-            ->React.array}
-          </div>
+                      <span
+                        className="inline-block w-1 h-1 bg-blue-500 rounded-full animate-pulse"
+                      />
+                      {React.string("Streaming")}
+                    </div>
+                  </div>
+                </AIElements.MessageContent>
+              </AIElements.Message>
+            </div>
+
+          | Assistant(Completed({content, _})) =>
+            // Render completed assistant message
+            <div key={messageId} className="max-w-full">
+              {content
+              ->Array.mapWithIndex((part, i) => {
+                switch part {
+                | Text({text}) =>
+                  <React.Fragment key={`${messageId}-${i->Int.toString}`}>
+                    <AIElements.Message from="assistant">
+                      <AIElements.MessageContent>
+                        <AIElements.Response> {React.string(text)} </AIElements.Response>
+                      </AIElements.MessageContent>
+                    </AIElements.Message>
+                    <AIElements.Actions className="mt-2">
+                      <AIElements.Action
+                        onClick={() => {
+                          let _ =
+                            WebAPI.Global.navigator.clipboard->WebAPI.Clipboard.writeText(text)
+                        }}
+                        label="Copy"
+                      >
+                        <Icons.CopyIcon style={{"width": "12px", "height": "12px"}} />
+                      </AIElements.Action>
+                    </AIElements.Actions>
+                  </React.Fragment>
+                | ToolCall(_) => React.null // TODO: Render tool calls
+                }
+              })
+              ->React.array}
+            </div>
+          }
         })
         ->React.array}
-        {status === "submitted" ? <AIElements.Loader /> : React.null}
       </AIElements.ConversationContent>
       <AIElements.ConversationScrollButton />
     </AIElements.Conversation>
@@ -188,7 +174,7 @@ let make = () => {
           </AIElements.PromptInputModelSelect>
         </AIElements.PromptInputTools>
         <AIElements.PromptInputSubmit
-          disabled={input === "" && status !== "streaming"} status={status}
+          disabled={input === "" && !isStreaming} status={isStreaming ? "streaming" : "idle"}
         />
       </AIElements.PromptInputFooter>
     </AIElements.PromptInput>

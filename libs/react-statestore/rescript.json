@@ -8,7 +8,8 @@
 		},
 		{
 			"dir": "test",
-			"subdirs": true
+			"subdirs": true,
+			"type": "dev"
 		}
 	],
 	"package-specs": [
@@ -18,8 +19,8 @@
 			"suffix": ".res.mjs"
 		}
 	],
-	"dependencies": ["@rescript/react", "@rescript/webapi", "rescript-vitest"],
-	"dev-dependencies": [],
+	"dependencies": ["@rescript/react", "@rescript/webapi"],
+	"dev-dependencies": ["rescript-vitest"],
 	"compiler-flags": [],
 	"jsx": {
 		"version": 4

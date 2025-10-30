@@ -10,8 +10,8 @@ help: ## Display this help message
 install: ## Install project dependencies
 	npm install
 
-test: ## Run test suite
-	# Add test commands here when tests are implemented
+test: build ## Run test suite
+	yarn vitest run
 
 lint: ## Run linters and code formatters
 	eslint .
