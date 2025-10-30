@@ -16,23 +16,18 @@ test: ## Run test suite
 lint: ## Run linters and code formatters
 	eslint .
 
-dev: ## Start development server with build watch
-	$(MAKE) clean
-	$(MAKE) -j2 dev-build-watch preview
+dev: build ## Start development server with hot reload
+	yarn vite
 
 dev-build-watch: ## Watch and build in development mode
 	yarn vite build --mode development --watch
-
-dev-server: ## Start vite dev server
-	yarn vite
 
 dev-hot: ## Start development server with hot reload
 	yarn vite --mode development
 
 build: ## Build the project for production
 	$(MAKE) clean
-	tsc -b
-	yarn vite build
+	yarn rescript build
 
 build-lib: ## Build the project as a library
 	$(MAKE) clean

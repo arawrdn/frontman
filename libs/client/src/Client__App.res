@@ -8,10 +8,10 @@ let make = () => {
   let originUrl = `${currentUrl.protocol}//${currentUrl.host}`
 
   <div className="flex h-screen w-screen dark bg-background text-foreground">
-    <div className="h-full border-r flex flex-col">
+    <div className="h-full border-r flex flex-col p-2">
       <Client__Chatbox />
     </div>
-    <div className="grow h-full p-4">
+    <div className="grow h-full p-1">
       <Client__WebPreview url={originUrl} />
     </div>
   </div>

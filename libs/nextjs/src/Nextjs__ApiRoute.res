@@ -50,6 +50,16 @@ let getOrCreateAgent = () => {
 
 let agent = getOrCreateAgent()
 
+// Global event buffer - stores all events for late-connecting clients
+let eventBuffer: ref<array<AgentEventBus.events>> = ref([])
+
+// Subscribe buffer to agent events at module initialization
+let _ = agent->Agent.subscribe(event => {
+  let newSize = eventBuffer.contents->Array.length + 1
+  Console.log(`[SSE Buffer] Event buffered, buffer size: ${newSize->Int.toString}`)
+  eventBuffer := Array.concat(eventBuffer.contents, [event])
+})
+
 // Handler for /api/ask-the-llm (serves the UI)
 let createUIHandler = (isDev: bool): apiHandler => {
   async (_req, res) => {
@@ -125,30 +135,39 @@ let createChatHandler = (): apiHandler => {
 // Handler for /api/ask-the-llm/stream (SSE streaming endpoint)
 let createStreamHandler = (): apiHandler => {
   async (req, res) => {
-    Console.log("[SSE] createStreamHandler called - new connection")
+    Console.log("[SSE] Client connected - sending buffered events first")
+
+    // Set SSE headers
     let _ = res->ApiResponse.setHeader("Content-Type", "text/event-stream")
     let _ = res->ApiResponse.setHeader("Cache-Control", "no-cache, no-transform")
     let _ = res->ApiResponse.setHeader("Connection", "keep-alive")
 
-    // Console.log("[SSE] About to subscribe to agent events")
-    let unsubsribe = agent->Agent.subscribe(event => {
-      // Console.log2("[SSE] Event received in subscription:", event)
+    // Send all buffered events to this client
+    let bufferedEvents = eventBuffer.contents
+    Console.log(`[SSE] Sending ${bufferedEvents->Array.length->Int.toString} buffered events`)
+    bufferedEvents->Array.forEach(event => {
       let jsonValue = event->S.reverseConvertOrThrow(AgentEventBus.eventsSchema)
       let data = JSON.stringifyAny(jsonValue)->Option.getOrThrow
-      // Console.log2("[SSE] Writing json to response:", data)
       res->ApiResponse.write(`data: ${data}\n\n`)
     })
-    Console.log("[SSE] Subscribed to agent events")
 
+    // Flush buffer after sending
+    Console.log("[SSE] Flushing event buffer")
+    eventBuffer := []
+
+    // Subscribe to new events
+    let unsubsribe = agent->Agent.subscribe(event => {
+      let jsonValue = event->S.reverseConvertOrThrow(AgentEventBus.eventsSchema)
+      let data = JSON.stringifyAny(jsonValue)->Option.getOrThrow
+      res->ApiResponse.write(`data: ${data}\n\n`)
+    })
+    Console.log("[SSE] Subscribed to new agent events")
+
+    // Cleanup on disconnect
     req->ApiRequest.on("close", () => {
-      Console.log("[SSE] close")
+      Console.log("[SSE] Client disconnected")
       unsubsribe()
       res->ApiResponse.end("")
     })
-
-    //NOTE(Itay): This is needed to keep the connection alive.
-    res->ApiResponse.write(
-      `data: ${JSON.stringifyAny({"type": "connected"})->Option.getOr("{}")}\n\n`,
-    )
   }
 }

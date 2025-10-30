@@ -1,3 +1,5 @@
+module Agent = AskTheLlmAgent.Agent
+module AgentEventBus = AskTheLlmAgent.Agent__EventBus
 
 // based on the useEvent RFC: https://github.com/reactjs/rfcs/pull/220
 // this will be added to React soon, so we can use this before release and refactor later
@@ -37,6 +39,37 @@ let useTimeout = (fn, #ms(time)) => {
   }, (fn, time, timeoutId, setTimeoutId))
 }
 
+let useSSE = (newEventCallback: AgentEventBus.events => unit, ~url="/api/ask-the-llm/chat-sse") => {
+  React.useEffect(() => {
+    let eventSource = WebAPI.EventSource.make(~url)
+    let onOpen = _ => {
+      Console.log("[SSE] Connection opened")
+    }
+    let onMessage = event => {
+      let data = event->WebAPI.MessageEvent.data
+      let msg = data->JSON.parseOrThrow->S.parseOrThrow(AgentEventBus.eventsSchema)
+      Console.log2("[SSE] Received event:", msg)
+      newEventCallback(msg)
+    }
+    let onError = error => {
+      Console.log2("[SSE] Connection error - browser will retry automatically:", error)
+      // Don't close - let browser's automatic reconnection handle it
+    }
+    eventSource->WebAPI.EventSource.addEventListener(Custom("open"), onOpen)
+    eventSource->WebAPI.EventSource.addEventListener(Custom("message"), onMessage)
+    eventSource->WebAPI.EventSource.addEventListener(Custom("error"), onError)
+
+    Some(
+      () => {
+        eventSource->WebAPI.EventSource.removeEventListener(Custom("open"), onOpen)
+        eventSource->WebAPI.EventSource.removeEventListener(Custom("message"), onMessage)
+        eventSource->WebAPI.EventSource.removeEventListener(Custom("error"), onError)
+        eventSource->WebAPI.EventSource.close
+      },
+    )
+  }, [newEventCallback])
+}
+
 let useContainerResize = (container: Nullable.t<WebAPI.DOMAPI.element>, onResized) => {
   React.useEffect(() => {
     switch container->Nullable.toOption {
@@ -56,14 +89,17 @@ let useContainerResize = (container: Nullable.t<WebAPI.DOMAPI.element>, onResize
   }, (container, onResized))
 }
 
-let useMouseOutsideElement = (handler, elementRef: React.ref<Nullable.t<WebAPI.DOMAPI.element>>) => {
+let useMouseOutsideElement = (
+  handler,
+  elementRef: React.ref<Nullable.t<WebAPI.DOMAPI.element>>,
+) => {
   let handler = React.useCallback(e => {
     let _: option<unit> =
       elementRef.current
       ->Nullable.toOption
       ->Option.map(element => {
-        let x = ReactEvent.Mouse.clientX(e) -> Int.toFloat
-        let y = ReactEvent.Mouse.clientY(e) -> Int.toFloat
+        let x = ReactEvent.Mouse.clientX(e)->Int.toFloat
+        let y = ReactEvent.Mouse.clientY(e)->Int.toFloat
         let boundedRec = WebAPI.Element.getBoundingClientRect(element->Obj.magic)
         let top = boundedRec.top
         let left = boundedRec.left
@@ -76,8 +112,19 @@ let useMouseOutsideElement = (handler, elementRef: React.ref<Nullable.t<WebAPI.D
       })
   }, (elementRef, handler))
   React.useEffect(() => {
-    WebAPI.Document.addEventListenerWithCapture(WebAPI.Global.document, Custom("mouseover"), handler)
-    Some(() => WebAPI.Document.removeEventListener_useCapture(WebAPI.Global.document, Custom("mouseover"), handler))
+    WebAPI.Document.addEventListenerWithCapture(
+      WebAPI.Global.document,
+      Custom("mouseover"),
+      handler,
+    )
+    Some(
+      () =>
+        WebAPI.Document.removeEventListener_useCapture(
+          WebAPI.Global.document,
+          Custom("mouseover"),
+          handler,
+        ),
+    )
   }, [handler])
 }
 
@@ -87,8 +134,8 @@ let useMouseInsideElement = (handler, elementRef: React.ref<Nullable.t<WebAPI.DO
       elementRef.current
       ->Nullable.toOption
       ->Option.map(element => {
-        let x = ReactEvent.Mouse.clientX(e) -> Int.toFloat
-        let y = ReactEvent.Mouse.clientY(e) -> Int.toFloat
+        let x = ReactEvent.Mouse.clientX(e)->Int.toFloat
+        let y = ReactEvent.Mouse.clientY(e)->Int.toFloat
         let boundedRec = WebAPI.Element.getBoundingClientRect(element->Obj.magic)
         let top = boundedRec.top
         let left = boundedRec.left
@@ -101,21 +148,42 @@ let useMouseInsideElement = (handler, elementRef: React.ref<Nullable.t<WebAPI.DO
       })
   }, (elementRef, handler))
   React.useEffect(() => {
-    WebAPI.Document.addEventListenerWithCapture(WebAPI.Global.document, Custom("mouseover"), handler)
-    Some(() => WebAPI.Document.removeEventListener_useCapture(WebAPI.Global.document, Custom("mouseover"), handler))
+    WebAPI.Document.addEventListenerWithCapture(
+      WebAPI.Global.document,
+      Custom("mouseover"),
+      handler,
+    )
+    Some(
+      () =>
+        WebAPI.Document.removeEventListener_useCapture(
+          WebAPI.Global.document,
+          Custom("mouseover"),
+          handler,
+        ),
+    )
   }, [handler])
 }
 
 let useMouseOverElement = (handler, elementRef: Nullable.t<WebAPI.DOMAPI.element>) => {
   React.useEffect(() => {
     switch elementRef->Nullable.toOption {
-    | Some(elementRef) => WebAPI.Element.addEventListenerWithCapture(elementRef->Obj.magic, Custom("mouseover"), handler)
+    | Some(elementRef) =>
+      WebAPI.Element.addEventListenerWithCapture(
+        elementRef->Obj.magic,
+        Custom("mouseover"),
+        handler,
+      )
     | None => ()
     }
     Some(
       () => {
         switch elementRef->Nullable.toOption {
-        | Some(elementRef) => WebAPI.Element.removeEventListener_useCapture(elementRef->Obj.magic, Custom("mouseover"), handler)
+        | Some(elementRef) =>
+          WebAPI.Element.removeEventListener_useCapture(
+            elementRef->Obj.magic,
+            Custom("mouseover"),
+            handler,
+          )
         | None => ()
         }
       },
@@ -126,13 +194,23 @@ let useMouseOverElement = (handler, elementRef: Nullable.t<WebAPI.DOMAPI.element
 let useMouseMoveElement = (handler, elementRef: Nullable.t<WebAPI.DOMAPI.element>) => {
   React.useEffect(() => {
     switch elementRef->Nullable.toOption {
-    | Some(elementRef) => WebAPI.Element.addEventListenerWithCapture(elementRef->Obj.magic, Custom("mousemove"), handler)
+    | Some(elementRef) =>
+      WebAPI.Element.addEventListenerWithCapture(
+        elementRef->Obj.magic,
+        Custom("mousemove"),
+        handler,
+      )
     | None => ()
     }
     Some(
       () => {
         switch elementRef->Nullable.toOption {
-        | Some(elementRef) => WebAPI.Element.removeEventListener_useCapture(elementRef->Obj.magic, Custom("mousemove"), handler)
+        | Some(elementRef) =>
+          WebAPI.Element.removeEventListener_useCapture(
+            elementRef->Obj.magic,
+            Custom("mousemove"),
+            handler,
+          )
         | None => ()
         }
       },
@@ -181,24 +259,29 @@ module EventHelpers = {
     iframeDoc
     ->Option.map(doc => WebAPI.Document.querySelectorAll(doc, "iframe"))
     ->Option.map(frames =>
-      frames->Obj.magic->Array.forEach(element => {
+      frames
+      ->Obj.magic
+      ->Array.forEach(element => {
         //note(itay): This will return null (None) in case the IFrame is cross-origin to the
         //running script, and not an error like `contentWindow.document`
         let iframeDoc = element->WebAPI.HTMLIFrameElement.contentDocument->Null.toOption
         let _: option<unit> = iframeExecuteEventListener(eventListener, handler, iframeDoc)
-        let _: option<WebAPI.DOMAPI.document> =
-          iframeDoc->Option.map(
-            doc => {
-                eventListener(doc, handler)
-                doc
-            }
-          )
+        let _: option<WebAPI.DOMAPI.document> = iframeDoc->Option.map(
+          doc => {
+            eventListener(doc, handler)
+            doc
+          },
+        )
       })
     )
   let getIframeDoc = (iframeRef: Nullable.t<WebAPI.DOMAPI.element>) =>
     iframeRef
     ->Nullable.toOption
-    ->Option.flatMap(iframe => WebAPI.Element.unsafeAsHTMLIFrameElement(iframe) -> WebAPI.HTMLIFrameElement.contentDocument->Null.toOption)
+    ->Option.flatMap(iframe =>
+      WebAPI.Element.unsafeAsHTMLIFrameElement(iframe)
+      ->WebAPI.HTMLIFrameElement.contentDocument
+      ->Null.toOption
+    )
 }
 
 module EffectHelpers = {
@@ -210,8 +293,21 @@ module EffectHelpers = {
     (),
   ) => {
     let handler = _e => setState()
-    WebAPI.HTMLElement.addEventListener(element, eventName, handler, ~options={ capture: withCapture })
-    Some(() => WebAPI.HTMLElement.removeEventListener(element, eventName, handler, ~options={ capture: withCapture }))
+    WebAPI.HTMLElement.addEventListener(
+      element,
+      eventName,
+      handler,
+      ~options={capture: withCapture},
+    )
+    Some(
+      () =>
+        WebAPI.HTMLElement.removeEventListener(
+          element,
+          eventName,
+          handler,
+          ~options={capture: withCapture},
+        ),
+    )
   }
 
   let documentEventUseEffectHandler = (
@@ -223,19 +319,30 @@ module EffectHelpers = {
   ) => {
     let handler = _e => setState()
     let _: option<unit> = EventHelpers.iframeExecuteEventListener(
-      (doc, handler) => WebAPI.Document.addEventListener(doc, eventName, handler, ~options={ capture: withCapture }),
+      (doc, handler) =>
+        WebAPI.Document.addEventListener(doc, eventName, handler, ~options={capture: withCapture}),
       handler,
       Some(document),
     )
-    document->WebAPI.Document.addEventListener(eventName, handler, ~options={ capture: withCapture })
+    document->WebAPI.Document.addEventListener(eventName, handler, ~options={capture: withCapture})
     Some(
       () => {
         let _: option<unit> = EventHelpers.iframeExecuteEventListener(
-          (doc, event) => WebAPI.Document.removeEventListener(doc, eventName, event, ~options={ capture: withCapture }),
+          (doc, event) =>
+            WebAPI.Document.removeEventListener(
+              doc,
+              eventName,
+              event,
+              ~options={capture: withCapture},
+            ),
           handler,
           Some(document),
         )
-        document->WebAPI.Document.removeEventListener(eventName, handler, ~options={ capture: withCapture })
+        document->WebAPI.Document.removeEventListener(
+          eventName,
+          handler,
+          ~options={capture: withCapture},
+        )
       },
     )
   }
@@ -248,8 +355,16 @@ module EffectHelpers = {
     (),
   ) => {
     let handler = e => setState(e)
-    window->WebAPI.Window.addEventListener(eventName, handler, ~options={ capture: withCapture })
-    Some(() => WebAPI.Window.removeEventListener(window, eventName, handler, ~options={ capture: withCapture }))
+    window->WebAPI.Window.addEventListener(eventName, handler, ~options={capture: withCapture})
+    Some(
+      () =>
+        WebAPI.Window.removeEventListener(
+          window,
+          eventName,
+          handler,
+          ~options={capture: withCapture},
+        ),
+    )
   }
 
   let windowEventUseEffectHandler = (
@@ -260,8 +375,17 @@ module EffectHelpers = {
     (),
   ) => {
     let handler = _e => setState()
-    window->WebAPI.Window.addEventListener(eventName, handler, ~options={ capture: withCapture })
-    Some(() => {WebAPI.Window.removeEventListener(window, eventName, handler, ~options={ capture: withCapture })})
+    window->WebAPI.Window.addEventListener(eventName, handler, ~options={capture: withCapture})
+    Some(
+      () => {
+        WebAPI.Window.removeEventListener(
+          window,
+          eventName,
+          handler,
+          ~options={capture: withCapture},
+        )
+      },
+    )
   }
 }
 
@@ -277,11 +401,13 @@ module FontsLoaded = {
           fontApi.ready
           ->Nullable.toOption
           ->Option.forEach(fontsReady => {
-            fontsReady->Promise.thenResolve(
+            fontsReady
+            ->Promise.thenResolve(
               _fonts => {
-                setState(_ => Some(Js.Date.now() -> Js.Date.fromFloat))
+                setState(_ => Some(Js.Date.now()->Js.Date.fromFloat))
               },
-            )->Promise.ignore
+            )
+            ->Promise.ignore
           })
         | None => ()
         }
@@ -307,18 +433,40 @@ module MouseEnter = {
       }
 
       document->Option.map(document => {
-        WebAPI.Document.addEventListener(document, Custom("mouseenter"), onMouseEnter, ~options={ capture: withCapture })
+        WebAPI.Document.addEventListener(
+          document,
+          Custom("mouseenter"),
+          onMouseEnter,
+          ~options={capture: withCapture},
+        )
 
         EventHelpers.iframeExecuteEventListener(
-          (doc, handler) => WebAPI.Document.addEventListener(doc, Custom("mouseenter"), handler, ~options={ capture: withCapture }),
+          (doc, handler) =>
+            WebAPI.Document.addEventListener(
+              doc,
+              Custom("mouseenter"),
+              handler,
+              ~options={capture: withCapture},
+            ),
           onMouseEnter,
           Some(document),
         )->Option.ignore
         () => {
-          WebAPI.Document.removeEventListener(document, Custom("mouseenter"), onMouseEnter, ~options={ capture: withCapture })
+          WebAPI.Document.removeEventListener(
+            document,
+            Custom("mouseenter"),
+            onMouseEnter,
+            ~options={capture: withCapture},
+          )
 
           EventHelpers.iframeExecuteEventListener(
-            (doc, handler) => WebAPI.Document.removeEventListener(doc, Custom("mouseenter"), handler, ~options={ capture: withCapture }),
+            (doc, handler) =>
+              WebAPI.Document.removeEventListener(
+                doc,
+                Custom("mouseenter"),
+                handler,
+                ~options={capture: withCapture},
+              ),
             onMouseEnter,
             Some(document),
           )->Option.ignore
@@ -353,18 +501,40 @@ module MouseMove = {
         }
       }
       document->Option.map(document => {
-        WebAPI.Document.addEventListener(document, Custom("mousemove"), onMouseMove, ~options={ capture: withCapture })
+        WebAPI.Document.addEventListener(
+          document,
+          Custom("mousemove"),
+          onMouseMove,
+          ~options={capture: withCapture},
+        )
 
         EventHelpers.iframeExecuteEventListener(
-          (doc, handler) => WebAPI.Document.addEventListener(doc, Custom("mousemove"), handler, ~options={ capture: withCapture }),
+          (doc, handler) =>
+            WebAPI.Document.addEventListener(
+              doc,
+              Custom("mousemove"),
+              handler,
+              ~options={capture: withCapture},
+            ),
           onMouseMove,
           Some(document),
         )->Option.ignore
         () => {
-          WebAPI.Document.removeEventListener(document, Custom("mousemove"), onMouseMove, ~options={ capture: withCapture })
+          WebAPI.Document.removeEventListener(
+            document,
+            Custom("mousemove"),
+            onMouseMove,
+            ~options={capture: withCapture},
+          )
 
           EventHelpers.iframeExecuteEventListener(
-            (doc, handler) => WebAPI.Document.removeEventListener(doc, Custom("mousemove"), handler, ~options={ capture: withCapture }),
+            (doc, handler) =>
+              WebAPI.Document.removeEventListener(
+                doc,
+                Custom("mousemove"),
+                handler,
+                ~options={capture: withCapture},
+              ),
             onMouseMove,
             Some(document),
           )->Option.ignore
@@ -391,17 +561,28 @@ module MouseMovePosition = {
     })
     React.useEffect(() => {
       let onMouseMove = ev => {
-        let x = ReactEvent.Mouse.clientX(ev) -> Int.toFloat
-        let y = ReactEvent.Mouse.clientY(ev) -> Int.toFloat
+        let x = ReactEvent.Mouse.clientX(ev)->Int.toFloat
+        let y = ReactEvent.Mouse.clientY(ev)->Int.toFloat
         callbackRef.current((x, y))
       }
 
       document
       ->Option.map(document => {
-        WebAPI.Document.addEventListener(document, Custom("mousemove"), onMouseMove, ~options={ capture: withCapture })
+        WebAPI.Document.addEventListener(
+          document,
+          Custom("mousemove"),
+          onMouseMove,
+          ~options={capture: withCapture},
+        )
 
         EventHelpers.iframeExecuteEventListener(
-          (doc, handler) => WebAPI.Document.addEventListener(doc, Custom("mousemove"), handler, ~options={ capture: withCapture }),
+          (doc, handler) =>
+            WebAPI.Document.addEventListener(
+              doc,
+              Custom("mousemove"),
+              handler,
+              ~options={capture: withCapture},
+            ),
           onMouseMove,
           Some(document),
         )->Option.ignore
@@ -412,10 +593,21 @@ module MouseMovePosition = {
         () => {
           document
           ->Option.map(document => {
-            WebAPI.Document.removeEventListener(document, Custom("mousemove"), onMouseMove, ~options={ capture: withCapture })
+            WebAPI.Document.removeEventListener(
+              document,
+              Custom("mousemove"),
+              onMouseMove,
+              ~options={capture: withCapture},
+            )
 
             EventHelpers.iframeExecuteEventListener(
-              (doc, handler) => WebAPI.Document.removeEventListener(doc, Custom("mousemove"), handler, ~options={ capture: withCapture }),
+              (doc, handler) =>
+                WebAPI.Document.removeEventListener(
+                  doc,
+                  Custom("mousemove"),
+                  handler,
+                  ~options={capture: withCapture},
+                ),
               onMouseMove,
               Some(document),
             )->Option.ignore
@@ -448,16 +640,38 @@ module MouseClick = {
         setState(_ => Some((target, ev)))
       }
       document->Option.map(document => {
-        WebAPI.Document.addEventListener(document, Custom(isRightClick ? "contextmenu" : "click"), onClick, ~options={ capture: withCapture })
+        WebAPI.Document.addEventListener(
+          document,
+          Custom(isRightClick ? "contextmenu" : "click"),
+          onClick,
+          ~options={capture: withCapture},
+        )
         let _: option<unit> = EventHelpers.iframeExecuteEventListener(
-          (doc, handler) => WebAPI.Document.addEventListener(doc, Custom(isRightClick ? "contextmenu" : "click"), handler, ~options={ capture: withCapture }),
+          (doc, handler) =>
+            WebAPI.Document.addEventListener(
+              doc,
+              Custom(isRightClick ? "contextmenu" : "click"),
+              handler,
+              ~options={capture: withCapture},
+            ),
           onClick,
           Some(document),
         )
         () => {
-          WebAPI.Document.removeEventListener(document, Custom(isRightClick ? "contextmenu" : "click"), onClick, ~options={ capture: withCapture })
+          WebAPI.Document.removeEventListener(
+            document,
+            Custom(isRightClick ? "contextmenu" : "click"),
+            onClick,
+            ~options={capture: withCapture},
+          )
           let _: option<unit> = EventHelpers.iframeExecuteEventListener(
-            (doc, handler) => WebAPI.Document.removeEventListener(doc, Custom(isRightClick ? "contextmenu" : "click"), handler, ~options={ capture: withCapture }),
+            (doc, handler) =>
+              WebAPI.Document.removeEventListener(
+                doc,
+                Custom(isRightClick ? "contextmenu" : "click"),
+                handler,
+                ~options={capture: withCapture},
+              ),
             onClick,
             Some(document),
           )
@@ -480,10 +694,20 @@ let useKeypress = (~handler, ~isActive=true, ()) => {
   let pressedKeyHandler = React.useCallback(key => handler(Some(key)), [handler])
   React.useEffect(() => {
     if isActive {
-      WebAPI.Document.addEventListener(WebAPI.Global.document, Custom("keydown"), pressedKeyHandler, ~options={ capture: true })
+      WebAPI.Document.addEventListener(
+        WebAPI.Global.document,
+        Custom("keydown"),
+        pressedKeyHandler,
+        ~options={capture: true},
+      )
       Some(
         () => {
-          WebAPI.Document.removeEventListener(WebAPI.Global.document, Custom("keydown"), pressedKeyHandler, ~options={ capture: true })
+          WebAPI.Document.removeEventListener(
+            WebAPI.Global.document,
+            Custom("keydown"),
+            pressedKeyHandler,
+            ~options={capture: true},
+          )
         },
       )
     } else {
@@ -498,30 +722,68 @@ let useKeypressIFrameDocument = (handler, doc) => {
 
   React.useEffect(() => {
     doc->Option.map(doc => {
-      WebAPI.Document.addEventListener(doc, Custom("keydown"), pressedKeyHandler, ~options={ capture: true })
-      WebAPI.Document.addEventListener(doc, Custom("keyup"), releasedKeyHandler, ~options={ capture: true })
+      WebAPI.Document.addEventListener(
+        doc,
+        Custom("keydown"),
+        pressedKeyHandler,
+        ~options={capture: true},
+      )
+      WebAPI.Document.addEventListener(
+        doc,
+        Custom("keyup"),
+        releasedKeyHandler,
+        ~options={capture: true},
+      )
       let _: option<unit> = EventHelpers.iframeExecuteEventListener(
-        (doc, handler) => WebAPI.Document.addEventListener(doc, Custom("keydown"), handler, ~options={ capture: true }),
+        (doc, handler) =>
+          WebAPI.Document.addEventListener(
+            doc,
+            Custom("keydown"),
+            handler,
+            ~options={capture: true},
+          ),
         pressedKeyHandler,
         Some(doc),
       )
       let _: option<unit> = EventHelpers.iframeExecuteEventListener(
-        (doc, handler) => WebAPI.Document.addEventListener(doc, Custom("keyup"), handler, ~options={ capture: true }),
+        (doc, handler) =>
+          WebAPI.Document.addEventListener(doc, Custom("keyup"), handler, ~options={capture: true}),
         releasedKeyHandler,
         Some(doc),
       )
 
       () => {
-        WebAPI.Document.removeEventListener(doc, Custom("keydown"), pressedKeyHandler, ~options={ capture: true })
-        WebAPI.Document.removeEventListener(doc, Custom("keyup"), releasedKeyHandler, ~options={ capture: true })
+        WebAPI.Document.removeEventListener(
+          doc,
+          Custom("keydown"),
+          pressedKeyHandler,
+          ~options={capture: true},
+        )
+        WebAPI.Document.removeEventListener(
+          doc,
+          Custom("keyup"),
+          releasedKeyHandler,
+          ~options={capture: true},
+        )
         let _: option<unit> = EventHelpers.iframeExecuteEventListener(
-          (doc, handler) => 
-            WebAPI.Document.removeEventListener(doc, Custom("keydown"), handler, ~options={ capture: true }),
+          (doc, handler) =>
+            WebAPI.Document.removeEventListener(
+              doc,
+              Custom("keydown"),
+              handler,
+              ~options={capture: true},
+            ),
           pressedKeyHandler,
           Some(doc),
         )
         let _: option<unit> = EventHelpers.iframeExecuteEventListener(
-          (doc, handler) => WebAPI.Document.removeEventListener(doc, Custom("keyup"), handler, ~options={ capture: true }),
+          (doc, handler) =>
+            WebAPI.Document.removeEventListener(
+              doc,
+              Custom("keyup"),
+              handler,
+              ~options={capture: true},
+            ),
           releasedKeyHandler,
           Some(doc),
         )
@@ -533,14 +795,16 @@ let useKeypressIFrameDocument = (handler, doc) => {
 let useLoadedIFrameDocument = (handler, doc) => {
   React.useEffect(() => {
     doc->Option.map(doc => {
-      WebAPI.Document.addEventListener(doc, Custom("load"), handler, ~options={ capture: true })
+      WebAPI.Document.addEventListener(doc, Custom("load"), handler, ~options={capture: true})
       EventHelpers.iframeExecuteEventListener(
-        (doc, handler) => WebAPI.Document.addEventListener(doc, Custom("load"), handler, ~options={ capture: true }),
+        (doc, handler) =>
+          WebAPI.Document.addEventListener(doc, Custom("load"), handler, ~options={capture: true}),
         handler,
         Some(doc),
       )->ignore
 
-      () => WebAPI.Document.removeEventListener(doc, Custom("load"), handler, ~options={ capture: true })
+      () =>
+        WebAPI.Document.removeEventListener(doc, Custom("load"), handler, ~options={capture: true})
     })
   }, (handler, doc))
 }
@@ -550,12 +814,32 @@ let useIsOnline = () => {
   React.useEffect(() => {
     let setOnline = _ => setIsOnline(_ => true)
     let setOffline = _ => setIsOnline(_ => false)
-    WebAPI.Window.addEventListener(WebAPI.Global.window, Custom("online"), setOnline, ~options={ capture: true })
-    WebAPI.Window.addEventListener(WebAPI.Global.window, Custom("offline"), setOffline, ~options={ capture: true })
+    WebAPI.Window.addEventListener(
+      WebAPI.Global.window,
+      Custom("online"),
+      setOnline,
+      ~options={capture: true},
+    )
+    WebAPI.Window.addEventListener(
+      WebAPI.Global.window,
+      Custom("offline"),
+      setOffline,
+      ~options={capture: true},
+    )
     Some(
       () => {
-        WebAPI.Window.removeEventListener(WebAPI.Global.window, Custom("online"), setOnline, ~options={ capture: true })
-        WebAPI.Window.removeEventListener(WebAPI.Global.window, Custom("offline"), setOffline, ~options={ capture: true })
+        WebAPI.Window.removeEventListener(
+          WebAPI.Global.window,
+          Custom("online"),
+          setOnline,
+          ~options={capture: true},
+        )
+        WebAPI.Window.removeEventListener(
+          WebAPI.Global.window,
+          Custom("offline"),
+          setOffline,
+          ~options={capture: true},
+        )
       },
     )
   }, [setIsOnline])
