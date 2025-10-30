@@ -1,14 +1,21 @@
-let name = "AskTheLlm::StateReducer"
+let name = "Client::StateReducer"
 
-open AskTheLlm__Types
-
-let defaultState: state = {
-    url: "danni",
-    messages: [],
+type state = {
+  url: string,
+  messages: array<string>,
 }
 
-type state = state
-type action = action
+type action =
+  | SetUrl(string)
+  | AddMessage(string)
+
+type effect =
+  | SendMessage(string)
+
+let defaultState: state = {
+  url: "danni",
+  messages: [],
+}
 
 let actionToString = action => {
   switch action {
@@ -16,9 +23,6 @@ let actionToString = action => {
   | AddMessage(message) => "AddMessage(" + message + ")"
   }
 }
-
-type effect =
-  | SendMessage(string)
 
 let handleEffect = (effect, _state, _dispatch) => {
   switch effect {
