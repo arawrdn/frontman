@@ -8,6 +8,7 @@
 		"libs/bindings",
 		"libs/client",
 		"libs/experimental-rescript-webapi",
+		"test/sites/blog-starter",
 		"libs/react-statestore"
 	],
 	"dependencies": {

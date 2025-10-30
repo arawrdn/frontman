@@ -38,6 +38,6 @@ let make = (~url) => {
         <RadixUI__Icons.EnterFullScreenIcon className="size-4" />
       </AIElements.WebPreviewNavigationButton>
     </AIElements.WebPreviewNavigation>
-    <AIElements.WebPreviewBody />
+    <Client__WebPreview__Body url={url} />
   </AIElements.WebPreview>
 }
