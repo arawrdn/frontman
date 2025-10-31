@@ -69,7 +69,12 @@ type action =
   | SetSelectedElement({selectedElement: option<selectedElementData>})
 
 // Effects for side effects
-type effect = SendMessageToAPI({message: string})
+type effect = 
+  | SendMessageToAPI({message: string})
+  | FetchElementDetails({
+      element: WebAPI.DOMAPI.element,
+      document: option<WebAPI.DOMAPI.document>,
+    })
 
 let getInitialUrl = () => {
   // Check if window is available (browser environment)
@@ -104,7 +109,7 @@ let actionToString = action => {
   }
 }
 
-let handleEffect = (effect, _state, _dispatch) => {
+let handleEffect = (effect, _state, dispatch) => {
   switch effect {
   | SendMessageToAPI({message}) => {
       let headers = WebAPI.Headers.make()
@@ -127,6 +132,56 @@ let handleEffect = (effect, _state, _dispatch) => {
         })
         ->Promise.catch(error => {
           Console.error2("[Effect] Failed to send message to API:", error)
+          Promise.resolve()
+        })
+    }
+  | FetchElementDetails({element, document}) => {
+      // Fetch selector
+      let selectorPromise = Promise.resolve()->Promise.then(_ => {
+        let selector = Bindings__Finder.finder(
+          ~element,
+          ~options={
+            root: document->Option.map(doc => 
+              doc.documentElement->Obj.magic
+            )->Option.getOr(element),
+            idName: (~name as _) => true,
+            className: (~name as _) => true,
+            tagName: (~name as _) => true,
+            attr: (~name as _, ~value as _) => false,
+          }
+        )
+        Promise.resolve(Some(selector))
+      })
+      
+      // Fetch screenshot
+      let screenshotPromise = Bindings__Snapdom.snapdom(~element)
+        ->Promise.then(captureResult => {
+          Promise.resolve(Some(captureResult.url))
+        })
+        ->Promise.catch(error => {
+          Console.error2("Failed to capture screenshot:", error)
+          Promise.resolve(None)
+        })
+      
+      // Fetch source location
+      let sourceLocationPromise = Bindings__DOMElementToComponentSource.getElementSourceLocation(~element)
+        ->Promise.then(sourceLocationOpt => {
+          Promise.resolve(sourceLocationOpt)
+        })
+        ->Promise.catch(error => {
+          Console.error2("Failed to get source location:", error)
+          Promise.resolve(None)
+        })
+      
+      // Wait for all promises and update state once
+      let _ = Promise.all3((selectorPromise, screenshotPromise, sourceLocationPromise))
+        ->Promise.then(((selector, screenshot, sourceLocation)) => {
+          dispatch(SetSelectedElement({selectedElement: Some({
+            element: element,
+            selector: selector,
+            screenshot: screenshot,
+            sourceLocation: sourceLocation,
+          })}))
           Promise.resolve()
         })
     }
@@ -312,13 +367,28 @@ let next = (state, action) => {
     })
 
   // Set selected element and reset selection mode
-  | SetSelectedElement({selectedElement}) =>
-    AskTheLlmReactStatestore.StateReducer.update({
-      messages: state.messages,
-      previewDocument: state.previewDocument,
-      webPreviewIsSelecting: false, // Auto-reset selection mode
-      selectedElement: selectedElement,
-    })
+  | SetSelectedElement({selectedElement}) => {
+      // Determine if we need to fetch details
+      let shouldFetchDetails = switch selectedElement {
+      | Some({element, selector: None, screenshot: None, sourceLocation: None}) => 
+          // New element with no details - trigger fetch
+          Some(FetchElementDetails({
+            element: element,
+            document: state.previewDocument.document,
+          }))
+      | _ => None // Element with details or clearing selection - no fetch needed
+      }
+      
+      AskTheLlmReactStatestore.StateReducer.update(
+        {
+          messages: state.messages,
+          previewDocument: state.previewDocument,
+          webPreviewIsSelecting: false, // Auto-reset selection mode
+          selectedElement: selectedElement,
+        },
+        ~sideEffects=shouldFetchDetails->Option.mapOr([], effect => [effect]),
+      )
+    }
   }
 }
 

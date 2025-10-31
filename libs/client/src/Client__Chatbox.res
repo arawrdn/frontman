@@ -122,6 +122,7 @@ let make = () => {
       </AIElements.ConversationContent>
       <AIElements.ConversationScrollButton />
     </AIElements.Conversation>
+    <Client__SelectedElementDisplay />
     <AIElements.PromptInput
       onSubmit={() => handleSubmit({"text": input, "files": None})}
       className=""

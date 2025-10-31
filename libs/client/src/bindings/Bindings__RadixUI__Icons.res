@@ -61,3 +61,13 @@ module EnterFullScreenIcon = {
   @module("@radix-ui/react-icons") @react.component
   external make: (~className: string=?, ~style: {..}=?) => React.element = "EnterFullScreenIcon"
 }
+
+module Cross2Icon = {
+  @module("@radix-ui/react-icons") @react.component
+  external make: (~className: string=?, ~style: {..}=?) => React.element = "Cross2Icon"
+}
+
+module CubeIcon = {
+  @module("@radix-ui/react-icons") @react.component
+  external make: (~className: string=?, ~style: {..}=?) => React.element = "CubeIcon"
+}
