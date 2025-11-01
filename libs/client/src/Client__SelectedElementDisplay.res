@@ -6,7 +6,7 @@ let make = () => {
 
   switch selectedElement {
   | None => React.null
-  | Some({selector, sourceLocation, _}) => {
+  | Some({element,selector, sourceLocation, _}) => {
       <div
         className="px-4 py-2 bg-blue-50 dark:bg-blue-950/20 border-b border-blue-200 dark:border-blue-800 text-sm"
       >
@@ -23,17 +23,16 @@ let make = () => {
                 <code
                   className="text-xs bg-blue-100 dark:bg-blue-900/40 px-1.5 py-0.5 rounded text-blue-800 dark:text-blue-200 font-mono"
                 >
-                  {React.string(sel)}
+                  {React.string(`${element.tagName->String.toLowerCase} ${sel}`)}
                 </code>
               )}
             </div>
             {sourceLocation->Option.mapOr(React.null, loc =>
               <div className="flex items-center gap-2 text-xs text-blue-700 dark:text-blue-300 mt-1">
-                <span className="font-medium"> {React.string(loc.componentName)} </span>
-                <span className="text-blue-500 dark:text-blue-500"> {React.string("•")} </span>
-                <span className="truncate font-mono">
-                  {React.string(`${loc.file}:${loc.line->Int.toString}`)}
+                <span className="font-semibold text-blue-900 dark:text-blue-100">
+                  {React.string("React Component:")}
                 </span>
+                <code className="font-medium"> {React.string(`<${loc.componentName} />`)} </code>
               </div>
             )}
           </div>

@@ -109,13 +109,13 @@ let actionToString = action => {
   }
 }
 
-let handleEffect = (effect, _state, dispatch) => {
+let handleEffect = (effect, state, dispatch) => {
   switch effect {
   | SendMessageToAPI({message}) => {
       let headers = WebAPI.Headers.make()
       headers->WebAPI.Headers.set(~name="Content-Type", ~value="application/json")
 
-      let body = JSON.stringifyAny({"message": message})->Option.getOr("{}")
+      let body = JSON.stringifyAny({"message": message, "selectedElement": state.selectedElement})->Option.getOr("{}")
 
       let _ =
         WebAPI.Global.fetch(
