@@ -26,20 +26,6 @@ module System = {
 }
 
 
-// Schema for sourceLocation
-let sourceLocationSchema: S.t<AskTheLlmBindings.DOMElementToComponentSource.sourceLocation> =
-  S.object(s => {
-    (
-      {
-        componentName: s.field("componentName", S.string),
-        file: s.field("file", S.string),
-        line: s.field("line", S.int),
-        column: s.field("column", S.int),
-      }: AskTheLlmBindings.DOMElementToComponentSource.sourceLocation
-    )
-  })
-
-
 module User = {
   @schema
   type contentParts =
