@@ -1,24 +1,18 @@
 @react.component
 let make = (~document) => {
   let document = Some(document)
-  let webPreviewIsSelecting = Client__State.useSelector(Client__State.Selectors.webPreviewIsSelecting)
+  let webPreviewIsSelecting = Client__State.useSelector(
+    Client__State.Selectors.webPreviewIsSelecting,
+  )
   let selectedElement = Client__State.useSelector(Client__State.Selectors.selectedElement)
-  
-  let lastProcessedClick = React.useRef(None)
-  
-  let scrollTimestamp = Client__Hooks.Scroll.useIFrameDocument(~document, ~withCapture=true, ())
-  
-  let clickedElement = Client__Hooks.MouseClick.useIFrameDocument(
-    ~document,
-    ~withCapture=false,
-    (),
-  )
 
-  let hoveredElement = Client__Hooks.MouseMove.useIFrameDocument(
-    ~document,
-    ~withCapture=true,
-    (),
-  )
+  let lastProcessedClick = React.useRef(None)
+
+  let scrollTimestamp = Client__Hooks.Scroll.useIFrameDocument(~document, ~withCapture=true, ())
+
+  let clickedElement = Client__Hooks.MouseClick.useIFrameDocument(~document, ~withCapture=false, ())
+
+  let hoveredElement = Client__Hooks.MouseMove.useIFrameDocument(~document, ~withCapture=true, ())
 
   React.useEffect1(() => {
     if webPreviewIsSelecting {
@@ -35,22 +29,24 @@ let make = (~document) => {
         | (None, Some(_)) => true
         | _ => false
         }
-        
+
         if !isNewClick {
-            ()
+          ()
         } else {
           lastProcessedClick.current = clickedElement
           switch target {
           | Some(eventTarget) => {
               let element = WebAPI.EventTarget.asElement(eventTarget)
-              Client__State.Actions.setSelectedElement(~selectedElement=Some({
-                element: element,
-                selector: None,
-                screenshot: None,
-                sourceLocation: None,
-              }))
+              Client__State.Actions.setSelectedElement(
+                ~selectedElement=Some({
+                  element,
+                  selector: None,
+                  screenshot: None,
+                  sourceLocation: None,
+                }),
+              )
             }
-          | None => Console.log("Element clicked: unknown")
+          | None => Console.error("Element clicked: unknown")
           }
         }
       })
@@ -59,13 +55,17 @@ let make = (~document) => {
   }, (clickedElement, webPreviewIsSelecting))
 
   <div className="pointer-events-none flex-1 absolute top-0 left-0 w-full h-full">
-    {webPreviewIsSelecting 
-      ? <Client__WebPreview__HoveredElement key="hover" element={hoveredElement} scrollTimestamp={scrollTimestamp} />
-      : React.null
-    }
-    {selectedElement->Option.mapOr(
-      React.null,
-      data => <Client__WebPreview__ClickedElement key="clicked" element={Some((Some(data.element->Obj.magic), ()))} scrollTimestamp={scrollTimestamp} />
+    {webPreviewIsSelecting
+      ? <Client__WebPreview__HoveredElement
+          key="hover" element={hoveredElement} scrollTimestamp={scrollTimestamp}
+        />
+      : React.null}
+    {selectedElement->Option.mapOr(React.null, data =>
+      <Client__WebPreview__ClickedElement
+        key="clicked"
+        element={Some((Some(data.element->Obj.magic), ()))}
+        scrollTimestamp={scrollTimestamp}
+      />
     )}
   </div>
 }

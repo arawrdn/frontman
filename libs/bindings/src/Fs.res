@@ -7,6 +7,10 @@ module Promises = {
   @module("fs") @scope("promises")
   external readFile: (string, @as("utf8") _) => promise<string> = "readFile"
 
+  // Add binary file reading for detection
+  @module("fs") @scope("promises")
+  external readFileBuffer: string => promise<ArrayBuffer.t> = "readFile"
+
   @module("fs") @scope("promises")
   external writeFile: (string, string, @as("utf8") _) => promise<unit> = "writeFile"
 
@@ -35,3 +39,4 @@ module Promises = {
 
 @send external isFile: stats => bool = "isFile"
 @send external isDirectory: stats => bool = "isDirectory"
+@get external size: stats => float = "size"

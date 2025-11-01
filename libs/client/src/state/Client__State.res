@@ -1,6 +1,6 @@
 // Re-export types
 type state = Client__State__StateReducer.state
-type action = Client__State__StateReducer.action
+// type action = Client__State__StateReducer.action
 
 // Hook for selecting state
 let useSelector = selection =>
