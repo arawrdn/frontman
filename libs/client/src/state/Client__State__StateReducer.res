@@ -37,19 +37,39 @@ type previewDocument = {
   document: option<WebAPI.DOMAPI.document>,
 }
 
-// Selected element data with selector, screenshot, and source location
-type selectedElementData = {
-  element: WebAPI.DOMAPI.element,
-  selector: option<string>,
-  screenshot: option<string>,
-  sourceLocation: option<Client__Types.sourceLocation>,
-}
+module SelectedElement = {
+  type t = {
+    element: WebAPI.DOMAPI.element,
+    selector: option<string>,
+    screenshot: option<string>,
+    sourceLocation: option<Client__Types.sourceLocation>,
+  }
 
+  let make = (~element: WebAPI.DOMAPI.element, ~selector: option<string>, ~screenshot: option<string>, ~sourceLocation: option<Client__Types.sourceLocation>) => {
+    {
+      element,
+      selector,
+      screenshot,
+      sourceLocation,
+    }
+  }
+
+  let withoutElement = (selectedElement: option<t>) => {
+    switch selectedElement {
+    | Some(selectedElement) => {
+        "selector": selectedElement.selector,
+        "screenshot": selectedElement.screenshot,
+        "sourceLocation": selectedElement.sourceLocation
+      }->Some
+    | None => None
+    }
+  }
+}
 type state = {
   messages: array<message>,
   previewDocument: previewDocument,
   webPreviewIsSelecting: bool,
-  selectedElement: option<selectedElementData>,
+  selectedElement: option<SelectedElement.t>,
 }
 
 type action =
@@ -66,7 +86,7 @@ type action =
   | SetPreviewDocument({document: option<WebAPI.DOMAPI.document>})
   // WebPreview selection actions
   | ToggleWebPreviewSelection
-  | SetSelectedElement({selectedElement: option<selectedElementData>})
+  | SetSelectedElement({selectedElement: option<SelectedElement.t>})
 
 // Effects for side effects
 type effect = 
@@ -115,7 +135,7 @@ let handleEffect = (effect, state, dispatch) => {
       let headers = WebAPI.Headers.make()
       headers->WebAPI.Headers.set(~name="Content-Type", ~value="application/json")
 
-      let body = JSON.stringifyAny({"message": message, "selectedElement": state.selectedElement})->Option.getOr("{}")
+      let body = JSON.stringifyAny({"message": message, "selectedElement": SelectedElement.withoutElement(state.selectedElement)})->Option.getOr("{}")
 
       let _ =
         WebAPI.Global.fetch(
@@ -180,7 +200,9 @@ let handleEffect = (effect, state, dispatch) => {
             element: element,
             selector: selector,
             screenshot: screenshot,
-            sourceLocation: sourceLocation,
+            sourceLocation: sourceLocation->Option.map(sourceLoc => {
+              {...sourceLoc, file: sourceLoc.file->String.split("?")->Array.get(0)->Option.getOr(sourceLoc.file)}
+            }),
           })}))
           Promise.resolve()
         })

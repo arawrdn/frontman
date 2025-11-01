@@ -45,6 +45,7 @@ describe("extractToolCalls", () => {
     let message = Agent__Task__Message.User({
       taskId,
       content: String("Hello"),
+      selectedElementSourceLocation: None,
     })
 
     let result = Agent__Task__Message.extractToolCalls(message)
@@ -144,6 +145,7 @@ describe("executeToolCalls", () => {
     let initialMessage = Agent__Task__Message.User({
       taskId,
       content: String("Test task"),
+      selectedElementSourceLocation: None,
     })
     let task = Agent__Task.make(taskId, initialMessage)
 
@@ -184,6 +186,7 @@ describe("executeToolCalls", () => {
     let initialMessage = Agent__Task__Message.User({
       taskId,
       content: String("Test task"),
+      selectedElementSourceLocation: None,
     })
     let task = Agent__Task.make(taskId, initialMessage)
 

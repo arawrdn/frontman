@@ -152,11 +152,11 @@ let messageFromVercel = (msg: Bindings.modelMessage, taskId: Agent__Task__Id.t):
     )
 
   | UserMessage({content: String(text)}) =>
-    Some(Agent__Task__Message.User({taskId, content: String(text)}))
+    Some(Agent__Task__Message.User({taskId, content: String(text), selectedElementSourceLocation: None}))
 
   | UserMessage({content: Parts(parts), _}) => {
       let domainParts = UserPart.arrayFromVercel(parts)
-      Some(Agent__Task__Message.User({taskId, content: List(domainParts)}))
+      Some(Agent__Task__Message.User({taskId, content: List(domainParts), selectedElementSourceLocation: None}))
     }
 
   | AssistantMessage({content: String(text)}) =>
@@ -168,13 +168,13 @@ let messageFromVercel = (msg: Bindings.modelMessage, taskId: Agent__Task__Id.t):
     )
 
   | AssistantMessage({content: Parts(parts)}) => {
-      Console.log2("Converting AssistantMessage with parts:", parts)
+      // Console.log2("Converting AssistantMessage with parts:", parts)
       let domainParts = parts->Array.map(part => {
         switch part {
         | Bindings.AssistantPart.Text({text}) =>
           Agent__Task__Message.Assistant.Text({content: text})
         | Bindings.AssistantPart.ToolCall({toolCallId, toolName, input}) => {
-            Console.log3("ToolCall part:", toolName, input)
+            // Console.log3("ToolCall part:", toolName, input)
             Agent__Task__Message.Assistant.ToolCall({
               toolCallId,
               toolName,

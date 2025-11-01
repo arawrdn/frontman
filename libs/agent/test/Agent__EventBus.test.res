@@ -21,6 +21,7 @@ describe("EventBus emission", () => {
     let message = Agent.TaskMessage.User({
       taskId: Agent.TaskId.make(),
       content: String("test message"),
+      selectedElementSourceLocation: None,
     })
     agent->Agent.sendMessage(message)->ignore
 
@@ -58,6 +59,7 @@ describe("EventBus emission", () => {
     let message = Agent.TaskMessage.User({
       taskId: Agent.TaskId.make(),
       content: String("test message"),
+      selectedElementSourceLocation: None,
     })
     agent->Agent.sendMessage(message)->ignore
 
@@ -90,6 +92,7 @@ describe("EventBus serialization", () => {
     let userMessage = Agent__Task__Message.User({
       taskId: "0c938b43-b1ca-4636-b6c7-bc4116e2231e",
       content: String("test"),
+      selectedElementSourceLocation: None,
     })
 
     // Create the task

@@ -6,6 +6,7 @@ module Agent = AskTheLlmAgent.Agent
 module AgentEventBus = AskTheLlmAgent.Agent__EventBus
 module Bindings = AskTheLlmBindings
 module Dotenv = AskTheLlmBindings.Dotenv
+module DOMElementToComponentSource = AskTheLlmBindings.DOMElementToComponentSource
 // Next.js API Route Request type (Pages Router)
 module ApiRequest = {
   type t
@@ -81,6 +82,31 @@ let createUIHandler = (isDev: bool): apiHandler => {
   }
 }
 
+// Helper to decode source location from JSON
+let decodeSourceLocation = (json: JSON.t): option<DOMElementToComponentSource.sourceLocation> => {
+  json
+  ->JSON.Decode.object
+  ->Option.flatMap(obj => {
+    let componentName = obj->Dict.get("componentName")->Option.flatMap(JSON.Decode.string)
+    let file = obj->Dict.get("file")->Option.flatMap(JSON.Decode.string)
+    let line = obj->Dict.get("line")->Option.flatMap(JSON.Decode.float)->Option.map(Float.toInt)
+    let column = obj->Dict.get("column")->Option.flatMap(JSON.Decode.float)->Option.map(Float.toInt)
+
+    switch (componentName, file, line, column) {
+    | (Some(componentName), Some(file), Some(line), Some(column)) => {
+        let location: DOMElementToComponentSource.sourceLocation = {
+          componentName,
+          file,
+          line,
+          column,
+        }
+        Some(location)
+      }
+    | _ => None
+    }
+  })
+}
+
 // Handler for /api/ask-the-llm/chat (handles chat messages)
 let createChatHandler = (): apiHandler => {
   async (req, res) => {
@@ -99,12 +125,51 @@ let createChatHandler = (): apiHandler => {
             if str === "" {
               res->ApiResponse.status(400)->ApiResponse.json({"error": "Message cannot be empty"})
             } else {
+              // Extract and resolve source location if present
+              let resolvedSourceLocation = switch obj->Dict.get("selectedElement") {
+              | Some(selectedElementJson) =>
+                switch selectedElementJson->JSON.Decode.object {
+                | Some(selectedElementObj) =>
+                  switch selectedElementObj->Dict.get("sourceLocation") {
+                  | Some(sourceLocationJson) =>
+                    switch decodeSourceLocation(sourceLocationJson) {
+                    | Some(sourceLocation) =>
+                      // Call resolveSourceLocationInServer
+                      Console.log2(
+                        "[API] Resolving source location:",
+                        sourceLocation,
+                      )
+                      let resolved = await DOMElementToComponentSource.resolveSourceLocationInServer(
+                        sourceLocation,
+                      )
+                      Console.log2("[API] Resolved source location:", resolved)
+                      Some(resolved)
+                    | None => None
+                    }
+                  | None => None
+                  }
+                | None => None
+                }
+              | None => None
+              }
+
+              // Log the resolved source location for debugging
+              switch resolvedSourceLocation {
+              | Some(location) =>
+                Console.log2(
+                  "[API] Using resolved source location:",
+                  location,
+                )
+              | None => Console.log("[API] No source location resolved")
+              }
+
               let agent = getOrCreateAgent()
               agent
               ->Agent.sendMessage(
                 Agent.TaskMessage.User({
                   taskId: Agent.TaskId.make(),
                   content: String(str),
+                  selectedElementSourceLocation: resolvedSourceLocation,
                 }),
               )
               ->ignore

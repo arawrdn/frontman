@@ -68,6 +68,7 @@ type sourceLocation = {
   componentName: string,
   file: string,
   line: int,
+  column: int,
 }
 type reactComponent = {
   name: string,
