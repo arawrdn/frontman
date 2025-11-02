@@ -353,6 +353,6 @@ module OpenAI = {
 
   let gpt4o = apiKey => {
     let provider = createOpenAI({apiKey: apiKey})
-    provider->chat("gpt-4o")
+    provider->chat("gpt-4o-mini")
   }
 }

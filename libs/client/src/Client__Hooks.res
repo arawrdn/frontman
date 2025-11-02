@@ -909,3 +909,127 @@ module Scroll = {
     scrollTimestamp
   }
 }
+
+let useIFrameLocation = (~iframeRef: Nullable.t<WebAPI.DOMAPI.element>) => {
+  let (location, setLocation) = React.useState(() => None)
+
+  React.useEffect(() => {
+    let iframeWindow =
+      iframeRef
+      ->Nullable.toOption
+      ->Option.flatMap(iframe =>
+        WebAPI.Element.unsafeAsHTMLIFrameElement(iframe)
+        ->WebAPI.HTMLIFrameElement.contentWindow
+        ->Null.toOption
+      )
+
+    switch iframeWindow {
+    | Some(iframeWindow) =>
+      // Get initial location
+      let initialLocation = Some(
+        iframeWindow->WebAPI.Window.location->WebAPI.Location.href,
+      )
+      setLocation(_ => initialLocation)
+
+      // Listen for navigation events
+      let onPopState = _ev => {
+        let currentLocation = Some(
+          iframeWindow->WebAPI.Window.location->WebAPI.Location.href,
+        )
+        setLocation(_ => currentLocation)
+      }
+      let onNavigation = ev => {
+        let url = ev["destination"]["url"]
+        let currentLocation = Some(
+          url,
+        )
+        setLocation(_ => currentLocation)
+      }
+
+      // Check if Navigation API is supported (not available in Firefox/Safari)
+      let navigationSupported = %raw(`typeof iframeWindow.navigation !== 'undefined'`)
+
+      WebAPI.Window.addEventListener(
+        iframeWindow,
+        Custom("popstate"),
+        onPopState,
+        ~options={capture: false},
+      )
+
+      // Only use Navigation API if supported
+      if navigationSupported {
+        WebAPI.Navigation.addEventListener(
+          iframeWindow.navigation,
+          Custom("navigate"),
+          onNavigation,
+          ~options={capture: false},
+        )
+      }
+
+      Some(
+        () => {
+          WebAPI.Window.removeEventListener(
+            iframeWindow,
+            Custom("popstate"),
+            onPopState,
+            ~options={capture: false},
+          )
+
+          // Only remove Navigation API listener if it was added
+          if navigationSupported {
+            WebAPI.Navigation.removeEventListener(
+              iframeWindow.navigation,
+              Custom("navigate"),
+              onNavigation,
+              ~options={capture: false},
+            )
+          }
+        },
+      )
+    | None => None
+    }
+  }, [iframeRef])
+
+  location
+}
+
+let useDisableIFrameAnchorPointerEvents = (
+  ~iframeRef: Nullable.t<WebAPI.DOMAPI.element>,
+  ~activate=true,
+) => {
+  React.useEffect(() => {
+    let iframeDoc = EventHelpers.getIframeDoc(iframeRef)
+
+    switch iframeDoc {
+    | Some(doc) =>
+      // Convert NodeList to array
+      let getAnchors: WebAPI.DOMAPI.document => array<WebAPI.DOMAPI.element> = %raw(`
+        function(doc) {
+          return Array.from(doc.querySelectorAll("a"));
+        }
+      `)
+      let anchorElements = getAnchors(doc)
+
+      // Store original pointer-events values and set/restore based on activate
+      let originalStyles = Array.map(anchorElements, element => {
+        let htmlElement = element->Obj.magic
+        let originalPointerEvents = htmlElement["style"]["pointerEvents"]
+        if activate {
+          htmlElement["style"]["pointerEvents"] = "none"
+        }
+        originalPointerEvents
+      })
+
+      Some(
+        () => {
+          // Always restore original pointer-events values on cleanup
+          Array.forEachWithIndex(anchorElements, (element, index) => {
+            let htmlElement = element->Obj.magic
+            htmlElement["style"]["pointerEvents"] = originalStyles[index]
+          })
+        },
+      )
+    | None => None
+    }
+  }, (iframeRef, activate))
+}

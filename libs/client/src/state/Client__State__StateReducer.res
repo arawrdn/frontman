@@ -31,10 +31,11 @@ type message =
   | User({id: string, content: array<UserContentPart.t>, createdAt: float})
   | Assistant(assistantMessage)
 
-// Preview document with URL and optional loaded document
-type previewDocument = {
+// Preview frame with URL and optional loaded document/window
+type previewFrame = {
   url: string,
-  document: option<WebAPI.DOMAPI.document>,
+  contentDocument: option<WebAPI.DOMAPI.document>,
+  contentWindow: option<WebAPI.DOMAPI.window>,
 }
 
 module SelectedElement = {
@@ -67,7 +68,7 @@ module SelectedElement = {
 }
 type state = {
   messages: array<message>,
-  previewDocument: previewDocument,
+  previewFrame: previewFrame,
   webPreviewIsSelecting: bool,
   selectedElement: option<SelectedElement.t>,
 }
@@ -81,9 +82,12 @@ type action =
   | ToolCallReceived({id: string, toolCall: toolCall})
   // Completion action
   | MessageCompleted({id: string})
-  // Preview document actions
+  // Preview frame actions
   | SetPreviewUrl({url: string})
-  | SetPreviewDocument({document: option<WebAPI.DOMAPI.document>})
+  | SetPreviewFrame({
+      contentDocument: option<WebAPI.DOMAPI.document>,
+      contentWindow: option<WebAPI.DOMAPI.window>,
+    })
   // WebPreview selection actions
   | ToggleWebPreviewSelection
   | SetSelectedElement({selectedElement: option<SelectedElement.t>})
@@ -110,7 +114,7 @@ let getInitialUrl = () => {
 
 let defaultState: state = {
   messages: [],
-  previewDocument: {url: getInitialUrl(), document: None},
+  previewFrame: {url: getInitialUrl(), contentDocument: None, contentWindow: None},
   webPreviewIsSelecting: false,
   selectedElement: None,
 }
@@ -123,7 +127,7 @@ let actionToString = action => {
   | ToolCallReceived({id, toolCall}) => `ToolCallReceived(${id}, ${toolCall.toolName})`
   | MessageCompleted({id}) => `MessageCompleted(${id})`
   | SetPreviewUrl({url}) => `SetPreviewUrl(${url})`
-  | SetPreviewDocument(_) => `SetPreviewDocument(document)`
+  | SetPreviewFrame(_) => `SetPreviewFrame(contentDocument, contentWindow)`
   | ToggleWebPreviewSelection => `ToggleWebPreviewSelection`
   | SetSelectedElement(_) => `SetSelectedElement`
   }
@@ -237,7 +241,7 @@ let next = (state, action) => {
       AskTheLlmReactStatestore.StateReducer.update(
         {
           messages: Array.concat(state.messages, [message]),
-          previewDocument: state.previewDocument,
+          previewFrame: state.previewFrame,
           webPreviewIsSelecting: state.webPreviewIsSelecting,
           selectedElement: state.selectedElement,
         },
@@ -257,7 +261,7 @@ let next = (state, action) => {
       )
       AskTheLlmReactStatestore.StateReducer.update({
         messages: Array.concat(state.messages, [message]),
-        previewDocument: state.previewDocument,
+        previewFrame: state.previewFrame,
         webPreviewIsSelecting: state.webPreviewIsSelecting,
         selectedElement: state.selectedElement,
       })
@@ -281,7 +285,7 @@ let next = (state, action) => {
       })
       AskTheLlmReactStatestore.StateReducer.update({
         messages: updatedMessages,
-        previewDocument: state.previewDocument,
+        previewFrame: state.previewFrame,
         webPreviewIsSelecting: state.webPreviewIsSelecting,
         selectedElement: state.selectedElement,
       })
@@ -305,7 +309,7 @@ let next = (state, action) => {
       })
       AskTheLlmReactStatestore.StateReducer.update({
         messages: updatedMessages,
-        previewDocument: state.previewDocument,
+        previewFrame: state.previewFrame,
         webPreviewIsSelecting: state.webPreviewIsSelecting,
         selectedElement: state.selectedElement,
       })
@@ -350,26 +354,26 @@ let next = (state, action) => {
       })
       AskTheLlmReactStatestore.StateReducer.update({
         messages: updatedMessages,
-        previewDocument: state.previewDocument,
+        previewFrame: state.previewFrame,
         webPreviewIsSelecting: state.webPreviewIsSelecting,
         selectedElement: state.selectedElement,
       })
     }
 
-  // Set preview URL (clears document)
+  // Set preview URL (clears document and window)
   | SetPreviewUrl({url}) =>
     AskTheLlmReactStatestore.StateReducer.update({
       messages: state.messages,
-      previewDocument: {url, document: None},
+      previewFrame: {...state.previewFrame ,url},
       webPreviewIsSelecting: state.webPreviewIsSelecting,
       selectedElement: state.selectedElement,
     })
 
-  // Set preview document (keep existing URL)
-  | SetPreviewDocument({document}) =>
+  // Set preview frame (keep existing URL)
+  | SetPreviewFrame({contentDocument, contentWindow}) =>
     AskTheLlmReactStatestore.StateReducer.update({
       messages: state.messages,
-      previewDocument: {...state.previewDocument, document: document},
+      previewFrame: {...state.previewFrame, contentDocument, contentWindow},
       webPreviewIsSelecting: state.webPreviewIsSelecting,
       selectedElement: state.selectedElement,
     })
@@ -378,7 +382,7 @@ let next = (state, action) => {
   | ToggleWebPreviewSelection =>
     AskTheLlmReactStatestore.StateReducer.update({
       messages: state.messages,
-      previewDocument: state.previewDocument,
+      previewFrame: state.previewFrame,
       webPreviewIsSelecting: !state.webPreviewIsSelecting,
       // Clear selected element when turning selection mode ON
       selectedElement: if !state.webPreviewIsSelecting {
@@ -396,7 +400,7 @@ let next = (state, action) => {
           // New element with no details - trigger fetch
           Some(FetchElementDetails({
             element: element,
-            document: state.previewDocument.document,
+            document: state.previewFrame.contentDocument,
           }))
       | _ => None // Element with details or clearing selection - no fetch needed
       }
@@ -404,7 +408,7 @@ let next = (state, action) => {
       AskTheLlmReactStatestore.StateReducer.update(
         {
           messages: state.messages,
-          previewDocument: state.previewDocument,
+          previewFrame: state.previewFrame,
           webPreviewIsSelecting: false, // Auto-reset selection mode
           selectedElement: selectedElement,
         },
@@ -459,11 +463,14 @@ module Selectors = {
   }
 
   // Get preview document state
-  let previewDocument = (state: state) => state.previewDocument
+  let previewFrame = (state: state) => state.previewFrame
 
   // Get webPreview selection mode
   let webPreviewIsSelecting = (state: state) => state.webPreviewIsSelecting
 
   // Get selected element
   let selectedElement = (state: state) => state.selectedElement
+
+  // Get preview URL
+  let previewUrl = (state: state) => state.previewFrame.url
 }

@@ -14,7 +14,7 @@ module TaskMessage = Agent__Task__Message
 
 // Pure reaction: transform event into commands based on business rules
 let react = (event: Agent__EventBus.events): list<Command.t> => {
-  Console.log2("=== Reactor: added event:", event)
+  // Console.log2("=== Reactor: added event:", event)
   switch event {
   // Task lifecycle: Created → no action needed (ProcessingStarted is emitted together)
   | TaskEvent(_, Created(_)) => {

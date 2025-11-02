@@ -80,9 +80,13 @@ let messageToVercel = (msg: Message.t): Bindings.modelMessage => {
       content: systemMsg.content,
     })
 
-  | User({content: Message.User.String(text)}) =>
+  | User({content: Message.User.String(text), selectedElementSourceLocation}) =>
     Bindings.UserMessage({
-      content: Bindings.String(text),
+      content: Bindings.String(
+        `${text} ${selectedElementSourceLocation->Option.mapOr("", loc =>
+            `[React Component details the user selected together with his request: <${loc.componentName} /> in ${loc.file} on line ${loc.line->Int.toString} and column ${loc.column->Int.toString}]`
+          )}`,
+      ),
     })
 
   | User({content: List(parts)}) => {
@@ -152,11 +156,23 @@ let messageFromVercel = (msg: Bindings.modelMessage, taskId: Agent__Task__Id.t):
     )
 
   | UserMessage({content: String(text)}) =>
-    Some(Agent__Task__Message.User({taskId, content: String(text), selectedElementSourceLocation: None}))
+    Some(
+      Agent__Task__Message.User({
+        taskId,
+        content: String(text),
+        selectedElementSourceLocation: None,
+      }),
+    )
 
   | UserMessage({content: Parts(parts), _}) => {
       let domainParts = UserPart.arrayFromVercel(parts)
-      Some(Agent__Task__Message.User({taskId, content: List(domainParts), selectedElementSourceLocation: None}))
+      Some(
+        Agent__Task__Message.User({
+          taskId,
+          content: List(domainParts),
+          selectedElementSourceLocation: None,
+        }),
+      )
     }
 
   | AssistantMessage({content: String(text)}) =>
@@ -173,14 +189,16 @@ let messageFromVercel = (msg: Bindings.modelMessage, taskId: Agent__Task__Id.t):
         switch part {
         | Bindings.AssistantPart.Text({text}) =>
           Agent__Task__Message.Assistant.Text({content: text})
-        | Bindings.AssistantPart.ToolCall({toolCallId, toolName, input}) => {
-            // Console.log3("ToolCall part:", toolName, input)
-            Agent__Task__Message.Assistant.ToolCall({
-              toolCallId,
-              toolName,
-              args: input,
-            })
-          }
+        | Bindings.AssistantPart.ToolCall({
+            toolCallId,
+            toolName,
+            input,
+          }) => // Console.log3("ToolCall part:", toolName, input)
+          Agent__Task__Message.Assistant.ToolCall({
+            toolCallId,
+            toolName,
+            args: input,
+          })
         }
       })
       Some(

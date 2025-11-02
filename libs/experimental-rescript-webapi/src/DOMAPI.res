@@ -15,6 +15,7 @@ open ServiceWorkerAPI
 open EncryptedMediaExtensionsAPI
 open FileAPI
 open HistoryAPI
+open NavigationAPI
 open VisualViewportAPI
 open WebSpeechAPI
 open FileAndDirectoryEntriesAPI
@@ -5957,6 +5958,11 @@ A window containing a DOM document; the document property points to the DOM docu
     [Read more on MDN](https://developer.mozilla.org/docs/Web/API/Window/history)
     */
   history: history,
+  /**
+    Allows control over all navigation actions for the current window.
+    [Read more on MDN](https://developer.mozilla.org/docs/Web/API/Window/navigation)
+    */
+  navigation: navigation,
   /**
     Defines a new custom element, mapping the given name to the given constructor as an autonomous custom element.
     [Read more on MDN](https://developer.mozilla.org/docs/Web/API/Window/customElements)

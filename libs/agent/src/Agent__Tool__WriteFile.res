@@ -10,16 +10,14 @@ type input = {
 }
 type output = unit
 
-let inputSchemaS = S.object((s): input => {
+let inputSchema = S.object((s): input => {
   relativePath: s.field("relativePath", S.string),
   content: s.field("content", S.string),
 })
 
-let inputSchema = inputSchemaS->S.toJSONSchema
-
 let decodeInput = json => {
   try {
-    Ok(json->S.parseOrThrow(inputSchemaS))
+    Ok(json->S.parseOrThrow(inputSchema))
   } catch {
   | S.Error(error) => Error(error)
   }

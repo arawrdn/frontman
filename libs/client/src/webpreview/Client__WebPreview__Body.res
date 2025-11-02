@@ -1,18 +1,30 @@
 @react.component
 let make = (~url) => {
+  let isSelecting = Client__State.useSelector(Client__State.Selectors.webPreviewIsSelecting)
   let iframeRef: React.ref<Nullable.t<Dom.element>> = React.useRef(Nullable.null)
+  let location = Client__Hooks.useIFrameLocation(~iframeRef=iframeRef.current->Obj.magic)
+  Client__Hooks.useDisableIFrameAnchorPointerEvents(~iframeRef=iframeRef.current->Obj.magic, ~activate=isSelecting)
+  React.useEffect(() => {
+    switch location {
+    | Some(location) => 
+      Client__State.Actions.setPreviewUrl(~url=location)
+      Client__State.Actions.setSelectedElement(~selectedElement=None)
+    | None => ()
+    }
+    None
+  }, [location])
 
   let onLoad = React.useCallback((_e: JsxEvent.Image.t) => {
     iframeRef.current
     ->Nullable.toOption
     ->Option.forEach(iframe => {
-      //TODO(itay): display error message if the content document is not found
-      WebAPI.HTMLIFrameElement.contentDocument(iframe->Obj.magic)
-      ->Null.toOption
-      ->Option.forEach(
-        doc => {
-          Client__State.Actions.setPreviewDocument(~document=Some(doc))
-        },
+      let iframeElement = iframe->Obj.magic
+      let contentDocument = WebAPI.HTMLIFrameElement.contentDocument(iframeElement)->Null.toOption
+      let contentWindow = WebAPI.HTMLIFrameElement.contentWindow(iframeElement)->Null.toOption
+      
+      Client__State.Actions.setPreviewFrame(
+        ~contentDocument,
+        ~contentWindow,
       )
     })
   }, [])

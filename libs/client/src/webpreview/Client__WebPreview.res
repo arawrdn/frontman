@@ -3,21 +3,35 @@ module RadixUI__Icons = Bindings__RadixUI__Icons
 
 @react.component
 let make = (~url) => {
-  let previewDocument = Client__State.useSelector(Client__State.Selectors.previewDocument)
+  let previewUrl = Client__State.useSelector(Client__State.Selectors.previewUrl)
+  let previewFrame = Client__State.useSelector(Client__State.Selectors.previewFrame)
   let webPreviewIsSelecting = Client__State.useSelector(Client__State.Selectors.webPreviewIsSelecting)
-  let fullscreen = React.useRef(false)
 
-  let handleBack = () => ()
-  let handleForward = () => ()
-  let handleReload = () => ()
-  let handleSelect = () => Client__State.Actions.toggleWebPreviewSelection()
-  let handleOpenInNewTab = () => ()
-  let handleFullscreen = () => {
-    fullscreen.current = !fullscreen.current
+  let handleBack = () => {
+    previewFrame.contentWindow->Option.forEach(contentWindow => {
+      WebAPI.History.back(contentWindow.history)
+    })
+    Client__State.Actions.setSelectedElement(~selectedElement=None)
   }
-  <AIElements.WebPreview
-    defaultUrl={url} onUrlChange={_ => ()}
-  >
+  
+  let handleForward = () => {
+    previewFrame.contentWindow->Option.forEach(contentWindow => {
+      WebAPI.History.forward(contentWindow.history)
+    })
+    Client__State.Actions.setSelectedElement(~selectedElement=None)
+  }
+  
+  let handleReload = () => {
+    previewFrame.contentWindow->Option.forEach(contentWindow => {
+      WebAPI.Location.reload(contentWindow.location)
+    })
+    Client__State.Actions.setSelectedElement(~selectedElement=None)
+  }
+  let handleSelect = () => Client__State.Actions.toggleWebPreviewSelection()
+  let handleOpenInNewTab = () => {
+    WebAPI.Window.open_(WebAPI.Global.window, ~url=url, ~target="_blank", ~features="noopener,noreferrer")->ignore
+  }
+  <AIElements.WebPreview defaultUrl={url}>
     <AIElements.WebPreviewNavigation>
       <AIElements.WebPreviewNavigationButton onClick={handleBack} tooltip="Go back">
         <RadixUI__Icons.ArrowLeftIcon className="size-4" />
@@ -28,7 +42,7 @@ let make = (~url) => {
       <AIElements.WebPreviewNavigationButton onClick={handleReload} tooltip="Reload">
         <RadixUI__Icons.ReloadIcon className="size-4" />
       </AIElements.WebPreviewNavigationButton>
-      <AIElements.WebPreviewUrl />
+      <AIElements.WebPreviewUrl value={previewUrl} />
       <div className={webPreviewIsSelecting ? "rounded bg-blue-500/20" : ""}>
         <AIElements.WebPreviewNavigationButton 
           onClick={handleSelect} 
@@ -40,13 +54,10 @@ let make = (~url) => {
       <AIElements.WebPreviewNavigationButton onClick={handleOpenInNewTab} tooltip="Open in new tab">
         <RadixUI__Icons.OpenInNewWindowIcon className="size-4" />
       </AIElements.WebPreviewNavigationButton>
-      <AIElements.WebPreviewNavigationButton onClick={handleFullscreen} tooltip="Maximize">
-        <RadixUI__Icons.EnterFullScreenIcon className="size-4" />
-      </AIElements.WebPreviewNavigationButton>
     </AIElements.WebPreviewNavigation>
     
     <div className="relative size-full">
-      {switch previewDocument.document {
+      {switch previewFrame.contentDocument {
       | Some(document) => <Client__WebPreview__Stage document={document} />
       | None => React.null
       }}

@@ -11,15 +11,15 @@ let runIteration = async (
   ~emitEvent: Agent__EventBus.events => unit,
 ): array<Agent__Task.cmd> => {
   let history = task->Agent__Task.getHistory
-  Console.log(`=== Calling LLM with ${history->Array.length->Int.toString} messages`)
+  // Console.log(`=== Calling LLM with ${history->Array.length->Int.toString} messages`)
 
   let result = await Adapter.streamText(llm, history)
   let stream = result->Adapter.getFullStream
 
   // Process stream and emit ALL events to EventBus
   await Adapter.processAsyncIterable(stream, async event => {
-    Console.log("stream event:")
-    Console.dir(event, ~options={depth: Null})
+    // Console.log("stream event:")
+    // Console.dir(event, ~options={depth: Null})
     emitEvent(StreamEvent(task, event))
   })
 
