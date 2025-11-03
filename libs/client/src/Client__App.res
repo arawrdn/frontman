@@ -95,7 +95,7 @@ let make = () => {
   | None => `${currentUrl.protocol}//${currentUrl.host}`
   }
 
-  <div className="flex h-screen w-screen dark bg-background text-foreground">
+  <div className="flex h-screen w-screen bg-background text-foreground">
     <div className="h-full w-96 border-r flex flex-col p-2">
       <Client__Chatbox />
     </div>

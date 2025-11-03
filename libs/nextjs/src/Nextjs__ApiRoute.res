@@ -64,14 +64,16 @@ let agent = getOrCreateAgent()
 // Handler for /api/ask-the-llm (serves the UI)
 type createUIHandlerParams = {
   isDev: bool,
+  isLightTheme: bool,
   entrypointUrl?: string,
 }
 let createUIHandler = (params: createUIHandlerParams): apiHandler => {
   async (_req, res) => {
     let src = Nextjs__Config.askTheLlmClientJsUrl(params.isDev)
     let entrypointTemplate = params.entrypointUrl->Option.map(url => `<script type="template" id="ask-the-llm-entrypoint-url">${url}</script>`)->Option.getOr("")
+    let darkClass = params.isLightTheme ? "" : "dark"
     let askTheLlmHtml = `<!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="${darkClass}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">

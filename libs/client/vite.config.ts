@@ -56,11 +56,7 @@ const apiRoutesPlugin = (): vite.Plugin => {
 	return {
 		name: "ask-the-llm-api-routes",
 		configureServer(server) {
-			// Initialize handlers when server starts
-			console.log("[VITE] Initializing API routes")
-			console.log("[VITE] Is dev:", isDev)
-			console.log("[VITE] Entrypoint URL:", "http://localhost:3000/api/ask-the-llm")
-			uiHandler = createUIHandler({isDev, entrypointUrl: "http://localhost:3000/api/ask-the-llm"});
+			uiHandler = createUIHandler({isDev, isLightTheme: true, entrypointUrl: "http://localhost:3000/api/ask-the-llm"});
 			chatHandler = createChatHandler();
 			streamHandler = createStreamHandler();
 
