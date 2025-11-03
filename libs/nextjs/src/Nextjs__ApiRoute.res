@@ -62,18 +62,25 @@ let getOrCreateAgent = () => {
 let agent = getOrCreateAgent()
 
 // Handler for /api/ask-the-llm (serves the UI)
-let createUIHandler = (isDev: bool): apiHandler => {
+type createUIHandlerParams = {
+  isDev: bool,
+  entrypointUrl?: string,
+}
+let createUIHandler = (params: createUIHandlerParams): apiHandler => {
   async (_req, res) => {
+    let src = Nextjs__Config.askTheLlmClientJsUrl(params.isDev)
+    let entrypointTemplate = params.entrypointUrl->Option.map(url => `<script type="template" id="ask-the-llm-entrypoint-url">${url}</script>`)->Option.getOr("")
     let askTheLlmHtml = `<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Ask the LLM</title>
+    ${entrypointTemplate}
 </head>
 <body>
     <div id="root"></div>
-    <script type="module" src="${Nextjs__Config.askTheLlmClientJsUrl(isDev)}"></script>
+    <script type="module" src="${src}"></script>
 </body>
 </html>`
 

@@ -52,6 +52,12 @@ module Impl = (
 */
   @send
   external togglePopover: (T.t, ~force: bool=?) => bool = "togglePopover"
+
+  /**
+[Read more on MDN](https://developer.mozilla.org/docs/Web/API/HTMLElement/innerText)
+*/
+  @get
+  external innerText: T.t => string = "innerText"
 }
 
 include Impl({type t = htmlElement})

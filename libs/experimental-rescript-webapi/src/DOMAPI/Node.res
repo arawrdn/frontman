@@ -107,6 +107,12 @@ Returns true if other is an inclusive descendant of node, and false otherwise.
 */
   @send
   external removeChild: (T.t, 't) => 't = "removeChild"
+
+  /**
+[Read more on MDN](https://developer.mozilla.org/docs/Web/API/Node/textContent)
+*/
+  @get
+  external textContent: T.t => Null.t<string> = "textContent"
 }
 
 include Impl({type t = node})
