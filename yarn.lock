@@ -171,12 +171,13 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@ask-the-llm/client@workspace:libs/client":
+"@ask-the-llm/client@npm:0.0.1, @ask-the-llm/client@workspace:libs/client":
   version: 0.0.0-use.local
   resolution: "@ask-the-llm/client@workspace:libs/client"
   dependencies:
     "@ai-sdk/react": "npm:^2.0.82"
     "@ask-the-llm/agent": "npm:*"
+    "@ask-the-llm/client": "npm:0.0.1"
     "@ask-the-llm/react-statestore": "npm:*"
     "@jihchi/vite-plugin-rescript": "npm:next"
     "@medv/finder": "npm:^4.0.2"

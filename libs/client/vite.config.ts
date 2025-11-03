@@ -116,4 +116,23 @@ export default vite.defineConfig({
 			"@": path.resolve(__dirname, "./src"),
 		},
 	},
+	build: {
+		lib: {
+			entry: path.resolve(__dirname, "./src/Main.res.mjs"),
+			formats: ["es"],
+			fileName: "index",
+		},
+		rollupOptions: {
+			external: [
+				"react",
+				"react-dom",
+				"react/jsx-runtime",
+				/^node:.*/,
+			],
+			output: {
+				preserveModules: true,
+				preserveModulesRoot: "src",
+			},
+		},
+	},
 });
