@@ -229,11 +229,8 @@ type responseMetadata = {
   headers?: Dict.t<string>,
 }
 
-// Complete streamText fullStream types
-// Represents all possible chunks from streamText().fullStream
-// Based on official Vercel AI SDK documentation
 @tag("type") @schema
-type streamPart =
+type textStreamPart =
   | @as("start") Start({})
   | @as("start-step") StartStep({request: requestMetadata, warnings: array<JSON.t>})
   | @as("text-start") TextStart({id: string})
@@ -252,24 +249,6 @@ type streamPart =
     })
   | @as("file") File({file: generatedFile})
   | @as("tool-call") ToolCall({toolCallId: string, toolName: string, input: JSON.t})
-  | @as("tool-input-start")
-  ToolInputStart({
-      id: string,
-      toolName: string,
-      providerExecuted?: bool,
-      dynamic?: bool,
-      title?: string,
-    })
-  | @as("tool-input-delta") ToolInputDelta({id: string, delta: string})
-  | @as("tool-input-end") ToolInputEnd({id: string})
-  | @as("tool-result")
-  ToolResult({
-      toolCallId: string,
-      toolName: string,
-      input: JSON.t,
-      result: JSON.t,
-    })
-  | @as("tool-error") ToolError({toolCallId: string, toolName: string, error: JSON.t})
   | @as("finish-step")
   FinishStep({
       response?: responseMetadata,
@@ -282,7 +261,7 @@ type streamPart =
   | @as("error") Error({error: JSON.t})
   | @as("raw") Raw({value: JSON.t})
 
-@get external fullStream: streamTextResult => AsyncIterableStream.t<streamPart> = "fullStream"
+@get external fullStream: streamTextResult => AsyncIterableStream.t<textStreamPart> = "fullStream"
 @get external finishReason: streamTextResult => promise<finishReason> = "finishReason"
 @get external text: streamTextResult => promise<string> = "text"
 

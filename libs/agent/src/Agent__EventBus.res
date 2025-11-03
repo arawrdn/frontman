@@ -4,7 +4,7 @@
 // Just alias to the Vercel bindings type - no need to redefine
 
 @schema
-type streamEvent = Agent__Bindings__Vercel.streamPart
+type streamEvent = Agent__Bindings__Vercel.textStreamPart
 
 @schema
 type events =

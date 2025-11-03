@@ -4,6 +4,7 @@ module RadixUI__Icons = Bindings__RadixUI__Icons
 // Import required types
 module AgentEventBus = AskTheLlmAgent.Agent__EventBus
 module Vercel = AskTheLlmAgent.Agent__Bindings__Vercel
+module Agent = AskTheLlmAgent.Agent
 
 @react.component
 let make = () => {
@@ -30,23 +31,6 @@ let make = () => {
         },
       )
 
-    | StreamEvent(_task, ToolInputStart({id: toolCallId, toolName, _})) =>
-      Client__State.Actions.toolInputStartReceived(~toolCallId, ~toolName)
-
-    | StreamEvent(_task, ToolInputDelta({id: toolCallId, delta})) =>
-      Client__State.Actions.toolInputDeltaReceived(~toolCallId, ~delta)
-
-    | StreamEvent(_task, ToolInputEnd({id: toolCallId})) =>
-      Client__State.Actions.toolInputEndReceived(~toolCallId)
-
-    | StreamEvent(_task, ToolResult({toolCallId, result, _})) =>
-      Client__State.Actions.toolResultReceived(~toolCallId, ~result)
-
-    | StreamEvent(_task, ToolError({toolCallId, error, _})) => {
-        let errorText = JSON.stringifyAny(error)->Option.getOr("Unknown error")
-        Client__State.Actions.toolErrorReceived(~toolCallId, ~error=errorText)
-      }
-
     | StreamEvent(_, Start(_))
     | StreamEvent(_, FinishStep(_))
     | StreamEvent(_, StartStep(_))
@@ -58,9 +42,41 @@ let make = () => {
     | StreamEvent(_, File(_))
     | StreamEvent(_, Abort(_))
     | StreamEvent(_, Error(_))
-    | StreamEvent(_, Raw(_))
-    | // Ignore tasks for now
-    TaskEvent(_, _) => ()
+    | StreamEvent(_, Raw(_)) => ()
+
+    | TaskEvent(_, MessageAdded({message: Tool(toolMessage)})) =>
+      toolMessage.content->Array.forEach(toolResult => {
+        let toolCallId = toolResult.toolCallId
+        switch toolResult.output {
+        | Text(text) => {
+            let result = text->JSON.stringifyAny->Option.getOr("null")->JSON.parseOrThrow
+            Client__State.Actions.toolResultReceived(~toolCallId, ~result)
+          }
+
+        | JSON(json) => Client__State.Actions.toolResultReceived(~toolCallId, ~result=json)
+
+        | ErrorText(error) => Client__State.Actions.toolErrorReceived(~toolCallId, ~error)
+
+        | ErrorJSON(errorJson) => {
+            let error = errorJson->JSON.stringifyAny->Option.getOr("Unknown error")
+            Client__State.Actions.toolErrorReceived(~toolCallId, ~error)
+          }
+
+        | Content(_contentParts) => {
+            let result =
+              JSON.stringifyAny("[Content with media - display not implemented]")
+              ->Option.getOr("null")
+              ->JSON.parseOrThrow
+            Client__State.Actions.toolResultReceived(~toolCallId, ~result)
+          }
+        }
+      })
+
+    // Ignore other TaskEvent variants
+    | TaskEvent(_, Created(_))
+    | TaskEvent(_, ProcessingStarted(_))
+    | TaskEvent(_, Completed(_))
+    | TaskEvent(_, MessageAdded(_)) => ()
     }
   }, [])
 

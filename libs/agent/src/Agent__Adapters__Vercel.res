@@ -20,7 +20,7 @@ type t = {
 type vercelMessage = Bindings.modelMessage
 type streamResult = Bindings.streamTextResult
 type toolCallInfo = Bindings.toolCall
-type streamEvent = Bindings.streamPart
+type textStreamPart = Bindings.textStreamPart
 
 // ============ Tool Conversion ============
 
@@ -189,11 +189,8 @@ let messageFromVercel = (msg: Bindings.modelMessage, taskId: Agent__Task__Id.t):
         switch part {
         | Bindings.AssistantPart.Text({text}) =>
           Agent__Task__Message.Assistant.Text({content: text})
-        | Bindings.AssistantPart.ToolCall({
-            toolCallId,
-            toolName,
-            input,
-          }) => // Console.log3("ToolCall part:", toolName, input)
+        | Bindings.AssistantPart.ToolCall({toolCallId, toolName, input}) =>
+          // Console.log3("ToolCall part:", toolName, input)
           Agent__Task__Message.Assistant.ToolCall({
             toolCallId,
             toolName,
@@ -238,12 +235,12 @@ let getText = (result: streamResult) => result->Bindings.text
 // Process an async iterable (like ReadableStream) using for-await-of pattern
 // This is more efficient than recursive iteration
 let processAsyncIterable = (
-  iterable: Bindings.AsyncIterableStream.t<streamEvent>,
-  handler: streamEvent => promise<unit>,
+  iterable: Bindings.AsyncIterableStream.t<textStreamPart>,
+  handler: textStreamPart => promise<unit>,
 ): promise<unit> => {
   let impl: (
-    Bindings.AsyncIterableStream.t<streamEvent>,
-    streamEvent => promise<unit>,
+    Bindings.AsyncIterableStream.t<textStreamPart>,
+    textStreamPart => promise<unit>,
   ) => promise<unit> = %raw(`
     async function(iterable, handler) {
       for await (const chunk of iterable) {
