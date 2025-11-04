@@ -70,18 +70,22 @@ let useSSE = (newEventCallback: AgentEventBus.events => unit, ~url="/api/ask-the
   }, [newEventCallback])
 }
 
-let useContainerResize = (container: Nullable.t<WebAPI.DOMAPI.element>, onResized) => {
+let useContainerResize = (container: option<WebAPI.DOMAPI.element>, onResized: unit => unit) => {
   React.useEffect(() => {
-    switch container->Nullable.toOption {
+    let animationFrameId = ref(None)
+    switch container {
     | Some(container) =>
-      let resizeObserver = WebAPI.ResizeObserver.make(_ => {
-        onResized()
-      })
-      WebAPI.ResizeObserver.observe(resizeObserver, ~target=container->Obj.magic)
+      let resizeObserver = WebAPI.ResizeObserver.make(_entries => (_observer => {
+         animationFrameId.contents = Some(WebAPI.Global.requestAnimationFrame((_timestamp: float) => {
+          onResized()
+        }))
+      }))
+      WebAPI.ResizeObserver.observe(resizeObserver, ~target=container)
 
       Some(
         () => {
-          WebAPI.ResizeObserver.unobserve(resizeObserver, container->Obj.magic)
+          WebAPI.ResizeObserver.unobserve(resizeObserver, container)
+          animationFrameId.contents->Option.forEach(id => WebAPI.Global.cancelAnimationFrame(id))
         },
       )
     | None => None
@@ -637,7 +641,7 @@ module MouseClick = {
         stopPropagation ? WebAPI.Event.stopPropagation(ev) : ()
         stopImmediatePropagation ? WebAPI.Event.stopImmediatePropagation(ev) : ()
         let target = ev.target->Null.toOption
-        setState(_ => Some((target, ev)))
+        setState(_ => Some(target))
       }
       document->Option.map(document => {
         WebAPI.Document.addEventListener(

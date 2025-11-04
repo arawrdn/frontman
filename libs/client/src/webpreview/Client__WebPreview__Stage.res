@@ -23,7 +23,7 @@ let make = (~document) => {
 
   React.useEffect2(() => {
     if webPreviewIsSelecting {
-      clickedElement->Option.forEach(((target, _event)) => {
+      clickedElement->Option.forEach(((target)) => {
         let isNewClick = switch (lastProcessedClick.current, clickedElement) {
         | (Some(lastClick), Some(currentClick)) => lastClick !== currentClick
         | (None, Some(_)) => true
@@ -63,7 +63,7 @@ let make = (~document) => {
     {selectedElement->Option.mapOr(React.null, data =>
       <Client__WebPreview__ClickedElement
         key="clicked"
-        element={Some((Some(data.element->Obj.magic), ()))}
+        element={data.element}
         scrollTimestamp={scrollTimestamp}
       />
     )}

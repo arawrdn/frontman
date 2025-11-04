@@ -1,15 +1,10 @@
 @react.component
-let make = (~element: option<(option<WebAPI.EventAPI.eventTarget>, 'a)>, ~scrollTimestamp: float) => {
+let make = (~element: WebAPI.DOMAPI.element, ~scrollTimestamp: float) => {
   let (rect, setRect) = React.useState(() => None)
 
   React.useEffect2(() => {
-    element
-    ->Option.flatMap(((target, _event)) => target)
-    ->Option.forEach(target => {
-      let element = WebAPI.EventTarget.asElement(target)
-      let boundingRect = WebAPI.Element.getBoundingClientRect(element)
-      setRect(_ => Some(boundingRect))
-    })
+    let boundingRect = WebAPI.Element.getBoundingClientRect(element)
+    setRect(_ => Some(boundingRect))
     None
   }, (element, scrollTimestamp))
 
