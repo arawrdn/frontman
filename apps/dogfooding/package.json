@@ -20,7 +20,7 @@
 	],
 	"dependencies": {
 		"@ask-the-llm/client": "0.1.3",
-		"@ask-the-llm/vite-plugin": "0.1.5"
+		"@ask-the-llm/vite-plugin": "0.1.6"
 	},
 	"devDependencies": {
 		"vite": "^7.1.12"

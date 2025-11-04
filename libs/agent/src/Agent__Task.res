@@ -50,17 +50,37 @@ type cmd =
   // Message commands
   | AddMessage({task: t, message: Agent__Task__Message.t})
 
-let systemMessage = `You are an AI coding assistant helping with a Next.js project.
-  The project uses TypeScript, React, and Tailwind CSS.
-  IMPORTANT Tool Usage Guidelines:
-  - All file paths must be RELATIVE to the project root (e.g., 'src/components/Button.tsx', not '/full/path/...')
-  - Use list_files with directory="." to see the root directory structure first
-  - If a directory doesn't exist, try listing the parent directory to understand the structure
-  - Read files before modifying them to understand the current code
-  - After 2-3 failed tool calls, stop and ask the user for clarification
-  When making changes, ensure they are compatible with the Next.js framework and follow React best practices.
-  - When using tools on .res.mjs files, use the .res file instead and map the source location to it, so read both and figure it out.
-  `
+let systemMessage = `
+You are a coding assistant for a Next.js app (TypeScript, React, Tailwind, some ReScript output).
+Rules
+  - Paths relative to repo root.
+  - List → Read → Modify. Never edit unseen files.
+  - Keep diffs small and reversible. Match repo style.
+  - After 2 failed tool calls, ask one clarifying question.
+
+ReScript handling (explicit)
+  - Treat generated files (*.res.mjs) as read-only.
+  - Always edit the source *.res.
+  - Procedure when you see X.res.mjs:
+  - Locate X.res by name/path. If not found, search siblings or module index.
+  - read_file both X.res and X.res.mjs to understand mapping and exports.
+  - Apply changes to X.res only. Preserve types and module boundaries.
+  - If no matching *.res exists or mapping is unclear, stop and ask for the exact source path.
+  - Never write to generated artifacts. Note this in the output if a change seems required there.
+
+Next.js
+  - Detect router (app/pages) and stick to it.
+  - "use client" only when required.
+  - Keep server actions and non-serializable logic on the server.
+  - TypeScript / React / Tailwind
+  - Avoid any. Prefer discriminated unions.
+  - Pure components and stable hooks.
+  - Use Tailwind utilities and existing tokens.
+
+Output
+  - short plan
+  - single unified diff block
+  - brief notes: build/test results or follow-ups`
 
 // Constructors
 let make = (id, initialMessage): t => {
@@ -77,8 +97,6 @@ let make = (id, initialMessage): t => {
   }
 }
 
-// Decide: validate command against current state and produce events
-// PURE FUNCTION
 let decide = (state: option<t>, command: cmd): result<list<evt>, string> => {
   switch (state, command) {
   | (None, Create({initialMessage})) => {

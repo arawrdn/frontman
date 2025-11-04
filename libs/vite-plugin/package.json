@@ -1,6 +1,6 @@
 {
 	"name": "@ask-the-llm/vite-plugin",
-	"version": "0.1.5",
+	"version": "0.1.6",
 	"description": "Vite plugin to install ask-the-llm agent on the vite server",
 	"license": "MIT",
 	"author": "",

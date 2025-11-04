@@ -42,7 +42,8 @@ let getOrCreateAgent = () => {
   switch agentInstance.contents {
   | Some(agent) => agent
   | None =>
-    let projectRoot = Bindings.Process.env
+    let projectRoot =
+      Bindings.Process.env
       ->Dict.get("PROJECT_ROOT")
       ->Option.orElse(Bindings.Process.env->Dict.get("PWD"))
       ->Option.getOr(".")
@@ -74,7 +75,10 @@ type createUIHandlerParams = {
 let createUIHandler = (params: createUIHandlerParams): apiHandler => {
   async (_req, res) => {
     let src = params.clientUrl->Option.getOr(Nextjs__Config.askTheLlmClientJsUrl(params.isDev))
-    let entrypointTemplate = params.entrypointUrl->Option.map(url => `<script type="template" id="ask-the-llm-entrypoint-url">${url}</script>`)->Option.getOr("")
+    let entrypointTemplate =
+      params.entrypointUrl
+      ->Option.map(url => `<script type="template" id="ask-the-llm-entrypoint-url">${url}</script>`)
+      ->Option.getOr("")
     let darkClass = params.isLightTheme ? "" : "dark"
     let askTheLlmHtml = `<!DOCTYPE html>
 <html lang="en" class="${darkClass}">
@@ -148,10 +152,7 @@ let createChatHandler = (): apiHandler => {
                     switch decodeSourceLocation(sourceLocationJson) {
                     | Some(sourceLocation) =>
                       // Call resolveSourceLocationInServer
-                      Console.log2(
-                        "[API] Resolving source location:",
-                        sourceLocation,
-                      )
+                      Console.log2("[API] Resolving source location:", sourceLocation)
                       let resolved = await DOMElementToComponentSource.resolveSourceLocationInServer(
                         sourceLocation,
                       )
@@ -168,11 +169,7 @@ let createChatHandler = (): apiHandler => {
 
               // Log the resolved source location for debugging
               switch resolvedSourceLocation {
-              | Some(location) =>
-                Console.log2(
-                  "[API] Using resolved source location:",
-                  location,
-                )
+              | Some(location) => Console.log2("[API] Using resolved source location:", location)
               | None => Console.log("[API] No source location resolved")
               }
 
@@ -215,12 +212,10 @@ let createStreamHandler = (): apiHandler => {
   async (req, res) => {
     Console.log("[SSE] Client connected - sending buffered events first")
 
-    // Set SSE headers
     let _ = res->ApiResponse.setHeader("Content-Type", "text/event-stream")
     let _ = res->ApiResponse.setHeader("Cache-Control", "no-cache, no-transform")
     let _ = res->ApiResponse.setHeader("Connection", "keep-alive")
 
-    // Send all buffered events to this client
     let bufferedEvents = eventBuffer.contents
     Console.log(`[SSE] Sending ${bufferedEvents->Array.length->Int.toString} buffered events`)
     bufferedEvents->Array.forEach(event => {
@@ -229,9 +224,9 @@ let createStreamHandler = (): apiHandler => {
       res->ApiResponse.write(`data: ${data}\n\n`)
     })
 
-    // Flush buffer after sending
     Console.log("[SSE] Flushing event buffer")
     eventBuffer := []
+    Console.log2("[SSE] eventBuffer", eventBuffer.contents->Array.length)
 
     // Subscribe to new events
     let unsubsribe = agent->Agent.subscribe(event => {
