@@ -9,7 +9,8 @@
 		"libs/client",
 		"libs/experimental-rescript-webapi",
 		"test/sites/blog-starter",
-		"libs/react-statestore"
+		"libs/react-statestore",
+		"libs/vite-plugin"
 	],
 	"dependencies": {
 		"rescript": "catalog:"

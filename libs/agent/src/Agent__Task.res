@@ -58,7 +58,9 @@ let systemMessage = `You are an AI coding assistant helping with a Next.js proje
   - If a directory doesn't exist, try listing the parent directory to understand the structure
   - Read files before modifying them to understand the current code
   - After 2-3 failed tool calls, stop and ask the user for clarification
-  When making changes, ensure they are compatible with the Next.js framework and follow React best practices.`
+  When making changes, ensure they are compatible with the Next.js framework and follow React best practices.
+  - When using tools on .res.mjs files, use the .res file instead and map the source location to it, so read both and figure it out.
+  `
 
 // Constructors
 let make = (id, initialMessage): t => {

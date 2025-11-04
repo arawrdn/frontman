@@ -1,0 +1,43 @@
+{
+	"name": "@ask-the-llm/vite-plugin",
+	"version": "0.1.5",
+	"description": "Vite plugin to install ask-the-llm agent on the vite server",
+	"license": "MIT",
+	"author": "",
+	"type": "module",
+	"main": "./dist/index.js",
+	"module": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js",
+			"default": "./dist/index.js"
+		}
+	},
+	"files": [
+		"dist",
+		"README.md"
+	],
+	"scripts": {
+		"build": "vite build",
+		"prepublishOnly": "yarn build"
+	},
+	"devDependencies": {
+		"@ask-the-llm/nextjs": "*",
+		"@types/node": "^24.10.0",
+		"typescript": "^5.9.3",
+		"vite": "^7.1.12",
+		"vite-plugin-dts": "^4.5.4"
+	},
+	"peerDependencies": {
+		"vite": "^7.1.12"
+	},
+	"keywords": [
+		"vite",
+		"vite-plugin",
+		"llm",
+		"ai",
+		"assistant"
+	]
+}

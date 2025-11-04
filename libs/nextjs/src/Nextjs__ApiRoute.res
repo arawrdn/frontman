@@ -42,7 +42,10 @@ let getOrCreateAgent = () => {
   switch agentInstance.contents {
   | Some(agent) => agent
   | None =>
-    let projectRoot = Bindings.Process.env->Dict.get("PWD")->Option.getOr(".")
+    let projectRoot = Bindings.Process.env
+      ->Dict.get("PROJECT_ROOT")
+      ->Option.orElse(Bindings.Process.env->Dict.get("PWD"))
+      ->Option.getOr(".")
     let apiKey = Dotenv.getExn("OPENAI_API_KEY")
     let agent = Agent.make({projectRoot, apiKey})
     let _shutdown = Agent.initialize(agent)
@@ -66,10 +69,11 @@ type createUIHandlerParams = {
   isDev: bool,
   isLightTheme: bool,
   entrypointUrl?: string,
+  clientUrl?: string,
 }
 let createUIHandler = (params: createUIHandlerParams): apiHandler => {
   async (_req, res) => {
-    let src = Nextjs__Config.askTheLlmClientJsUrl(params.isDev)
+    let src = params.clientUrl->Option.getOr(Nextjs__Config.askTheLlmClientJsUrl(params.isDev))
     let entrypointTemplate = params.entrypointUrl->Option.map(url => `<script type="template" id="ask-the-llm-entrypoint-url">${url}</script>`)->Option.getOr("")
     let darkClass = params.isLightTheme ? "" : "dark"
     let askTheLlmHtml = `<!DOCTYPE html>

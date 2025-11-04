@@ -33,3 +33,9 @@ pull-webapi: ## Pull latest changes from experimental-rescript-webapi subtree
 
 kill-all-processes: ## Kill all processes
 	ps aux | grep "make dev" | awk -F ' ' '{print $$2}' | xargs kill
+
+dev-dogfooding: ## Start development server for dogfooding app
+	cd apps/dogfooding && $(MAKE) dev
+
+open-dogfooding: ## Open dogfooding app in browser
+	open -n -a "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --args --user-data-dir="/tmp/chrome_dev_test" --disable-web-security http://localhost:6123

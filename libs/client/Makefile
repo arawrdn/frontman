@@ -4,9 +4,6 @@
 SHELL := /bin/bash
 PATH := ./node_modules/.bin:$(PATH)
 
-include ../../test/sites/blog-starter/.env
-export
-
 help: ## Display this help message
 	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z_-]+:.*##/ { printf "  %-20s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
 
@@ -44,5 +41,9 @@ serve: ## Serve production build
 
 preview: ## Preview production build
 	yarn vite preview
+
+publish:
+	$(MAKE) build-lib
+	npm publish
 
 check: lint ## Run all checks (lint + test)
