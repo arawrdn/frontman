@@ -79,6 +79,7 @@ let executeSingleTool = async (
           }
         } catch {
         | exn => {
+            Console.log2("=== Tool execution exception:", exn)
             let msg =
               exn
               ->JsExn.fromException

@@ -8,8 +8,12 @@ type input = {
   relativePath: string,
   content: string,
 }
-@schema
-type output = unit
+
+// Use a literal null type instead of unit since unit cannot be converted to JSON
+// S.literal with null value properly serializes to JSON null
+type output
+external nullValue: output = "null"
+let outputSchema = S.literal(nullValue)
 
 let decodeInput: JSON.t => result<input, S.error> = json => {
   try {
@@ -30,7 +34,7 @@ let execute = async (ctx: Agent__ToolExecutionContext.t, input: input): Agent__T
 
   try {
     await Bindings.Fs.Promises.writeFile(fullPath, input.content)
-    Ok()
+    Ok(nullValue)
   } catch {
   | exn => {
       let message =

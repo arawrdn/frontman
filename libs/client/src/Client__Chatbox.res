@@ -60,10 +60,10 @@ let make = () => {
             // Render user message
             <div key={messageId} className="max-w-full">
               {content
-              ->Array.map(part => {
+              ->Array.mapWithIndex((part, index) => {
                 switch part {
                 | Text({text}) =>
-                  <AIElements.Message key={messageId} from="user">
+                  <AIElements.Message key={`${messageId}-${index->Int.toString}`} from="user">
                     <AIElements.MessageContent>
                       <AIElements.Response> {React.string(text)} </AIElements.Response>
                     </AIElements.MessageContent>
