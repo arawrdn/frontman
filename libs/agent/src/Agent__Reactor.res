@@ -14,8 +14,8 @@ module TaskMessage = Agent__Task__Message
 
 // Pure reaction: transform event into commands based on business rules
 let react = (event: Agent__EventBus.events): list<Command.t> => {
-  // Console.log2("=== Reactor: added event:", event)
   switch event {
+
   // Task lifecycle: Created → no action needed (ProcessingStarted is emitted together)
   | TaskEvent(_, Created(_)) => {
       Agent__Logger.Log.debug("Reactor: Created event - no action needed")
@@ -65,7 +65,14 @@ let react = (event: Agent__EventBus.events): list<Command.t> => {
       list{Effect(Command.Effect.RunLLMIteration({task: task}))}
     }
 
-  // User or System messages → no automatic reaction (handled explicitly by commands)
+  // User message on Completed task → resume the task
+  | TaskEvent({status: Completed} as task, MessageAdded({message: TaskMessage.User(_)})) => {
+      Agent__Logger.Log.debug("Reactor: User message on completed task - resuming")
+      let cmd: Agent__Task.cmd = Resume({task: task})
+      list{Domain({task: Some(task), cmd})}
+    }
+
+  // User or System messages on other statuses → no automatic reaction (handled explicitly by commands)
   | TaskEvent({id, _}, MessageAdded({message})) => {
       Agent__Logger.Log.debug(
         `Reactor: MessageAdded event ${id} ${message->Agent__Task__Message.toString}`,
