@@ -237,12 +237,16 @@ let handleEffect = (effect, state, dispatch) => {
       // Wait for all promises and update state once
       let _ = Promise.all3((selectorPromise, screenshotPromise, sourceLocationPromise))
         ->Promise.then(((selector, screenshot, sourceLocation)) => {
+          let tagName = element.tagName
           dispatch(SetSelectedElement({selectedElement: Some({
             element: element,
             selector: selector,
             screenshot: screenshot,
             sourceLocation: sourceLocation->Option.map(sourceLoc => {
-              {...sourceLoc, file: sourceLoc.file->String.split("?")->Array.get(0)->Option.getOr(sourceLoc.file)}
+              {...sourceLoc, 
+                file: sourceLoc.file->String.split("?")->Array.get(0)->Option.getOr(sourceLoc.file),
+                tagName: tagName,
+              }
             }),
           })}))
           Promise.resolve()
