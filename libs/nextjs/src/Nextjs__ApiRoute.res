@@ -71,10 +71,12 @@ type createUIHandlerParams = {
   isLightTheme: bool,
   entrypointUrl?: string,
   clientUrl?: string,
+  clientCssUrl?: string,
 }
 let createUIHandler = (params: createUIHandlerParams): apiHandler => {
   async (_req, res) => {
     let src = params.clientUrl->Option.getOr(Nextjs__Config.askTheLlmClientJsUrl(params.isDev))
+    let clientCssUrl = params.clientCssUrl->Option.map(url => `<link rel="stylesheet" href="${url}">`)->Option.getOr("")
     let entrypointTemplate =
       params.entrypointUrl
       ->Option.map(url => `<script type="template" id="ask-the-llm-entrypoint-url">${url}</script>`)
@@ -87,6 +89,7 @@ let createUIHandler = (params: createUIHandlerParams): apiHandler => {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Ask the LLM</title>
     ${entrypointTemplate}
+    ${clientCssUrl}
 </head>
 <body>
     <div id="root"></div>

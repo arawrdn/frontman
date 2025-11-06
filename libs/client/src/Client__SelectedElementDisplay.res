@@ -119,7 +119,7 @@ let make = () => {
                 {React.string("React Component:")}
               </span>
               {sourceLocation->Option.mapOr(React.null, loc =>
-                <span className="font-medium font-mono text-xs text-purple-700 dark:text-purple-300">
+                <span className="font-medium font-mono text-xs text-yellow-700 dark:text-yellow-300">
                   {React.string(
                     `<${loc.componentName}><${loc.tagName->String.toLowerCase} /></${loc.componentName}>`,
                   )}

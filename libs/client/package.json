@@ -18,7 +18,6 @@
 		"@ai-sdk/react": "^2.0.82",
 		"@ask-the-llm/agent": "*",
 		"@ask-the-llm/react-statestore": "*",
-		"@jihchi/vite-plugin-rescript": "next",
 		"@medv/finder": "^4.0.2",
 		"@radix-ui/react-avatar": "^1.1.10",
 		"@radix-ui/react-collapsible": "^1.1.12",
