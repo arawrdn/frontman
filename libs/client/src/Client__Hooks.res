@@ -1037,3 +1037,75 @@ let useDisableIFrameAnchorPointerEvents = (
     }
   }, (iframeRef, activate))
 }
+
+module MutationObserverBindings = {
+  type mutationObserver
+  type mutationRecord = {
+    @as("type") type_: string,
+    target: WebAPI.DOMAPI.node,
+    addedNodes: array<WebAPI.DOMAPI.node>,
+    removedNodes: array<WebAPI.DOMAPI.node>,
+    attributeName: Null.t<string>,
+    oldValue: Null.t<string>,
+  }
+
+  @new
+  external make: (array<mutationRecord> => unit) => mutationObserver = "MutationObserver"
+
+  @send
+  external observe: (
+    mutationObserver,
+    WebAPI.DOMAPI.node,
+    {
+      "childList": bool,
+      "attributes": bool,
+      "characterData": bool,
+      "subtree": bool,
+      "attributeOldValue": bool,
+      "characterDataOldValue": bool,
+    },
+  ) => unit = "observe"
+
+  @send
+  external disconnect: mutationObserver => unit = "disconnect"
+}
+
+module DOMmutations = {
+  let useIFrameDocument = (
+    ~document: option<WebAPI.DOMAPI.document>,
+    (),
+  ) => {
+    let (mutationTimestamp, setMutationTimestamp) = React.useState(() => Js.Date.now())
+
+    React.useEffect(() => {
+      document
+      ->Option.map(doc => {
+        let onMutation = (_mutations: array<MutationObserverBindings.mutationRecord>) => {
+          setMutationTimestamp(_ => Js.Date.now())
+        }
+
+        let observer = MutationObserverBindings.make(onMutation)
+        MutationObserverBindings.observe(
+          observer,
+          doc->Obj.magic,
+          {
+            "childList": true,
+            "attributes": true,
+            "characterData": true,
+            "subtree": true,
+            "attributeOldValue": true,
+            "characterDataOldValue": false,
+          },
+        )
+
+        () => {
+          MutationObserverBindings.disconnect(observer)
+        }
+      })
+      ->Option.getOr(() => ())
+      ->Some
+    }, (document, setMutationTimestamp))
+
+    mutationTimestamp
+  }
+}

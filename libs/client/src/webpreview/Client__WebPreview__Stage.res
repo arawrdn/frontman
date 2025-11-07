@@ -9,6 +9,7 @@ let make = (~document) => {
   let lastProcessedClick = React.useRef(None)
 
   let scrollTimestamp = Client__Hooks.Scroll.useIFrameDocument(~document, ~withCapture=true, ())
+  let mutationTimestamp = Client__Hooks.DOMmutations.useIFrameDocument(~document, ())
 
   let clickedElement = Client__Hooks.MouseClick.useIFrameDocument(~document, ~withCapture=false, ())
 
@@ -65,6 +66,7 @@ let make = (~document) => {
         key="clicked"
         element={data.element}
         scrollTimestamp={scrollTimestamp}
+        mutationTimestamp={mutationTimestamp}
       />
     )}
   </div>
