@@ -12,8 +12,7 @@ let make = () => {
   let (taskToDelete, setTaskToDelete) = React.useState(() => None)
 
   // Global state selectors
-  let currentTask = Client__State.useSelector(Client__State.Selectors.currentTask)
-  let recentTasks = Client__State.useSelector(Client__State.Selectors.recentTasks)
+  let tasks = Client__State.useSelector(Client__State.Selectors.tasks)
   let currentTaskId = Client__State.useSelector(Client__State.Selectors.currentTaskId)
 
   // Event handlers
@@ -22,7 +21,7 @@ let make = () => {
   }
 
   let handleNewTask = (_e: ReactEvent.Mouse.t) => {
-    Client__State.Actions.clearCurrentTask()
+    Client__State.Actions.createNewTask()
   }
 
   let handleDeleteClick = (e: ReactEvent.Mouse.t, taskId: string) => {
@@ -105,11 +104,7 @@ let make = () => {
   <div className="h-12 border-b">
     <UI.Tabs value={currentTaskId->Option.getOr("")} onValueChange={handleTabChange} className="h-full">
       <UI.TabsList className="h-full w-full rounded-none justify-start overflow-x-auto bg-transparent p-0">
-        {switch currentTask {
-        | Some(task) => renderTab(task, editingTaskId == Some(task.id))
-        | None => React.null
-        }}
-        {recentTasks
+        {tasks
         ->Array.map(task => renderTab(task, editingTaskId == Some(task.id)))
         ->React.array}
         <Button.Button variant=#ghost size=#sm onClick={handleNewTask} className="cursor-pointer gap-1">

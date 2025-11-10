@@ -737,17 +737,4 @@ module Selectors = {
     ->Dict.valuesToArray
     ->Array.toSorted((a, b) => b.lastMessageAt -. a.lastMessageAt)
   }
-
-  // Get recent tasks (excluding current, max 2)
-  let recentTasks = (state: state): array<task> => {
-    let currentId = state.currentTaskId
-    tasks(state)
-    ->Array.filter(task =>
-      switch currentId {
-      | Some(id) => task.id != id
-      | None => true
-      }
-    )
-    ->Array.slice(~start=0, ~end=2)
-  }
 }

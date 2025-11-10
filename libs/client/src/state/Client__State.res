@@ -69,6 +69,13 @@ module Actions = {
   let createTask = (~id, ~title, ~timestamp) =>
     Client__State__Store.dispatch(CreateTask({id, title, timestamp}))
 
+  let createNewTask = () => {
+    let id = WebAPI.Global.crypto->WebAPI.Crypto.randomUUID
+    let title = "New Chat"
+    let timestamp = Date.now()
+    Client__State__Store.dispatch(CreateTask({id, title, timestamp}))
+  }
+
   let switchTask = (~taskId) => Client__State__Store.dispatch(SwitchTask({taskId: taskId}))
 
   let deleteTask = (~taskId) => Client__State__Store.dispatch(DeleteTask({taskId: taskId}))
