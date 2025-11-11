@@ -76,7 +76,7 @@ module TestHelpers = {
     ~args,
     ~userMessage,
   ): testContext => {
-    let agent = Agent.make({
+    let agent = await Agent.make({
       projectRoot: ".",
       apiKey: "test-key",
       model: Test.makeToolCallMock(~toolCallId, ~toolName, ~args),
@@ -98,7 +98,7 @@ module TestHelpers = {
 
   // Run scenario with multiple tool calls
   let runScenarioWithMultipleTools = async (~tool, ~toolCalls, ~userMessage): testContext => {
-    let agent = Agent.make({
+    let agent = await Agent.make({
       projectRoot: ".",
       apiKey: "test-key",
       model: Test.makeMultipleToolCallsMock(~toolCalls),
@@ -296,7 +296,7 @@ describe("Agent.sendMessage", () => {
         )
 
         // Create agent with tool call mock (completes after one iteration)
-        let agent = Agent.make({
+        let agent = await Agent.make({
           projectRoot: ".",
           apiKey: "test-key",
           model: Test.makeToolCallMock(
@@ -391,7 +391,7 @@ describe("Agent.sendMessage", () => {
         )
 
         // Create agent
-        let agent = Agent.make({
+        let agent = await Agent.make({
           projectRoot: ".",
           apiKey: "test-key",
           model: Test.makeToolCallMock(
@@ -749,7 +749,7 @@ describe("Agent.sendMessage", () => {
     //     t->expect(secondMessageSent.contents)->Expect.toBe(true)
 
     //     // Get task events in order
-    //     let taskId = context.taskId.contents->Option.getExn
+    //     let taskId = context.taskId.contents->Option.getOrThrow
     //     let taskEvents = getTaskEvents(context, taskId)
 
     //     // Verify event sequence:
