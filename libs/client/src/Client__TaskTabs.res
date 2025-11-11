@@ -90,12 +90,12 @@ let make = () => {
             <span className="truncate max-w-[90px] text-xs cursor-pointer" onDoubleClick={handleDoubleClick}>
               {React.string(task.title)}
             </span>
-            <button
+            <span
               className="ml-auto p-0.5 rounded-sm opacity-0 group-hover:opacity-100 data-[state=active]:opacity-100 hover:bg-accent transition-opacity duration-150 cursor-pointer"
               onClick={e => handleDeleteClick(e, task.id)}
             >
               <Icons.Cross2Icon style={{"width": "14px", "height": "14px"}} />
-            </button>
+            </span>
           </>}
     </UI.TabsTrigger>
   }

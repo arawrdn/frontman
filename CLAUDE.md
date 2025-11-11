@@ -52,7 +52,12 @@
 - **String Operations**: Use `String.length`, `String.trim`, `String.split` (not Js.String)
 
 #### React Hooks and Props
-- **React Hooks**: Use `React.useState(() => initialValue)` and `React.useEffect1(() => effect, [deps])`
+- **React Hooks**: Use `React.useState(() => initialValue)` and `React.useEffect(() => effect, deps)`
+- **useEffect Dependencies**: CRITICAL - Modern ReScript uses `React.useEffect` (no numbers):
+  - Single dep: Array `[dep]` - `React.useEffect(() => {...}, [dep])`
+  - Multiple deps: Tuple `(dep1, dep2)` - `React.useEffect(() => {...}, (dep1, dep2))`
+  - No deps: Empty array `[]` - `React.useEffect(() => {...}, [])`
+  - NEVER use `React.useEffect1`, `React.useEffect2`, etc. in modern ReScript
 - **useEffect Return**: Must return `option<unit => unit>` - use `None` for no cleanup, `Some(() => cleanup)` for cleanup
 - **Passing Optional Props**: When passing optional props between components:
   - Parent: `~onReload: option<unit => unit>=?`

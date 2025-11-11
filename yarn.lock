@@ -180,6 +180,7 @@ __metadata:
     "@ai-sdk/react": "npm:^2.0.82"
     "@ask-the-llm/agent": "npm:*"
     "@ask-the-llm/react-statestore": "npm:*"
+    "@biomejs/biome": "npm:^2.3.4"
     "@medv/finder": "npm:^4.0.2"
     "@radix-ui/react-alert-dialog": "npm:^1.1.15"
     "@radix-ui/react-avatar": "npm:^1.1.10"
@@ -230,6 +231,7 @@ __metadata:
     use-stick-to-bottom: "npm:^1.1.1"
     use-sync-external-store: "npm:^1.6.0"
     vite: "npm:^7.1.12"
+    vite-plugin-biome: "npm:^1.0.12"
     vitest: "catalog:"
     zod: "npm:^4.1.12"
   languageName: unknown
@@ -774,6 +776,97 @@ __metadata:
     "@babel/helper-string-parser": "npm:^7.27.1"
     "@babel/helper-validator-identifier": "npm:^7.28.5"
   checksum: 10c0/a5a483d2100befbf125793640dec26b90b95fd233a94c19573325898a5ce1e52cdfa96e495c7dcc31b5eca5b66ce3e6d4a0f5a4a62daec271455959f208ab08a
+  languageName: node
+  linkType: hard
+
+"@biomejs/biome@npm:^2.3.4":
+  version: 2.3.4
+  resolution: "@biomejs/biome@npm:2.3.4"
+  dependencies:
+    "@biomejs/cli-darwin-arm64": "npm:2.3.4"
+    "@biomejs/cli-darwin-x64": "npm:2.3.4"
+    "@biomejs/cli-linux-arm64": "npm:2.3.4"
+    "@biomejs/cli-linux-arm64-musl": "npm:2.3.4"
+    "@biomejs/cli-linux-x64": "npm:2.3.4"
+    "@biomejs/cli-linux-x64-musl": "npm:2.3.4"
+    "@biomejs/cli-win32-arm64": "npm:2.3.4"
+    "@biomejs/cli-win32-x64": "npm:2.3.4"
+  dependenciesMeta:
+    "@biomejs/cli-darwin-arm64":
+      optional: true
+    "@biomejs/cli-darwin-x64":
+      optional: true
+    "@biomejs/cli-linux-arm64":
+      optional: true
+    "@biomejs/cli-linux-arm64-musl":
+      optional: true
+    "@biomejs/cli-linux-x64":
+      optional: true
+    "@biomejs/cli-linux-x64-musl":
+      optional: true
+    "@biomejs/cli-win32-arm64":
+      optional: true
+    "@biomejs/cli-win32-x64":
+      optional: true
+  bin:
+    biome: bin/biome
+  checksum: 10c0/61bb2e3b98ebb26cc21e5690492bc09793c9135c34fd33230c227d4cb707a19ced578d20df4cab8b257c70cef006312f1050cdba3abdf8c0aa478ca6a347b27f
+  languageName: node
+  linkType: hard
+
+"@biomejs/cli-darwin-arm64@npm:2.3.4":
+  version: 2.3.4
+  resolution: "@biomejs/cli-darwin-arm64@npm:2.3.4"
+  conditions: os=darwin & cpu=arm64
+  languageName: node
+  linkType: hard
+
+"@biomejs/cli-darwin-x64@npm:2.3.4":
+  version: 2.3.4
+  resolution: "@biomejs/cli-darwin-x64@npm:2.3.4"
+  conditions: os=darwin & cpu=x64
+  languageName: node
+  linkType: hard
+
+"@biomejs/cli-linux-arm64-musl@npm:2.3.4":
+  version: 2.3.4
+  resolution: "@biomejs/cli-linux-arm64-musl@npm:2.3.4"
+  conditions: os=linux & cpu=arm64 & libc=musl
+  languageName: node
+  linkType: hard
+
+"@biomejs/cli-linux-arm64@npm:2.3.4":
+  version: 2.3.4
+  resolution: "@biomejs/cli-linux-arm64@npm:2.3.4"
+  conditions: os=linux & cpu=arm64 & libc=glibc
+  languageName: node
+  linkType: hard
+
+"@biomejs/cli-linux-x64-musl@npm:2.3.4":
+  version: 2.3.4
+  resolution: "@biomejs/cli-linux-x64-musl@npm:2.3.4"
+  conditions: os=linux & cpu=x64 & libc=musl
+  languageName: node
+  linkType: hard
+
+"@biomejs/cli-linux-x64@npm:2.3.4":
+  version: 2.3.4
+  resolution: "@biomejs/cli-linux-x64@npm:2.3.4"
+  conditions: os=linux & cpu=x64 & libc=glibc
+  languageName: node
+  linkType: hard
+
+"@biomejs/cli-win32-arm64@npm:2.3.4":
+  version: 2.3.4
+  resolution: "@biomejs/cli-win32-arm64@npm:2.3.4"
+  conditions: os=win32 & cpu=arm64
+  languageName: node
+  linkType: hard
+
+"@biomejs/cli-win32-x64@npm:2.3.4":
+  version: 2.3.4
+  resolution: "@biomejs/cli-win32-x64@npm:2.3.4"
+  conditions: os=win32 & cpu=x64
   languageName: node
   linkType: hard
 
@@ -13536,6 +13629,15 @@ __metadata:
   bin:
     vite-node: vite-node.mjs
   checksum: 10c0/6ceca67c002f8ef6397d58b9539f80f2b5d79e103a18367288b3f00a8ab55affa3d711d86d9112fce5a7fa658a212a087a005a045eb8f4758947dd99af2a6c6b
+  languageName: node
+  linkType: hard
+
+"vite-plugin-biome@npm:^1.0.12":
+  version: 1.0.12
+  resolution: "vite-plugin-biome@npm:1.0.12"
+  peerDependencies:
+    "@biomejs/biome": ^1.8.0
+  checksum: 10c0/93d0a2157d957f276874f98fa81c9c726a3ebb25599333c5780df2626fde4db775f2df1217324e81680ce90ff8f73f8cca24c0a410e9552545b8cf649e09d4aa
   languageName: node
   linkType: hard
 

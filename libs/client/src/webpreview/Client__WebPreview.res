@@ -3,9 +3,12 @@ module RadixUI__Icons = Bindings__RadixUI__Icons
 
 @react.component
 let make = (~url) => {
+  let currentTaskId = Client__State.useSelector(Client__State.Selectors.currentTaskId)
+  let allTasks = Client__State.useSelector(Client__State.Selectors.tasks)
   let previewUrl = Client__State.useSelector(Client__State.Selectors.previewUrl)
   let previewFrame = Client__State.useSelector(Client__State.Selectors.previewFrame)
   let webPreviewIsSelecting = Client__State.useSelector(Client__State.Selectors.webPreviewIsSelecting)
+
 
   let handleBack = () => {
     previewFrame.contentWindow->Option.forEach(contentWindow => {
@@ -62,7 +65,17 @@ let make = (~url) => {
       | None => React.null
       }}
 
-      <Client__WebPreview__Body url={url} />
+      {allTasks
+      ->Array.map(task => {
+        let isActive = currentTaskId->Option.mapOr(false, id => id == task.id)
+        <Client__WebPreview__Body
+          key={task.id}
+          taskId={task.id}
+          url={task.previewFrame.url}
+          isActive={isActive}
+        />
+      })
+      ->React.array}
     </div>
   </AIElements.WebPreview>
 }

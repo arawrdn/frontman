@@ -1,0 +1,32 @@
+{
+    "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
+    "linter": {
+        "enabled": true,
+        "rules": {
+            "recommended": true,
+            "a11y": {
+                "useSemanticElements": "off",
+                "useKeyWithClickEvents": "off"
+            },
+            "style": {
+                "useConst": "off",
+                "useTemplate": "off"
+            },
+            "correctness": {
+                "noSwitchDeclarations": "off",
+                "noUnusedVariables": "off",
+                "noUnusedFunctionParameters": "off",
+                "noInnerDeclarations": "off"
+            },
+            "suspicious": {
+                "useIterableCallbackReturn": "off",
+                "noFallthroughSwitchClause": "off"
+            }
+        }
+    },
+    "css": {
+        "parser": {
+            "tailwindDirectives": true
+        }
+    }
+}

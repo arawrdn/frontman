@@ -1,12 +1,12 @@
 @react.component
 let make = (~element: WebAPI.DOMAPI.element, ~scrollTimestamp: float, ~mutationTimestamp: float) => {
-  let (rect, setRect) = React.useState(() => None)
+  let ((rect, _scrollTimestamp, _mutationTimestamp), setRect) = React.useState(() => (None, scrollTimestamp, mutationTimestamp))
 
   React.useEffect(() => {
     let boundingRect = WebAPI.Element.getBoundingClientRect(element)
-    setRect(_ => Some(boundingRect))
+    setRect(_ => (Some(boundingRect), scrollTimestamp, mutationTimestamp))
     None
-  }, (element, scrollTimestamp, mutationTimestamp))
+  }, (element, scrollTimestamp, mutationTimestamp, setRect))
 
   rect
   ->Option.map(rect => {

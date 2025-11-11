@@ -124,7 +124,6 @@ let isEqual: ('a, 'a) => bool = %raw(`
             return false;
           }
           _i = i + 1 | 0;
-          continue ;
         };
       } else if ((a instanceof Date && b instanceof Date)) {
         return !(a > b || a < b);

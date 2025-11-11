@@ -11,15 +11,15 @@ let make = () => {
   let isNavigating = React.useRef(false)
 
   // Clear history when selection changes from OUTSIDE (not from our navigation)
-  React.useEffect1(() => {
-    if !isNavigating.current {
-      setHistory(_ => [])
-    } else {
-      // Reset the flag
-      isNavigating.current = false
-    }
-    None
-  }, [selectedElement])
+  // React.useEffect1(() => {
+  //   if !isNavigating.current {
+  //     setHistory(_ => [])
+  //   } else {
+  //     // Reset the flag
+  //     isNavigating.current = false
+  //   }
+  //   None
+  // }, [selectedElement])
 
   // Navigate to parent component
   let navigateUp = () => {

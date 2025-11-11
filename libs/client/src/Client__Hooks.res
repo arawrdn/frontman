@@ -68,7 +68,7 @@ let useSSE = (newEventCallback: AgentEventBus.events => unit, ~url="/api/ask-the
         eventSource->WebAPI.EventSource.close
       },
     )
-  }, [newEventCallback])
+  }, (newEventCallback, url))
 }
 
 let useContainerResize = (container: option<WebAPI.DOMAPI.element>, onResized: unit => unit) => {
@@ -242,20 +242,20 @@ let useDebounceCallback = (~timeout=1000, fn: 'a => unit): ('a => unit) => {
   let id = React.useRef(Nullable.null)
   let fn = React.useRef(fn)
 
-  let clearTimeout = () => {
+  let clearTimeout = React.useCallback(() => {
     id.current->Nullable.toOption->Option.mapOr((), clearTimeout)
-  }
+  }, [])
 
   React.useEffect(() => {
     Some(clearTimeout)
-  }, [])
+  }, [clearTimeout])
 
   React.useCallback((a: 'a) => {
     clearTimeout()
 
     id.current = Nullable.make(setTimeout(() => fn.current(a), timeout))
     ()
-  }, [timeout])
+  }, (timeout, clearTimeout))
 }
 
 module EventHelpers = {
@@ -989,7 +989,7 @@ let useIFrameLocation = (~iframeRef: Nullable.t<WebAPI.DOMAPI.element>) => {
       )
     | None => None
     }
-  }, [iframeRef])
+  }, (iframeRef, setLocation))
 
   location
 }
@@ -1005,7 +1005,7 @@ let useDisableIFrameAnchorPointerEvents = (
     | Some(doc) =>
       // Convert NodeList to array
       let getAnchors: WebAPI.DOMAPI.document => array<WebAPI.DOMAPI.element> = %raw(`
-        function(doc) {
+        (doc) => {
           return Array.from(doc.querySelectorAll("a"));
         }
       `)

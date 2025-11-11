@@ -1,40 +1,82 @@
 @react.component
-let make = (~url) => {
+let make = (~taskId, ~url, ~isActive) => {
+  let currentTaskId = Client__State.useSelector(Client__State.Selectors.currentTaskId)
   let isSelecting = Client__State.useSelector(Client__State.Selectors.webPreviewIsSelecting)
   let iframeRef: React.ref<Nullable.t<Dom.element>> = React.useRef(Nullable.null)
+  let lastLocationRef: React.ref<option<string>> = React.useRef(None)
   let location = Client__Hooks.useIFrameLocation(~iframeRef=iframeRef.current->Obj.magic)
-  Client__Hooks.useDisableIFrameAnchorPointerEvents(~iframeRef=iframeRef.current->Obj.magic, ~activate=isSelecting)
+  Client__Hooks.useDisableIFrameAnchorPointerEvents(~iframeRef=iframeRef.current->Obj.magic, ~activate=isSelecting && isActive)
+  
   React.useEffect(() => {
-    switch location {
-    | Some(location) => 
-      Client__State.Actions.setPreviewUrl(~url=location)
-      Client__State.Actions.setSelectedElement(~selectedElement=None)
-    | None => ()
+    if isActive {
+      switch location {
+      | Some(location) => 
+        if location->String.startsWith("http") {
+          // Only update if location actually changed
+          let locationChanged = switch lastLocationRef.current {
+          | None => true
+          | Some(lastLocation) => lastLocation != location
+          }
+          
+          if locationChanged {
+            lastLocationRef.current = Some(location)
+            Client__State.Actions.setPreviewUrl(~url=location)
+            Client__State.Actions.setSelectedElement(~selectedElement=None)
+          }
+        }
+      | None => ()
+      }
     }
     None
-  }, [location])
+  }, (location, isActive))
 
-  let onLoad = React.useCallback((_e: JsxEvent.Image.t) => {
-    iframeRef.current
-    ->Nullable.toOption
-    ->Option.forEach(iframe => {
-      let iframeElement = iframe->Obj.magic
-      let contentDocument = WebAPI.HTMLIFrameElement.contentDocument(iframeElement)->Null.toOption
-      let contentWindow = WebAPI.HTMLIFrameElement.contentWindow(iframeElement)->Null.toOption
-      
-      Client__State.Actions.setPreviewFrame(
-        ~contentDocument,
-        ~contentWindow,
-      )
-    })
-  }, [])
+  let onLoad = (_e: JsxEvent.Image.t) => {
+    // Only update state if this iframe belongs to the current task
+    let shouldUpdate = currentTaskId->Option.mapOr(false, id => id == taskId)
+    
+    if shouldUpdate {
+      iframeRef.current
+      ->Nullable.toOption
+      ->Option.forEach(iframe => {
+        let iframeElement = iframe->Obj.magic
+        let contentDocument = WebAPI.HTMLIFrameElement.contentDocument(iframeElement)->Null.toOption
+        let contentWindow = WebAPI.HTMLIFrameElement.contentWindow(iframeElement)->Null.toOption
+        
+        Client__State.Actions.setPreviewFrame(
+          ~contentDocument,
+          ~contentWindow,
+        )
+      })
+    }
+  }
 
-  <div className="flex-1 size-full">
+  // Update preview frame when this iframe becomes active and is already loaded
+  React.useEffect(() => {
+    if isActive {
+      iframeRef.current
+      ->Nullable.toOption
+      ->Option.forEach(iframe => {
+        let iframeElement = iframe->Obj.magic
+        let contentDocument = WebAPI.HTMLIFrameElement.contentDocument(iframeElement)->Null.toOption
+        let contentWindow = WebAPI.HTMLIFrameElement.contentWindow(iframeElement)->Null.toOption
+        
+        // Only update if the iframe has content loaded
+        if contentDocument->Option.isSome {
+          Client__State.Actions.setPreviewFrame(
+            ~contentDocument,
+            ~contentWindow,
+          )
+        }
+      })
+    }
+    None
+  }, [isActive])
+
+  <div className={isActive ? "flex-1 size-full" : "absolute -left-[9999px] -top-[9999px] invisible size-full"}>
     <iframe
       className={"size-full"}
-      sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-presentation"
       src={url}
-      title="Preview"
+      title={`Preview - ${taskId}`}
       onLoad={onLoad}
       ref={ReactDOM.Ref.callbackDomRef(iframe => {
         iframeRef.current = iframe
