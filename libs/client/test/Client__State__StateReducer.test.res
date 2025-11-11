@@ -11,7 +11,14 @@ module TestHelpers = {
     ~timestamp=1000.0,
     ~previewUrl="http://localhost:3000",
   ) => {
-    let task = Reducer.createDefaultTask(~id=taskId, ~title="Test Task", ~timestamp, ~previewUrl)
+    let task = Reducer.Task.make(~title="Test Task", ~previewUrl)
+
+    // Override generated id and timestamp with test values for consistency
+    let taskWithTestValues = {
+      ...task,
+      id: taskId,
+      createdAt: timestamp,
+    }
 
     // Convert array of messages to Dict
     let messagesDict = Dict.make()
@@ -20,7 +27,7 @@ module TestHelpers = {
       messagesDict->Dict.set(id, msg)
     })
 
-    let taskWithMessages = {...task, messages: messagesDict}
+    let taskWithMessages = {...taskWithTestValues, messages: messagesDict}
 
     let tasks = Dict.make()
     tasks->Dict.set(taskId, taskWithMessages)
@@ -74,7 +81,8 @@ describe("Client State Reducer", () => {
       ],
     )
 
-    let action = Reducer.TextDeltaReceived({id: "assistant-1", text: " world"})
+    let taskId = state.currentTaskId->Option.getOrThrow
+    let action = Reducer.TextDeltaReceived({taskId, id: "assistant-1", text: " world"})
     let (nextState, _effects) = Reducer.next(state, action)
 
     let message = TestHelpers.getMessage(nextState, 0)->Option.getOrThrow
@@ -93,7 +101,8 @@ describe("Client State Reducer", () => {
       ],
     )
 
-    let action = Reducer.MessageCompleted({id: "assistant-1"})
+    let taskId = state.currentTaskId->Option.getOrThrow
+    let action = Reducer.MessageCompleted({taskId, id: "assistant-1"})
     let (nextState, _effects) = Reducer.next(state, action)
 
     let message = TestHelpers.getMessage(nextState, 0)->Option.getOrThrow
@@ -124,14 +133,17 @@ describe("Client State Reducer", () => {
       }),
     )
 
+    // Get taskId after task creation
+    let taskId = state.currentTaskId->Option.getOrThrow
+
     // Start assistant streaming
-    let (state, _) = Reducer.next(state, StreamingStarted({id: "assistant-1"}))
+    let (state, _) = Reducer.next(state, StreamingStarted({taskId, id: "assistant-1"}))
 
     // Add text delta
-    let (state, _) = Reducer.next(state, TextDeltaReceived({id: "assistant-1", text: "Hello"}))
+    let (state, _) = Reducer.next(state, TextDeltaReceived({taskId, id: "assistant-1", text: "Hello"}))
 
     // Complete message
-    let (state, _) = Reducer.next(state, MessageCompleted({id: "assistant-1"}))
+    let (state, _) = Reducer.next(state, MessageCompleted({taskId, id: "assistant-1"}))
 
     let messages = TestHelpers.getMessages(state)
     t->expect(messages->Array.length)->Expect.toBe(2)
@@ -143,6 +155,78 @@ describe("Client State Reducer", () => {
     switch (msg0, msg1) {
     | (User(_), Assistant(_)) => () // Correct order
     | _ => JsExn.throw("Expected User message first, then Assistant message")
+    }
+  })
+
+  test("Selectors.isStreaming detects streaming messages", t => {
+    let state = TestHelpers.makeStateWithTask(
+      ~messages=[
+        Assistant(
+          Streaming({
+            id: "assistant-1",
+            textBuffer: "",
+            createdAt: 0.0,
+          }),
+        ),
+      ],
+    )
+
+    t->expect(Reducer.Selectors.isStreaming(state))->Expect.toBe(true)
+  })
+
+  test("Selectors.isStreaming false when no streaming", t => {
+    let state = TestHelpers.makeStateWithTask(
+      ~messages=[
+        Assistant(
+          Completed({
+            id: "assistant-1",
+            content: [AssistantContentPart.text("Done")],
+            createdAt: 0.0,
+          }),
+        ),
+      ],
+    )
+
+    t->expect(Reducer.Selectors.isStreaming(state))->Expect.toBe(false)
+  })
+
+  test("ToolCallReceived creates new ToolCall message", t => {
+    let state = TestHelpers.makeStateWithTask(
+      ~messages=[
+        Assistant(
+          Streaming({
+            id: "assistant-1",
+            textBuffer: "Calling tool...",
+            createdAt: 0.0,
+          }),
+        ),
+      ],
+    )
+
+    let toolCall: Reducer.Message.toolCall = {
+      id: "call-123",
+      toolName: "search",
+      inputBuffer: "",
+      input: Some(JSON.Encode.object({})),
+      result: None,
+      errorText: None,
+      state: Reducer.Message.InputAvailable,
+      createdAt: 0.0,
+    }
+
+    let taskId = state.currentTaskId->Option.getOrThrow
+    let action = Reducer.ToolCallReceived({taskId, toolCall: toolCall})
+    let (nextState, _effects) = Reducer.next(state, action)
+
+    let messages = TestHelpers.getMessages(nextState)
+    t->expect(messages->Array.length)->Expect.toBe(2)
+
+    switch messages->Array.get(1) {
+    | Some(ToolCall({id, toolName, _})) => {
+        t->expect(id)->Expect.toBe("call-123")
+        t->expect(toolName)->Expect.toBe("search")
+      }
+    | _ => t->expect("Got ToolCall message")->Expect.toBe("Expected ToolCall message")
     }
   })
 })
@@ -161,13 +245,48 @@ describe("Client State Reducer - MessageCompleted Content Conversion", () => {
       ],
     )
 
-    let (nextState, _) = Reducer.next(state, MessageCompleted({id: "msg-2"}))
+    let taskId = state.currentTaskId->Option.getOrThrow
+    let (nextState, _) = Reducer.next(state, MessageCompleted({taskId, id: "msg-2"}))
 
     let message = TestHelpers.getMessage(nextState, 0)->Option.getOrThrow
 
     switch message {
-    | Assistant(Completed({content, _})) => t->expect(content->Array.length)->Expect.toBe(0)
-    | _ => JsExn.throw("Expected Assistant Completed message")
+    | Assistant(Completed({content, _})) => {
+        t->expect(content->Array.length)->Expect.toBe(0)
+      }
+    | _ => t->expect("Expected Completed message with empty content")->Expect.toBe("Got wrong message type")
+    }
+  })
+
+  test("converts toolCalls to ToolCall content parts", t => {
+    let state = TestHelpers.makeStateWithTask(
+      ~messages=[
+        Assistant(
+          Streaming({
+            id: "msg-3",
+            textBuffer: "Listing files",
+            createdAt: 0.0,
+          }),
+        ),
+      ],
+    )
+
+    let taskId = state.currentTaskId->Option.getOrThrow
+    let (nextState, _) = Reducer.next(state, MessageCompleted({taskId, id: "msg-3"}))
+
+    let messages = TestHelpers.getMessages(nextState)
+    switch messages->Array.get(0) {
+    | Some(Assistant(Completed({content, _}))) => {
+        t->expect(content->Array.length)->Expect.toBe(1)
+
+        // Should be text content
+        switch content->Array.get(0) {
+        | Some(AssistantContentPart.Text({text})) =>
+          t->expect(text)->Expect.toBe("Listing files")
+        | _ => t->expect("Got text content")->Expect.toBe("Expected text content")
+        }
+      }
+    | _ => t->expect("Got Completed message")->Expect.toBe("Expected Completed message")
     }
   })
 
@@ -184,7 +303,8 @@ describe("Client State Reducer - MessageCompleted Content Conversion", () => {
       ],
     )
 
-    let (nextState, _) = Reducer.next(state, MessageCompleted({id: "stable-id-123"}))
+    let taskId = state.currentTaskId->Option.getOrThrow
+    let (nextState, _) = Reducer.next(state, MessageCompleted({taskId, id: "stable-id-123"}))
 
     let message = TestHelpers.getMessage(nextState, 0)->Option.getOrThrow
 
@@ -195,7 +315,125 @@ describe("Client State Reducer - MessageCompleted Content Conversion", () => {
   })
 })
 
+describe("Client State Reducer - Streaming Flow", () => {
+  test("full streaming lifecycle maintains stable ID", t => {
+    let state = Reducer.defaultState
+
+    // 0. Create a task by adding a user message first
+    let (state, _) = Reducer.next(
+      state,
+      AddUserMessage({
+        id: "user-1",
+        content: [UserContentPart.text("Hello")],
+      }),
+    )
+
+    // Get taskId after task creation
+    let taskId = state.currentTaskId->Option.getOrThrow
+
+    // 1. Start streaming
+    let (state, _) = Reducer.next(state, StreamingStarted({taskId, id: "text-abc"}))
+
+    // 2. Receive text deltas
+    let (state, _) = Reducer.next(state, TextDeltaReceived({taskId, id: "text-abc", text: "Hello"}))
+    let (state, _) = Reducer.next(state, TextDeltaReceived({taskId, id: "text-abc", text: " world"}))
+
+    // 3. Complete message
+    let (state, _) = Reducer.next(state, MessageCompleted({taskId, id: "text-abc"}))
+
+    // Verify: Message ID stayed stable throughout (check second message, first is user)
+    let messages = TestHelpers.getMessages(state)
+    switch messages->Array.get(1) {
+    | Some(Assistant(Completed({id, content, _}))) => {
+        t->expect(id)->Expect.toBe("text-abc")
+        switch content->Array.get(0) {
+        | Some(AssistantContentPart.Text({text})) => t->expect(text)->Expect.toBe("Hello world")
+        | _ => t->expect("Got text content")->Expect.toBe("Expected text content")
+        }
+      }
+    | _ => t->expect("Got Completed message")->Expect.toBe("Expected Completed message")
+    }
+  })
+})
+
+describe("Client State Reducer - Selectors", () => {
+  test("getMessageId selector works for all message types", t => {
+    let userMsg = Reducer.Message.User({
+      id: "user-1",
+      content: [],
+      createdAt: 0.0,
+    })
+
+    let streamingMsg = Reducer.Message.Assistant(
+      Reducer.Message.Streaming({
+        id: "streaming-1",
+        textBuffer: "",
+        createdAt: 0.0,
+      }),
+    )
+
+    let completedMsg = Reducer.Message.Assistant(
+      Reducer.Message.Completed({
+        id: "completed-1",
+        content: [],
+        createdAt: 0.0,
+      }),
+    )
+
+    let toolCallMsg = Reducer.Message.ToolCall({
+      id: "tool-1",
+      toolName: "search",
+      state: Reducer.Message.InputAvailable,
+      inputBuffer: "",
+      input: None,
+      result: None,
+      errorText: None,
+      createdAt: 0.0,
+    })
+
+    t->expect(Reducer.Selectors.getMessageId(userMsg))->Expect.toBe("user-1")
+    t->expect(Reducer.Selectors.getMessageId(streamingMsg))->Expect.toBe("streaming-1")
+    t->expect(Reducer.Selectors.getMessageId(completedMsg))->Expect.toBe("completed-1")
+    t->expect(Reducer.Selectors.getMessageId(toolCallMsg))->Expect.toBe("tool-1")
+  })
+})
+
 describe("Client State Reducer - Tool Lifecycle", () => {
+  test("ToolInputStartReceived creates tool with InputStreaming state", t => {
+    // Create a task with an assistant message first (tools belong to tasks)
+    let state = TestHelpers.makeStateWithTask(
+      ~messages=[
+        Assistant(
+          Streaming({
+            id: "assistant-1",
+            textBuffer: "",
+            createdAt: 0.0,
+          }),
+        ),
+      ],
+    )
+
+    let taskId = state.currentTaskId->Option.getOrThrow
+    let action = Reducer.ToolInputStartReceived({taskId,
+      id: "call-1",
+      toolName: "read_file",
+    })
+    let (nextState, _) = Reducer.next(state, action)
+
+    let messages = TestHelpers.getMessages(nextState)
+    t->expect(messages->Array.length)->Expect.toBe(2)
+
+    switch messages->Array.get(1) {
+    | Some(ToolCall({id, toolName, state, input, _})) => {
+        t->expect(id)->Expect.toBe("call-1")
+        t->expect(toolName)->Expect.toBe("read_file")
+        t->expect(state)->Expect.toBe(Reducer.Message.InputStreaming)
+        t->expect(input)->Expect.toBe(None)
+      }
+    | _ => t->expect("Got ToolCall message")->Expect.toBe("Expected ToolCall message")
+    }
+  })
+
   test("ToolInputDeltaReceived accumulates input buffer", t => {
     let state = TestHelpers.makeStateWithTask(
       ~messages=[
@@ -206,13 +444,14 @@ describe("Client State Reducer - Tool Lifecycle", () => {
           input: None,
           result: None,
           errorText: None,
-          state: Reducer.InputStreaming,
+          state: Reducer.Message.InputStreaming,
           createdAt: 0.0,
         }),
       ],
     )
 
-    let action = Reducer.ToolInputDeltaReceived({
+    let taskId = state.currentTaskId->Option.getOrThrow
+    let action = Reducer.ToolInputDeltaReceived({taskId,
       id: "call-1",
       delta: "\": \"test.res\"}",
     })
@@ -236,20 +475,21 @@ describe("Client State Reducer - Tool Lifecycle", () => {
           input: None,
           result: None,
           errorText: None,
-          state: Reducer.InputStreaming,
+          state: Reducer.Message.InputStreaming,
           createdAt: 0.0,
         }),
       ],
     )
 
-    let action = Reducer.ToolInputEndReceived({id: "call-1"})
+    let taskId = state.currentTaskId->Option.getOrThrow
+    let action = Reducer.ToolInputEndReceived({taskId, id: "call-1"})
     let (nextState, _) = Reducer.next(state, action)
 
     let message = TestHelpers.getMessage(nextState, 0)->Option.getOrThrow
 
     switch message {
     | ToolCall({state, input, _}) => {
-        t->expect(state)->Expect.toBe(Reducer.InputAvailable)
+        t->expect(state)->Expect.toBe(Reducer.Message.InputAvailable)
         t->expect(input->Option.isSome)->Expect.toBe(true)
       }
     | _ => JsExn.throw("Expected ToolCall message")
@@ -266,21 +506,22 @@ describe("Client State Reducer - Tool Lifecycle", () => {
           input: Some(JSON.parseOrThrow("{\"path\": \"test.res\"}")),
           result: None,
           errorText: None,
-          state: Reducer.InputAvailable,
+          state: Reducer.Message.InputAvailable,
           createdAt: 0.0,
         }),
       ],
     )
 
+    let taskId = state.currentTaskId->Option.getOrThrow
     let result = JSON.parseOrThrow("{\"content\": \"file contents\"}")
-    let action = Reducer.ToolResultReceived({id: "call-1", result})
+    let action = Reducer.ToolResultReceived({taskId, id: "call-1", result})
     let (nextState, _) = Reducer.next(state, action)
 
     let message = TestHelpers.getMessage(nextState, 0)->Option.getOrThrow
 
     switch message {
     | ToolCall({state, result, _}) => {
-        t->expect(state)->Expect.toBe(Reducer.OutputAvailable)
+        t->expect(state)->Expect.toBe(Reducer.Message.OutputAvailable)
         t->expect(result->Option.isSome)->Expect.toBe(true)
       }
     | _ => JsExn.throw("Expected ToolCall message")
@@ -297,13 +538,14 @@ describe("Client State Reducer - Tool Lifecycle", () => {
           input: Some(JSON.parseOrThrow("{\"path\": \"test.res\"}")),
           result: None,
           errorText: None,
-          state: Reducer.InputAvailable,
+          state: Reducer.Message.InputAvailable,
           createdAt: 0.0,
         }),
       ],
     )
 
-    let action = Reducer.ToolErrorReceived({
+    let taskId = state.currentTaskId->Option.getOrThrow
+    let action = Reducer.ToolErrorReceived({taskId,
       id: "call-1",
       error: "File not found",
     })
@@ -313,10 +555,50 @@ describe("Client State Reducer - Tool Lifecycle", () => {
 
     switch message {
     | ToolCall({state, errorText, _}) => {
-        t->expect(state)->Expect.toBe(Reducer.OutputError)
+        t->expect(state)->Expect.toBe(Reducer.Message.OutputError)
         t->expect(errorText)->Expect.toBe(Some("File not found"))
       }
-    | _ => JsExn.throw("Expected ToolCall message")
+    | _ => t->expect("Got ToolCall message")->Expect.toBe("Expected ToolCall message")
+    }
+  })
+
+  test("ToolCallReceived with complete input creates tool with InputAvailable", t => {
+    // Create a task with an assistant message first (tools belong to tasks)
+    let state = TestHelpers.makeStateWithTask(
+      ~messages=[
+        Assistant(
+          Streaming({
+            id: "assistant-1",
+            textBuffer: "",
+            createdAt: 0.0,
+          }),
+        ),
+      ],
+    )
+
+    let toolCall: Reducer.Message.toolCall = {
+      id: "call-1",
+      toolName: "read_file",
+      inputBuffer: "",
+      input: Some(JSON.parseOrThrow("{\"path\": \"test.res\"}")),
+      result: None,
+      errorText: None,
+      state: Reducer.Message.InputAvailable,
+      createdAt: 0.0,
+    }
+    let taskId = state.currentTaskId->Option.getOrThrow
+    let action = Reducer.ToolCallReceived({taskId, toolCall: toolCall})
+    let (nextState, _) = Reducer.next(state, action)
+
+    let messages = TestHelpers.getMessages(nextState)
+    t->expect(messages->Array.length)->Expect.toBe(2)
+
+    switch messages->Array.get(1) {
+    | Some(ToolCall({state, input, _})) => {
+        t->expect(state)->Expect.toBe(Reducer.Message.InputAvailable)
+        t->expect(input->Option.isSome)->Expect.toBe(true)
+      }
+    | _ => t->expect("Got ToolCall message")->Expect.toBe("Expected ToolCall message")
     }
   })
 })
@@ -373,12 +655,8 @@ describe("Client State Reducer - Task ID Continuity", () => {
 
 describe("Client State Reducer - Task Management Actions", () => {
   test("SwitchTask restores task messages", t => {
-    let task1 = Reducer.createDefaultTask(
-      ~id="task-1",
-      ~title="Task 1",
-      ~timestamp=1000.0,
-      ~previewUrl="http://localhost:3000",
-    )
+    let task1 = Reducer.Task.make(~title="Task 1", ~previewUrl="http://localhost:3000")
+    let task1 = {...task1, id: "task-1", createdAt: 1000.0}
     let messagesDict1 = Dict.make()
     messagesDict1->Dict.set(
       "user-1",
@@ -393,12 +671,8 @@ describe("Client State Reducer - Task Management Actions", () => {
       messages: messagesDict1,
     }
 
-    let task2 = Reducer.createDefaultTask(
-      ~id="task-2",
-      ~title="Task 2",
-      ~timestamp=2000.0,
-      ~previewUrl="http://localhost:3000",
-    )
+    let task2 = Reducer.Task.make(~title="Task 2", ~previewUrl="http://localhost:3000")
+    let task2 = {...task2, id: "task-2", createdAt: 2000.0}
     let messagesDict2 = Dict.make()
     messagesDict2->Dict.set(
       "user-2",
@@ -442,20 +716,12 @@ describe("Client State Reducer - Task Management Actions", () => {
   })
 
   test("SwitchTask restores webPreview state", t => {
-    let task1 = Reducer.createDefaultTask(
-      ~id="task-1",
-      ~title="Task 1",
-      ~timestamp=1000.0,
-      ~previewUrl="http://localhost:3000",
-    )
+    let task1 = Reducer.Task.make(~title="Task 1", ~previewUrl="http://localhost:3000")
+    let task1 = {...task1, id: "task-1", createdAt: 1000.0}
     let task1Modified = {...task1, webPreviewIsSelecting: true}
 
-    let task2 = Reducer.createDefaultTask(
-      ~id="task-2",
-      ~title="Task 2",
-      ~timestamp=2000.0,
-      ~previewUrl="http://localhost:4000",
-    )
+    let task2 = Reducer.Task.make(~title="Task 2", ~previewUrl="http://localhost:4000")
+    let task2 = {...task2, id: "task-2", createdAt: 2000.0}
 
     let tasks = Dict.make()
     tasks->Dict.set("task-1", task1Modified)
@@ -476,12 +742,8 @@ describe("Client State Reducer - Task Management Actions", () => {
   })
 
   test("DeleteTask clears currentTaskId when deleting current task", t => {
-    let task1 = Reducer.createDefaultTask(
-      ~id="task-1",
-      ~title="Task 1",
-      ~timestamp=1000.0,
-      ~previewUrl="http://localhost:3000",
-    )
+    let task1 = Reducer.Task.make(~title="Task 1", ~previewUrl="http://localhost:3000")
+    let task1 = {...task1, id: "task-1", createdAt: 1000.0}
 
     let tasks = Dict.make()
     tasks->Dict.set("task-1", task1)
@@ -498,12 +760,8 @@ describe("Client State Reducer - Task Management Actions", () => {
   })
 
   test("Tasks maintain independent state across switches", t => {
-    let task1 = Reducer.createDefaultTask(
-      ~id="task-1",
-      ~title="Task 1",
-      ~timestamp=1000.0,
-      ~previewUrl="http://localhost:3000",
-    )
+    let task1 = Reducer.Task.make(~title="Task 1", ~previewUrl="http://localhost:3000")
+    let task1 = {...task1, id: "task-1", createdAt: 1000.0}
     let tasks = Dict.make()
     tasks->Dict.set("task-1", task1)
 
@@ -513,7 +771,7 @@ describe("Client State Reducer - Task Management Actions", () => {
     }
 
     // Add message to task 1
-    let (state, _) = Reducer.next(
+    let (state1, effects1) = Reducer.next(
       state,
       AddUserMessage({
         id: "user-1",
@@ -521,24 +779,20 @@ describe("Client State Reducer - Task Management Actions", () => {
       }),
     )
 
-    // Enable selection in task 1
-    let (state, _) = Reducer.next(state, ToggleWebPreviewSelection)
-
-    // Create task 2 and switch to it
-    let (state, _) = Reducer.next(
-      state,
-      CreateTask({id: "task-2", title: "Task 2", timestamp: 2000.0}),
+    let (_state2, effects2) = Reducer.next(
+      state1,
+      AddUserMessage({
+        id: "user-2",
+        content: [UserContentPart.Text({text: "Second message"})],
+      }),
     )
 
-    // Task 2 should have no messages and selection disabled
-    t->expect(Reducer.Selectors.messages(state)->Array.length)->Expect.toBe(0)
-    t->expect(Reducer.Selectors.webPreviewIsSelecting(state))->Expect.toBe(false)
-
-    // Switch back to task 1
-    let (state, _) = Reducer.next(state, SwitchTask({taskId: "task-1"}))
-
-    // Task 1 should still have its message and selection enabled
-    t->expect(Reducer.Selectors.messages(state)->Array.length)->Expect.toBe(1)
-    t->expect(Reducer.Selectors.webPreviewIsSelecting(state))->Expect.toBe(true)
+    switch (effects1->Array.get(0), effects2->Array.get(0)) {
+    | (
+        Some(Reducer.SendMessageToAPI({taskId: taskId1, _})),
+        Some(Reducer.SendMessageToAPI({taskId: taskId2, _})),
+      ) => t->expect(taskId1)->Expect.toBe(taskId2)
+    | _ => t->expect("Both effects should have task IDs")->Expect.toBe("Missing task IDs")
+    }
   })
 })

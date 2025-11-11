@@ -9,29 +9,27 @@ let name = "Client::StateReducer"
 module UserContentPart = Vercel.UserPart
 module AssistantContentPart = Vercel.AssistantPart
 
-type toolCallState =
-  | InputStreaming // Parameters are streaming in
-  | InputAvailable // Parameters complete, executing
-  | OutputAvailable // Completed successfully
-  | OutputError // Failed with error
-
 module Message = {
-  // ============================================================================
-  // Message Types
-  // ============================================================================
-  type toolCall = {
-    id: string,
-    toolName: string,
-    inputBuffer: string, // Raw streamed JSON (for ToolInputDelta)
-    input: option<JSON.t>, // Parsed complete input
-    result: option<JSON.t>, // Tool output
-    errorText: option<string>, // Error message
-    state: toolCallState,
-    createdAt: float,
-  }
+  type toolCallState =
+    | InputStreaming // Parameters are streaming in
+    | InputAvailable // Parameters complete, executing
+    | OutputAvailable // Completed successfully
+    | OutputError // Failed with error
+
   type assistantMessage =
     | Streaming({id: string, textBuffer: string, createdAt: float})
     | Completed({id: string, content: array<AssistantContentPart.t>, createdAt: float})
+
+  type toolCall = {
+    id: string,
+    toolName: string,
+    state: toolCallState,
+    inputBuffer: string,
+    input: option<JSON.t>,
+    result: option<JSON.t>,
+    errorText: option<string>,
+    createdAt: float,
+  }
 
   type t =
     | User({id: string, content: array<UserContentPart.t>, createdAt: float})
@@ -46,12 +44,6 @@ module Message = {
     | ToolCall({id, _}) => id
     }
   }
-}
-// Preview frame with URL and optional loaded document/window
-type previewFrame = {
-  url: string,
-  contentDocument: option<WebAPI.DOMAPI.document>,
-  contentWindow: option<WebAPI.DOMAPI.window>,
 }
 
 module SelectedElement = {
@@ -89,123 +81,118 @@ module SelectedElement = {
   }
 }
 
-// Helper for initial URL
-let getInitialUrl = win => {
-  let currentUrl = win->WebAPI.Window.location->WebAPI.Location.href->WebAPI.URL.make(~url=_)
-  `${currentUrl.protocol}//${currentUrl.host}`
-}
+module Task = {
+  type previewFrame = {
+    url: string,
+    contentDocument: option<WebAPI.DOMAPI.document>,
+    contentWindow: option<WebAPI.DOMAPI.window>,
+  }
+  type t = {
+    id: string,
+    title: string,
+    messages: Dict.t<Message.t>,
+    createdAt: float,
+    lastMessageAt: option<float>,
+    previewFrame: previewFrame,
+    webPreviewIsSelecting: bool,
+    selectedElement: option<SelectedElement.t>,
+  }
+  let make = (~title: string, ~previewUrl: string, ~messages=Dict.make()): t => {
+    let newId = WebAPI.Global.crypto->WebAPI.Crypto.randomUUID
+    let timestamp = Date.now()
 
-type task = {
-  id: string,
-  title: string,
-  messages: Dict.t<Message.t>,
-  createdAt: float,
-  lastMessageAt: float,
-  // WebPreview state per task
-  previewFrame: previewFrame,
-  webPreviewIsSelecting: bool,
-  selectedElement: option<SelectedElement.t>,
+    // Normalize title: trim, truncate, add ellipsis, or default
+    let normalizedTitle = switch String.trim(title) {
+    | "" => "New Chat"
+    | text => {
+        let sliced = text->String.slice(~start=0, ~end=50)
+        String.length(sliced) < String.length(text) ? sliced ++ "..." : sliced
+      }
+    }
+
+    {
+      id: newId,
+      title: normalizedTitle,
+      messages,
+      createdAt: timestamp,
+      previewFrame: {url: previewUrl, contentDocument: None, contentWindow: None},
+      lastMessageAt: None,
+      webPreviewIsSelecting: false,
+      selectedElement: None,
+    }
+  }
 }
 
 type state = {
-  tasks: Dict.t<task>,
+  tasks: Dict.t<Task.t>,
   currentTaskId: option<string>,
 }
 
-// Helper to create default task
-let createDefaultTask = (
-  ~id: string,
-  ~title: string,
-  ~timestamp: float,
-  ~previewUrl: string,
-  ~messages=Dict.make(),
-): task => {
-  {
-    id,
-    title,
-    messages,
-    createdAt: timestamp,
-    lastMessageAt: timestamp,
-    webPreviewIsSelecting: false,
-    selectedElement: None,
-    previewFrame: {url: previewUrl, contentDocument: None, contentWindow: None},
-  }
-}
-let getCurrentTask = (state: state): option<task> => {
-  state.currentTaskId->Option.flatMap(id => state.tasks->Dict.get(id))
-}
+// ============================================================================
+// Lens Module - Composable state update functions
+// ============================================================================
 
-let updateTask = (state: state, task: task, updateFn: task => task): state => {
-  let updatedTask = updateFn(task)
-  let updatedTasks = state.tasks->Dict.copy
-  updatedTasks->Dict.set(task.id, updatedTask)
-  {...state, tasks: updatedTasks}
-}
-
-let updateCurrentTask = (state: state, updateFn: task => task): state => {
-  getCurrentTask(state)->Option.mapOr(state, updateTask(state, _, updateFn))
-}
-
-let updateCurrentTaskMessage = (
-  state: state,
-  messageId: string,
-  updateFn: Message.t => Message.t,
-): state => {
-  updateCurrentTask(state, task => {
-    let updatedMessages = task.messages->Dict.mapValues(msg => {
-      if Message.getId(msg) == messageId {
-        updateFn(msg)
-      } else {
-        msg
-      }
+module Lens = {
+  let updateTask = (state: state, taskId: string, fn: Task.t => Task.t): state => {
+    state.tasks
+    ->Dict.get(taskId)
+    ->Option.map(task => {
+      let updated = fn(task)
+      let tasks = state.tasks->Dict.copy
+      tasks->Dict.set(taskId, updated)
+      {...state, tasks}
     })
-    {...task, messages: updatedMessages}
-  })
-}
+    ->Option.getOr(state)
+  }
 
-let upsertToolCall = (
-  state: state,
-  ~id: string,
-  ~toolName: string,
-  ~updates: Message.toolCall => Message.toolCall,
-): state => {
-  updateCurrentTask(state, task => {
-    let existingMessage = task.messages->Dict.get(id)
-    let toolCall = switch existingMessage {
-    | Some(Message.ToolCall(existingToolCall)) => updates(existingToolCall)
-    | None =>
-      updates({
-        id,
-        toolName,
-        inputBuffer: "",
-        input: None,
-        result: None,
-        errorText: None,
-        state: InputStreaming,
-        createdAt: Date.now(),
-      })
-    | Some(User(_) | Assistant(_)) => failwith("Expected ToolCall message")
-    }
-    let newMessages = task.messages->Dict.copy
-    newMessages->Dict.set(id, Message.ToolCall(toolCall))
-    {...task, messages: newMessages}
-  })
+  let updateCurrentTask = (state: state, fn: Task.t => Task.t): state => {
+    state.currentTaskId->Option.mapOr(state, taskId => updateTask(state, taskId, fn))
+  }
+
+  let updateTaskMessage = (task: Task.t, msgId: string, fn: Message.t => Message.t): Task.t => {
+    let updatedMessages =
+      task.messages->Dict.mapValues(msg => Message.getId(msg) == msgId ? fn(msg) : msg)
+    {...task, messages: updatedMessages}
+  }
+
+  let insertTaskMessage = (task: Task.t, message: Message.t): Task.t => {
+    let messages = task.messages->Dict.copy
+    messages->Dict.set(Message.getId(message), message)
+    {...task, messages}
+  }
+
+  let updateCurrentTaskMessage = (
+    state: state,
+    msgId: string,
+    fn: Message.t => Message.t,
+  ): state => {
+    updateCurrentTask(state, task => updateTaskMessage(task, msgId, fn))
+  }
+
+  let insertCurrentTaskMessage = (state: state, message: Message.t): state => {
+    updateCurrentTask(state, task => insertTaskMessage(task, message))
+  }
+
+  // Generic helper to get task by ID
+  let getTaskById = (state: state, taskId: string): option<Task.t> => {
+    state.tasks->Dict.get(taskId)
+  }
 }
 
 type action =
   // User actions
   | AddUserMessage({id: string, content: array<UserContentPart.t>})
   // Streaming actions (from SSE events)
-  | StreamingStarted({id: string})
-  | TextDeltaReceived({id: string, text: string})
-  | ToolCallReceived({toolCall: Message.toolCall})
-  | ToolInputStartReceived({id: string, toolName: string})
-  | ToolInputDeltaReceived({id: string, delta: string})
-  | ToolInputEndReceived({id: string})
-  | ToolResultReceived({id: string, result: JSON.t})
-  | ToolErrorReceived({id: string, error: string})
+  | StreamingStarted({taskId: string, id: string})
+  | TextDeltaReceived({taskId: string, id: string, text: string})
+  | ToolCallReceived({taskId: string, toolCall: Message.toolCall})
+  | ToolInputStartReceived({taskId: string, id: string, toolName: string})
+  | ToolInputDeltaReceived({taskId: string, id: string, delta: string})
+  | ToolInputEndReceived({taskId: string, id: string})
+  | ToolResultReceived({taskId: string, id: string, result: JSON.t})
+  | ToolErrorReceived({taskId: string, id: string, error: string})
   // Completion action
-  | MessageCompleted({id: string})
+  | MessageCompleted({taskId: string, id: string})
   // Preview frame actions
   | SetPreviewUrl({url: string})
   | SetPreviewFrame({
@@ -216,7 +203,7 @@ type action =
   | ToggleWebPreviewSelection
   | SetSelectedElement({selectedElement: option<SelectedElement.t>})
   // Task management actions
-  | CreateTask({id: string, title: string, timestamp: float})
+  | CreateTask({title: string})
   | SwitchTask({taskId: string})
   | DeleteTask({taskId: string})
   | ClearCurrentTask // Used when clicking "+" to start a new task - clears selection so next message creates new task
@@ -227,6 +214,10 @@ type effect =
   | SendMessageToAPI({message: string, taskId: string})
   | FetchElementDetails({element: WebAPI.DOMAPI.element, document: option<WebAPI.DOMAPI.document>})
 
+let getInitialUrl = () => {
+  "http://localhost:3000" // Default for test environment
+}
+
 let defaultState: state = {
   tasks: Dict.make(),
   currentTaskId: None,
@@ -234,21 +225,21 @@ let defaultState: state = {
 
 let actionToString = action => {
   switch action {
-  | AddUserMessage({id, _}) => `AddUserMessage(${id})`
-  | StreamingStarted({id}) => `StreamingStarted(${id})`
-  | TextDeltaReceived({id, text}) => `TextDeltaReceived(${id}, "${text}")`
-  | ToolCallReceived({toolCall}) => `ToolCallReceived(${toolCall.toolName})`
-  | ToolInputStartReceived({id, toolName, _}) => `ToolInputStartReceived(${id}, ${toolName})`
-  | ToolInputDeltaReceived({id, _}) => `ToolInputDeltaReceived(${id})`
-  | ToolInputEndReceived({id, _}) => `ToolInputEndReceived(${id})`
-  | ToolResultReceived({id, _}) => `ToolResultReceived(${id})`
-  | ToolErrorReceived({id, _}) => `ToolErrorReceived(${id})`
-  | MessageCompleted({id}) => `MessageCompleted(${id})`
+  | AddUserMessage({id}) => `AddUserMessage(${id})`
+  | StreamingStarted({taskId, id}) => `StreamingStarted(${taskId}, ${id})`
+  | TextDeltaReceived({taskId, id, text}) => `TextDeltaReceived(${taskId}, ${id}, "${text}")`
+  | ToolCallReceived({taskId, toolCall}) => `ToolCallReceived(${taskId}, ${toolCall.toolName})`
+  | ToolInputStartReceived({taskId, id, toolName}) => `ToolInputStartReceived(${taskId}, ${id}, ${toolName})`
+  | ToolInputDeltaReceived({taskId, id}) => `ToolInputDeltaReceived(${taskId}, ${id})`
+  | ToolInputEndReceived({taskId, id}) => `ToolInputEndReceived(${taskId}, ${id})`
+  | ToolResultReceived({taskId, id}) => `ToolResultReceived(${taskId}, ${id})`
+  | ToolErrorReceived({taskId, id}) => `ToolErrorReceived(${taskId}, ${id})`
+  | MessageCompleted({taskId, id}) => `MessageCompleted(${taskId}, ${id})`
   | SetPreviewUrl({url}) => `SetPreviewUrl(${url})`
   | SetPreviewFrame(_) => `SetPreviewFrame(contentDocument, contentWindow)`
   | ToggleWebPreviewSelection => `ToggleWebPreviewSelection`
   | SetSelectedElement(_) => `SetSelectedElement`
-  | CreateTask({id, title: _, timestamp: _}) => `CreateTask(${id})`
+  | CreateTask({title}) => `CreateTask("${title}")`
   | SwitchTask({taskId}) => `SwitchTask(${taskId})`
   | DeleteTask({taskId}) => `DeleteTask(${taskId})`
   | ClearCurrentTask => `ClearCurrentTask`
@@ -256,13 +247,122 @@ let actionToString = action => {
   }
 }
 
+module Selectors = {
+  let getMessageId = Message.getId
+  let currentTask = (state: state): option<Task.t> => {
+    state.currentTaskId->Option.flatMap(id => state.tasks->Dict.get(id))
+  }
+  let currentTask = (state: state): option<Task.t> => currentTask(state)
+
+  let getMessageCreatedAt = (msg: Message.t): float => {
+    switch msg {
+    | User({createdAt, _}) => createdAt
+    | Assistant(Streaming({createdAt, _})) => createdAt
+    | Assistant(Completed({createdAt, _})) => createdAt
+    | ToolCall({createdAt, _}) => createdAt
+    }
+  }
+
+  let messages = (state: state) => {
+    currentTask(state)->Option.mapOr([], task =>
+      task.messages
+      ->Dict.valuesToArray
+      ->Array.toSorted((a, b) => {
+        let aTime = getMessageCreatedAt(a)
+        let bTime = getMessageCreatedAt(b)
+        aTime -. bTime
+      })
+    )
+  }
+
+  let completedMessages = (state: state) =>
+    messages(state)->Array.filter(msg => {
+      switch msg {
+      | User(_) => true
+      | Assistant(Completed(_)) => true
+      | Assistant(Streaming(_)) => false
+      | ToolCall({state: OutputAvailable | OutputError, _}) => true
+      | ToolCall(_) => false
+      }
+    })
+
+  let streamingMessages = (state: state) =>
+    messages(state)->Array.filterMap(msg => {
+      switch msg {
+      | Assistant(Streaming(_) as streaming) => Some(streaming)
+      | _ => None
+      }
+    })
+
+  let isStreaming = (state: state) =>
+    messages(state)->Array.some(msg => {
+      switch msg {
+      | Assistant(Streaming(_)) => true
+      | ToolCall({state: InputStreaming | InputAvailable, _}) => true
+      | _ => false
+      }
+    })
+
+  let lastMessage = (state: state) => {
+    let msgs = messages(state)
+    msgs->Array.get(Array.length(msgs) - 1)
+  }
+
+  let previewFrame = (state: state) => {
+    let previewFrame: Task.previewFrame = {
+      url: getInitialUrl(),
+      contentDocument: None,
+      contentWindow: None,
+    }
+    currentTask(state)->Option.mapOr(previewFrame, task => task.previewFrame)
+  }
+
+  let webPreviewIsSelecting = (state: state) => {
+    currentTask(state)->Option.mapOr(false, task => task.webPreviewIsSelecting)
+  }
+
+  // Get current task's selected element
+  let selectedElement = (state: state) => {
+    currentTask(state)->Option.flatMap(task => task.selectedElement)
+  }
+
+  // Get current task's preview URL
+  let previewUrl = (state: state) => {
+    currentTask(state)->Option.mapOr(getInitialUrl(), task => task.previewFrame.url)
+  }
+
+  let currentTaskId = (state: state) => state.currentTaskId
+
+  // Get all tasks sorted by lastMessageAt (most recent first)
+  let tasks = (state: state): array<Task.t> => {
+    state.tasks
+    ->Dict.valuesToArray
+    ->Array.toSorted((a, b) =>
+      b.lastMessageAt->Option.getOr(0.0) -. a.lastMessageAt->Option.getOr(0.0)
+    )
+  }
+
+  // Get recent tasks (excluding current, max 2)
+  let recentTasks = (state: state): array<Task.t> => {
+    let currentId = state.currentTaskId
+    tasks(state)
+    ->Array.filter(task =>
+      switch currentId {
+      | Some(id) => task.id != id
+      | None => true
+      }
+    )
+    ->Array.slice(~start=0, ~end=2)
+  }
+}
 let handleEffect = (effect, state, dispatch) => {
   switch effect {
   | SendMessageToAPI({message, taskId}) => {
       let headers = WebAPI.Headers.make()
       headers->WebAPI.Headers.set(~name="Content-Type", ~value="application/json")
 
-      let selectedElement = getCurrentTask(state)->Option.flatMap(task => task.selectedElement)
+      let selectedElement =
+        Selectors.currentTask(state)->Option.flatMap(task => task.selectedElement)
 
       let body = JSON.stringifyAny({
         "message": message,
@@ -385,165 +485,224 @@ let next = (state, action) => {
       let textContent = extractTextFromUserContent(content)
       let timestamp = Date.now()
 
-      let (taskId, newTask) = switch state.currentTaskId {
-      | Some(id) => (id, None)
+      // Ensure we have a task, creating one if needed
+      let stateWithTask: state = switch Selectors.currentTask(state) {
+      | Some(_task) => state
       | None => {
-          let newId = WebAPI.Global.crypto->WebAPI.Crypto.randomUUID
-          let title = textContent->String.slice(~start=0, ~end=50) // First 50 chars
-          let previewUrl = getInitialUrl(WebAPI.Global.window)
-          let task = createDefaultTask(~id=newId, ~title, ~timestamp, ~previewUrl)
-          (newId, Some(task))
-        }
-      }
-
-      let stateWithTask = switch newTask {
-      | Some(task) => {
+          let previewUrl = getInitialUrl()
+          let task = Task.make(~title=textContent, ~previewUrl)
           let updatedTasks = state.tasks->Dict.copy
-          updatedTasks->Dict.set(taskId, task)
-          {
-            tasks: updatedTasks,
-            currentTaskId: Some(taskId),
-          }
+          updatedTasks->Dict.set(task.id, task)
+          {tasks: updatedTasks, currentTaskId: Some(task.id)}
         }
-      | None => state
       }
 
-      let finalState = updateCurrentTask(stateWithTask, task => {
+      // Get the task ID - we know it exists now
+      let taskId = stateWithTask.currentTaskId->Option.getOr("")
+
+      stateWithTask
+      ->Lens.updateCurrentTask(task => {
         let updatedMessages = task.messages->Dict.copy
         updatedMessages->Dict.set(Message.getId(message), message)
-        {
-          ...task,
-          messages: updatedMessages,
-          lastMessageAt: timestamp,
-        }
+        {...task, messages: updatedMessages, lastMessageAt: Some(timestamp)}
       })
-
-      AskTheLlmReactStatestore.StateReducer.update(
-        finalState,
+      ->AskTheLlmReactStatestore.StateReducer.update(
         ~sideEffects=[SendMessageToAPI({message: textContent, taskId})],
       )
     }
 
-  | StreamingStarted({id}) => {
-      let message = Message.Assistant(
-        Streaming({
+  | StreamingStarted({taskId, id}) =>
+    state
+    ->Lens.updateTask(taskId, task =>
+      Lens.insertTaskMessage(
+        task,
+        Message.Assistant(
+          Streaming({
+            id,
+            textBuffer: "",
+            createdAt: Date.now(),
+          }),
+        ),
+      )
+    )
+    ->AskTheLlmReactStatestore.StateReducer.update
+
+  | TextDeltaReceived({taskId, id, text}) =>
+    state
+    ->Lens.updateTask(taskId, task =>
+      Lens.updateTaskMessage(task, id, msg =>
+        switch msg {
+        | Message.Assistant(Streaming({id: msgId, textBuffer, createdAt})) =>
+          Message.Assistant(
+            Streaming({
+              id: msgId,
+              textBuffer: textBuffer ++ text,
+              createdAt,
+            }),
+          )
+        | other => other
+        }
+      )
+    )
+    ->AskTheLlmReactStatestore.StateReducer.update
+
+  | ToolCallReceived({taskId, toolCall}) =>
+    state
+    ->Lens.updateTask(taskId, task =>
+      Lens.updateTaskMessage(task, toolCall.id, msg =>
+        switch msg {
+        | Message.ToolCall(existingToolCall) =>
+          Message.ToolCall({
+            ...existingToolCall,
+            input: toolCall.input,
+            state: Message.InputAvailable,
+          })
+        | Assistant(_) => failwith("expected toolcall got assistant message")
+        | User(_) => failwith("expected toolcall got user message")
+        }
+      )
+    )
+    ->AskTheLlmReactStatestore.StateReducer.update
+
+  | ToolInputStartReceived({taskId, id, toolName}) =>
+    state
+    ->Lens.updateTask(taskId, task =>
+      Lens.insertTaskMessage(
+        task,
+        Message.ToolCall({
           id,
-          textBuffer: "",
+          toolName,
+          state: Message.InputStreaming,
+          inputBuffer: "",
+          input: None,
+          result: None,
+          errorText: None,
           createdAt: Date.now(),
         }),
       )
+    )
+    ->AskTheLlmReactStatestore.StateReducer.update
 
-      let newState = updateCurrentTask(state, task => {
-        let newMessages = task.messages->Dict.copy
-        newMessages->Dict.set(id, message)
-        {...task, messages: newMessages}
-      })
-
-      AskTheLlmReactStatestore.StateReducer.update(newState)
-    }
-
-  | TextDeltaReceived({id, text}) =>
-    updateCurrentTaskMessage(state, id, msg =>
-      switch msg {
-      | Message.Assistant(Streaming({id, textBuffer, createdAt})) =>
-        Message.Assistant(Streaming({id, textBuffer: textBuffer ++ text, createdAt}))
-      | other => other
-      }
-    )->AskTheLlmReactStatestore.StateReducer.update
-
-  | ToolCallReceived({toolCall}) =>
-    upsertToolCall(state, ~id=toolCall.id, ~toolName=toolCall.toolName, ~updates=existing => {
-      ...existing,
-      toolName: toolCall.toolName,
-      input: toolCall.input,
-      state: InputAvailable,
-    })->AskTheLlmReactStatestore.StateReducer.update
-
-  | ToolInputStartReceived({id, toolName}) =>
-    upsertToolCall(state, ~id, ~toolName, ~updates=existing => {
-      ...existing,
-      toolName,
-      state: InputStreaming,
-    })->AskTheLlmReactStatestore.StateReducer.update
-
-  // Tool input delta received (streaming parameters)
-  | ToolInputDeltaReceived({id, delta}) =>
-    updateCurrentTaskMessage(state, id, msg =>
-      switch msg {
-      | Message.ToolCall(tool) =>
-        Message.ToolCall({...tool, inputBuffer: tool.inputBuffer ++ delta})
-      | other => other
-      }
-    )->AskTheLlmReactStatestore.StateReducer.update
-
-  // Tool input complete (parse buffered JSON)
-  | ToolInputEndReceived({id}) =>
-    updateCurrentTaskMessage(state, id, msg =>
-      switch msg {
-      | Message.ToolCall(tool) => {
-          let parsedInput = try {
-            Some(JSON.parseOrThrow(tool.inputBuffer))
-          } catch {
-          | _ => None
-          }
-          Message.ToolCall({...tool, input: parsedInput, state: InputAvailable})
+  | ToolInputDeltaReceived({taskId, id, delta}) =>
+    state
+    ->Lens.updateTask(taskId, task =>
+      Lens.updateTaskMessage(task, id, msg =>
+        switch msg {
+        | Message.ToolCall(tool) =>
+          Message.ToolCall({...tool, inputBuffer: tool.inputBuffer ++ delta})
+        | other => other
         }
-      | other => other
-      }
-    )->AskTheLlmReactStatestore.StateReducer.update
+      )
+    )
+    ->AskTheLlmReactStatestore.StateReducer.update
 
-  // Tool execution completed with result
-  | ToolResultReceived({id, result}) =>
-    updateCurrentTaskMessage(state, id, msg =>
-      switch msg {
-      | Message.ToolCall(tool) =>
-        Message.ToolCall({...tool, result: Some(result), state: OutputAvailable})
-      | other => other
-      }
-    )->AskTheLlmReactStatestore.StateReducer.update
+  | ToolInputEndReceived({taskId, id}) =>
+    state
+    ->Lens.updateTask(taskId, task =>
+      Lens.updateTaskMessage(task, id, msg =>
+        switch msg {
+        | Message.ToolCall(tool) => {
+            let parsedInput = try {
+              Some(JSON.parseOrThrow(tool.inputBuffer))
+            } catch {
+            | exn => {
+                let errorMsg =
+                  exn
+                  ->JsExn.fromException
+                  ->Option.flatMap(JsExn.message)
+                  ->Option.getOr("unknown error")
 
-  // Tool execution failed with error
-  | ToolErrorReceived({id, error}) =>
-    updateCurrentTaskMessage(state, id, msg =>
-      switch msg {
-      | Message.ToolCall(tool) =>
-        Message.ToolCall({...tool, errorText: Some(error), state: OutputError})
-      | other => other
-      }
-    )->AskTheLlmReactStatestore.StateReducer.update
-
-  // Transition streaming message to completed
-  | MessageCompleted({id}) =>
-    updateCurrentTaskMessage(state, id, msg =>
-      switch msg {
-      | Message.Assistant(Streaming({id, textBuffer, createdAt})) => {
-          let content = if String.length(textBuffer) > 0 {
-            [AssistantContentPart.Text({text: textBuffer})]
-          } else {
-            []
+                let errorObj = {
+                  "error": `Failed to parse tool input: ${errorMsg}`,
+                  "originalInput": tool.inputBuffer,
+                }
+                JSON.stringifyAny(errorObj)->Option.flatMap(str => Some(JSON.parseOrThrow(str)))
+              }
+            }
+            Message.ToolCall({...tool, input: parsedInput, state: Message.InputAvailable})
           }
-          Message.Assistant(Completed({id, content, createdAt}))
+        | other => other
         }
-      | other => other
-      }
-    )->AskTheLlmReactStatestore.StateReducer.update
+      )
+    )
+    ->AskTheLlmReactStatestore.StateReducer.update
+
+  | ToolResultReceived({taskId, id, result}) =>
+    state
+    ->Lens.updateTask(taskId, task =>
+      Lens.updateTaskMessage(task, id, msg =>
+        switch msg {
+        | Message.ToolCall(tool) =>
+          Message.ToolCall({...tool, result: Some(result), state: Message.OutputAvailable})
+        | other => other
+        }
+      )
+    )
+    ->AskTheLlmReactStatestore.StateReducer.update
+
+  | ToolErrorReceived({taskId, id, error}) =>
+    state
+    ->Lens.updateTask(taskId, task =>
+      Lens.updateTaskMessage(task, id, msg =>
+        switch msg {
+        | Message.ToolCall(tool) =>
+          Message.ToolCall({...tool, errorText: Some(error), state: Message.OutputError})
+        | other => other
+        }
+      )
+    )
+    ->AskTheLlmReactStatestore.StateReducer.update
+
+  | MessageCompleted({taskId, id}) =>
+    state
+    ->Lens.updateTask(taskId, task =>
+      Lens.updateTaskMessage(task, id, msg =>
+        switch msg {
+        | Message.Assistant(Streaming({id, textBuffer, createdAt})) => {
+            let content = if String.length(textBuffer) > 0 {
+              [AssistantContentPart.Text({text: textBuffer})]
+            } else {
+              []
+            }
+            Message.Assistant(Completed({id, content, createdAt}))
+          }
+        | other => other
+        }
+      )
+    )
+    ->AskTheLlmReactStatestore.StateReducer.update
 
   // Set preview URL (clears document and window)
   | SetPreviewUrl({url}) =>
-    updateCurrentTask(state, task => {
-      {...task, previewFrame: {...task.previewFrame, url}}
-    })->AskTheLlmReactStatestore.StateReducer.update
+    state
+    ->Lens.updateCurrentTask(task => {...task, previewFrame: {...task.previewFrame, url}})
+    ->AskTheLlmReactStatestore.StateReducer.update
 
   // Set preview frame (keep existing URL)
   | SetPreviewFrame({contentDocument, contentWindow}) =>
-    updateCurrentTask(state, task => {
+    state
+    ->Lens.updateCurrentTask(task => {
       {...task, previewFrame: {...task.previewFrame, contentDocument, contentWindow}}
-    })->AskTheLlmReactStatestore.StateReducer.update
+    })
+    ->AskTheLlmReactStatestore.StateReducer.update
 
   // Toggle WebPreview selection mode
-  | ToggleWebPreviewSelection =>
-    updateCurrentTask(state, task => {
-      {
+  | ToggleWebPreviewSelection => {
+      // Create task if none exists
+      let stateWithTask = switch state.currentTaskId {
+      | Some(_) => state
+      | None => {
+          let previewUrl = getInitialUrl()
+          let task = Task.make(~title="New Chat", ~previewUrl)
+          let updatedTasks = state.tasks->Dict.copy
+          updatedTasks->Dict.set(task.id, task)
+          {tasks: updatedTasks, currentTaskId: Some(task.id)}
+        }
+      }
+
+      // Now toggle selection on the current task
+      stateWithTask
+      ->Lens.updateCurrentTask(task => {
         ...task,
         webPreviewIsSelecting: !task.webPreviewIsSelecting,
         selectedElement: if !task.webPreviewIsSelecting {
@@ -551,48 +710,48 @@ let next = (state, action) => {
         } else {
           task.selectedElement
         },
-      }
-    })->AskTheLlmReactStatestore.StateReducer.update
+      })
+      ->AskTheLlmReactStatestore.StateReducer.update
+    }
 
   // Set selected element and reset selection mode
   | SetSelectedElement({selectedElement}) => {
-      let shouldFetchDetails = switch selectedElement {
-      | Some({element, selector: None, screenshot: None, sourceLocation: None}) =>
-        getCurrentTask(state)->Option.map(task => FetchElementDetails({
-          element,
-          document: task.previewFrame.contentDocument,
-        }))
-      | _ => None
+      let currentTask = state.currentTaskId->Option.flatMap(id => state.tasks->Dict.get(id))
+      let shouldFetchDetails = switch (selectedElement, currentTask) {
+      | (Some({element, selector: None, screenshot: None, sourceLocation: None}), Some(task)) =>
+        // New element with no details - trigger fetch
+        Some(
+          FetchElementDetails({
+            element,
+            document: task.previewFrame.contentDocument,
+          }),
+        )
+      | _ => None // Element with details or clearing selection - no fetch needed
       }
 
-      AskTheLlmReactStatestore.StateReducer.update(
-        updateCurrentTask(state, task => {
-          {...task, webPreviewIsSelecting: false, selectedElement}
-        }),
+      state
+      ->Lens.updateCurrentTask(task => {...task, webPreviewIsSelecting: false, selectedElement})
+      ->AskTheLlmReactStatestore.StateReducer.update(
         ~sideEffects=shouldFetchDetails->Option.mapOr([], effect => [effect]),
       )
     }
 
   // Create new task
-  | CreateTask({id, title, timestamp}) => {
-      let previewUrl = getInitialUrl(WebAPI.Global.window)
-      let newTask = createDefaultTask(~id, ~title, ~timestamp, ~previewUrl)
-
+  | CreateTask({title}) => {
+      let previewUrl = getInitialUrl()
+      let newTask = Task.make(~title, ~previewUrl)
       let updatedTasks = state.tasks->Dict.copy
-      updatedTasks->Dict.set(id, newTask)
+      updatedTasks->Dict.set(newTask.id, newTask)
 
-      AskTheLlmReactStatestore.StateReducer.update({
+      {
         tasks: updatedTasks,
-        currentTaskId: Some(id),
-      })
+        currentTaskId: Some(newTask.id),
+      }->AskTheLlmReactStatestore.StateReducer.update
     }
 
   // Switch to different task
   | SwitchTask({taskId}) =>
-    AskTheLlmReactStatestore.StateReducer.update({
-      ...state,
-      currentTaskId: Some(taskId),
-    })
+    {...state, currentTaskId: Some(taskId)}->AskTheLlmReactStatestore.StateReducer.update
 
   // Delete task
   | DeleteTask({taskId}) => {
@@ -604,137 +763,26 @@ let next = (state, action) => {
       | Some(currentId) if currentId == taskId =>
         updatedTasks
         ->Dict.valuesToArray
-        ->Array.toSorted((a, b) => b.lastMessageAt -. a.lastMessageAt)
+        ->Array.toSorted((a, b) =>
+          b.lastMessageAt->Option.getOr(0.0) -. a.lastMessageAt->Option.getOr(0.0)
+        )
         ->Array.get(0)
         ->Option.map(task => task.id)
       | other => other
       }
 
-      AskTheLlmReactStatestore.StateReducer.update({
+      {
         tasks: updatedTasks,
         currentTaskId: newCurrentTaskId,
-      })
+      }->AskTheLlmReactStatestore.StateReducer.update
     }
 
   | ClearCurrentTask =>
-    AskTheLlmReactStatestore.StateReducer.update({
-      ...state,
-      currentTaskId: None,
-    })
+    {...state, currentTaskId: None}->AskTheLlmReactStatestore.StateReducer.update
 
   | UpdateTaskTitle({taskId, title}) =>
-    state.tasks
-    ->Dict.get(taskId)
-    ->Option.mapOr((state, []), task => {
-      updateTask(state, task, task => {
-        ...task,
-        title,
-      })->AskTheLlmReactStatestore.StateReducer.update
-    })
-  }
-}
-
-module Selectors = {
-  // Get message ID
-  let getMessageId = Message.getId
-
-  // Get current task
-  let currentTask = (state: state): option<task> => getCurrentTask(state)
-
-  // Helper to extract createdAt from any message type
-  let getMessageCreatedAt = (msg: Message.t): float => {
-    switch msg {
-    | User({createdAt, _}) => createdAt
-    | Assistant(Streaming({createdAt, _})) => createdAt
-    | Assistant(Completed({createdAt, _})) => createdAt
-    | ToolCall({createdAt, _}) => createdAt
-    }
-  }
-
-  // Get current task's messages sorted by creation time
-  let messages = (state: state) => {
-    getCurrentTask(state)->Option.mapOr([], task =>
-      task.messages
-      ->Dict.valuesToArray
-      ->Array.toSorted((a, b) => {
-        let aTime = getMessageCreatedAt(a)
-        let bTime = getMessageCreatedAt(b)
-        aTime -. bTime
-      })
-    )
-  }
-
-  // Get only completed messages from current task
-  let completedMessages = (state: state) =>
-    messages(state)->Array.filter(msg => {
-      switch msg {
-      | User(_) => true
-      | Assistant(Completed(_)) => true
-      | Assistant(Streaming(_)) => false
-      | ToolCall({state: OutputAvailable | OutputError, _}) => true
-      | ToolCall(_) => false
-      }
-    })
-
-  // Get streaming messages from current task
-  let streamingMessages = (state: state) =>
-    messages(state)->Array.filterMap(msg => {
-      switch msg {
-      | Assistant(Streaming(_) as streaming) => Some(streaming)
-      | _ => None
-      }
-    })
-
-  // Check if any message is currently streaming in current task
-  let isStreaming = (state: state) =>
-    messages(state)->Array.some(msg => {
-      switch msg {
-      | Assistant(Streaming(_)) => true
-      | ToolCall({state: InputStreaming | InputAvailable, _}) => true
-      | _ => false
-      }
-    })
-
-  // Get last message from current task
-  let lastMessage = (state: state) => {
-    let msgs = messages(state)
-    msgs->Array.get(Array.length(msgs) - 1)
-  }
-
-  // Extract stable ID for React keys
-
-  // Get current task's preview frame state
-  let previewFrame = (state: state) => {
-    getCurrentTask(state)->Option.mapOr(
-      {url: getInitialUrl(WebAPI.Global.window), contentDocument: None, contentWindow: None},
-      task => task.previewFrame,
-    )
-  }
-
-  // Get current task's webPreview selection mode
-  let webPreviewIsSelecting = (state: state) => {
-    getCurrentTask(state)->Option.mapOr(false, task => task.webPreviewIsSelecting)
-  }
-
-  // Get current task's selected element
-  let selectedElement = (state: state) => {
-    getCurrentTask(state)->Option.flatMap(task => task.selectedElement)
-  }
-
-  // Get current task's preview URL
-  let previewUrl = (state: state) => {
-    getCurrentTask(state)->Option.mapOr(getInitialUrl(WebAPI.Global.window), task =>
-      task.previewFrame.url
-    )
-  }
-
-  // Get current task ID
-  let currentTaskId = (state: state) => state.currentTaskId
-
-  // Get all tasks sorted by lastMessageAt (most recent first)
-  let tasks = (state: state): array<task> => {
-    state.tasks
-    ->Dict.valuesToArray
-    ->Array.toSorted((a, b) => b.lastMessageAt -. a.lastMessageAt)
+    state
+    ->Lens.updateTask(taskId, task => {...task, title})
+    ->AskTheLlmReactStatestore.StateReducer.update
   }
 }

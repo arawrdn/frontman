@@ -11,14 +11,16 @@ let make = () => {
   // Handle SSE events and dispatch to state
   let handleSSEEvent = React.useCallback((event: AgentEventBus.events) => {
     switch event {
-    | StreamEvent(_task, TextStart({id})) => Client__State.Actions.streamingStarted(~id)
-    | StreamEvent(_task, TextDelta({id, text})) =>
-      Client__State.Actions.textDeltaReceived(~id, ~text)
-    | StreamEvent(_task, TextEnd({id})) => Client__State.Actions.messageCompleted(~id)
-    | StreamEvent(_task, ToolCall({toolCallId: id, toolName, input})) =>
+    | StreamEvent(taskId, TextStart({id})) => Client__State.Actions.streamingStarted(~taskId, ~id)
+    | StreamEvent(taskId, TextDelta({id, text})) =>
+      Client__State.Actions.textDeltaReceived(~taskId, ~id, ~text)
+    | StreamEvent(taskId, TextEnd({id})) => Client__State.Actions.messageCompleted(~taskId, ~id)
+
+    | StreamEvent(taskId, ToolCall({toolCallId, toolName, input})) =>
       Client__State.Actions.toolCallReceived(
+        ~taskId,
         ~toolCall={
-          id,
+          id: toolCallId,
           toolName,
           inputBuffer: "",
           input: Some(input),
@@ -41,23 +43,40 @@ let make = () => {
     | StreamEvent(_, Abort(_))
     | StreamEvent(_, Error(_))
     | StreamEvent(_, Raw(_)) => ()
-
-    | TaskEvent(_, MessageAdded({message: Tool(toolMessage)})) =>
+    | StreamEvent(taskId, ToolInputStart(toolInputStart)) =>
+      Client__State.Actions.toolInputStartReceived(
+        ~taskId,
+        ~id=toolInputStart.id,
+        ~toolName=toolInputStart.toolName,
+      )
+    | StreamEvent(taskId, ToolInputDelta(delta)) =>
+      Client__State.Actions.toolInputDeltaReceived(~taskId, ~id=delta.id, ~delta=delta.delta)
+    | StreamEvent(taskId, ToolInputEnd(end)) =>
+      Client__State.Actions.toolInputEndReceived(~taskId, ~id=end.id)
+    | StreamEvent(
+        _,
+        ToolResult(_)
+        | ToolError(_)
+        | ToolOutputDenied(_)
+        | ToolApprovalRequest(_),
+      ) =>
+      failwith("TODO")
+    | TaskEvent(taskId, MessageAdded({message: Tool(toolMessage)})) =>
       toolMessage.content->Array.forEach(toolResult => {
         let id = toolResult.toolCallId
         switch toolResult.output {
         | Text(text) => {
             let result = text->JSON.stringifyAny->Option.getOr("null")->JSON.parseOrThrow
-            Client__State.Actions.toolResultReceived(~id, ~result)
+            Client__State.Actions.toolResultReceived(~taskId, ~id, ~result)
           }
 
-        | JSON(json) => Client__State.Actions.toolResultReceived(~id, ~result=json)
+        | JSON(json) => Client__State.Actions.toolResultReceived(~taskId, ~id, ~result=json)
 
-        | ErrorText(error) => Client__State.Actions.toolErrorReceived(~id, ~error)
+        | ErrorText(error) => Client__State.Actions.toolErrorReceived(~taskId, ~id, ~error)
 
         | ErrorJSON(errorJson) => {
             let error = errorJson->JSON.stringifyAny->Option.getOr("Unknown error")
-            Client__State.Actions.toolErrorReceived(~id, ~error)
+            Client__State.Actions.toolErrorReceived(~taskId, ~id, ~error)
           }
 
         | Content(_contentParts) => {
@@ -65,7 +84,7 @@ let make = () => {
               JSON.stringifyAny("[Content with media - display not implemented]")
               ->Option.getOr("null")
               ->JSON.parseOrThrow
-            Client__State.Actions.toolResultReceived(~id, ~result)
+            Client__State.Actions.toolResultReceived(~taskId, ~id, ~result)
           }
         }
       })
