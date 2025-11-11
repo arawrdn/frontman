@@ -307,11 +307,7 @@ type textStreamPart =
       providerExecuted?: bool,
       dynamic?: bool,
     })
-  | @as("tool-approval-request")
-  ToolApprovalRequest({
-      approvalId: string,
-      toolCall: JSON.t, // TypedToolCall embedded as JSON
-    })
+  | @as("tool-approval-request") ToolApprovalRequest({approvalId: string, toolCall: JSON.t}) // TypedToolCall embedded as JSON
   // Files & Sources
   | @as("source")
   Source({
@@ -369,27 +365,74 @@ type response = {messages: array<modelMessage>}
 // ============================================================================
 // Providers
 // ============================================================================
-
 module Anthropic = {
+  type model = [
+    | #"claude-sonnet-4-5-20250929"
+  ]
+
+  type thinkingConfig = {budgetTokens: int}
+
+  type config = {
+    apiKey?: string,
+    baseURL?: string,
+    headers?: Dict.t<string>,
+    fetch?: (JSON.t, JSON.t) => promise<JSON.t>,
+    disableParallelToolUse?: bool,
+    sendReasoning?: bool,
+    thinking?: thinkingConfig,
+  }
+
   @module("@ai-sdk/anthropic")
-  external anthropic: string => languageModel = "anthropic"
+  external createProvider: config => model => languageModel = "createAnthropic"
 
-  let claude3Sonnet = () => anthropic("claude-3-5-sonnet-20241022")
+  let make = (config: config, model: model): languageModel => {
+    let provider = createProvider(config)
+    provider(model)
+  }
 }
-
 module OpenAI = {
-  type openaiProvider
+  type model = [
+    | #"gpt-4o-mini"
+  ]
 
-  type createOpenAIConfig = {apiKey: string}
+  type config = {
+    apiKey?: string,
+    baseURL?: string,
+    name?: string,
+    organization?: string,
+    project?: string,
+    headers?: Dict.t<string>,
+    fetch?: (JSON.t, JSON.t) => promise<JSON.t>,
+  }
 
   @module("@ai-sdk/openai")
-  external createOpenAI: createOpenAIConfig => openaiProvider = "createOpenAI"
+  external createProvider: config => model => languageModel = "createOpenAI"
 
-  @send
-  external chat: (openaiProvider, string) => languageModel = "chat"
+  let make = (config: config, model: model): languageModel => {
+    let provider = createProvider(config)
+    provider(model)
+  }
+}
 
-  let gpt4o = apiKey => {
-    let provider = createOpenAI({apiKey: apiKey})
-    provider->chat("gpt-4o-mini")
+module Vercel = {
+  type model = [
+    | #"v0-1.5-md"
+    | #"v0-1.5-lg"
+    | #"v0-1.0-md"
+  ]
+
+  type config = {
+    apiKey?: string,
+    baseURL?: string,
+    headers?: Dict.t<string>,
+    fetch?: (JSON.t, JSON.t) => promise<JSON.t>,
+  }
+
+  @module("@ai-sdk/vercel")
+  external createProvider: config => model => languageModel = "createVercel"
+
+  let make = (config: config, model: model): languageModel => {
+    let provider = createProvider(config)
+    provider(model)
   }
 }

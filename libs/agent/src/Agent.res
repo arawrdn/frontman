@@ -37,8 +37,6 @@ type config = Agent__Config.t
 
 let make = async (config: config) => {
   Agent__Logger.Log.info(`Initializing agent for project: ${config.projectRoot}`)
-
-  // Load context files
   let contextResult = await ContextLoader.load({
     cwd: config.projectRoot,
     root: config.projectRoot,
@@ -60,13 +58,16 @@ let make = async (config: config) => {
   }
 
   let eventBus = Agent__EventBus.make()
-
-  // Use provided toolRegistry for testing, or create default registry with all tools
   let toolRegistry = config.toolRegistry->Option.getOr(Agent__ToolsRegistry.make())
 
-  // Use provided model or create default OpenAI model
-  let model = config.model->Option.getOr(Agent__Bindings__Vercel.OpenAI.gpt4o(config.apiKey))
-  let llm = Agent__Adapters__Vercel.makeLLM(~model, ~toolRegistry)
+  let model = Agent__Bindings__Vercel.Anthropic.make(
+    {
+      apiKey: config.apiKey,
+    },
+    #"claude-sonnet-4-5-20250929",
+  )
+
+  let llm = Agent__Adapters__Vercel.makeLLM(~model=config.model->Option.getOr(model), ~toolRegistry)
 
   Agent__Logger.Log.info(`Agent initialized with ${toolRegistry->Array.length->Int.toString} tools`)
 
