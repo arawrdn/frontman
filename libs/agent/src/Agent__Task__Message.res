@@ -41,6 +41,7 @@ module User = {
     selectedElementSourceLocation: option<
       AskTheLlmBindings.DOMElementToComponentSource.sourceLocation,
     >,
+    selectedFigmaNode: option<string>,
   }
 
   let contentAsString = (content: userContent): string => {

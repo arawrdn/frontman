@@ -8,6 +8,7 @@ let make = (~url) => {
   let previewUrl = Client__State.useSelector(Client__State.Selectors.previewUrl)
   let previewFrame = Client__State.useSelector(Client__State.Selectors.previewFrame)
   let webPreviewIsSelecting = Client__State.useSelector(Client__State.Selectors.webPreviewIsSelecting)
+  let figmaNodeWaiting = Client__State.useSelector(Client__State.Selectors.figmaNodeWaiting)
 
 
   let handleBack = () => {
@@ -31,6 +32,16 @@ let make = (~url) => {
     Client__State.Actions.setSelectedElement(~selectedElement=None)
   }
   let handleSelect = () => Client__State.Actions.toggleWebPreviewSelection()
+  let handleFigma = () => {
+    Client__State.Actions.setFigmaNodeWaiting()
+    AskTheLlmBindings.Chrome.Runtime.sendMessageExternal(
+      "kfdpjbmabcelpgoipaccjijhehdmeghp",
+      {"type": "DevServerImportFigmaNodeRequest"},
+      response => {
+        Console.log2("DevServerImportFigmaNodeRequest response:", response)
+      },
+    )
+  }
   let handleOpenInNewTab = () => {
     WebAPI.Window.open_(WebAPI.Global.window, ~url=url, ~target="_blank", ~features="noopener,noreferrer")->ignore
   }
@@ -46,6 +57,14 @@ let make = (~url) => {
         <RadixUI__Icons.ReloadIcon className="size-4" />
       </AIElements.WebPreviewNavigationButton>
       <AIElements.WebPreviewUrl value={previewUrl} />
+      <div className={figmaNodeWaiting ? "rounded bg-purple-500/20" : ""}>
+        <AIElements.WebPreviewNavigationButton 
+          onClick={handleFigma} 
+          tooltip="Import from Figma"
+        >
+          <RadixUI__Icons.FigmaIcon className={figmaNodeWaiting ? "size-4 text-purple-500" : "size-4"} style={{"width": "16px", "height": "16px"}} />
+        </AIElements.WebPreviewNavigationButton>
+      </div>
       <div className={webPreviewIsSelecting ? "rounded bg-blue-500/20" : ""}>
         <AIElements.WebPreviewNavigationButton 
           onClick={handleSelect} 

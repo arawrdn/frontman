@@ -16,7 +16,7 @@ test: build ## Run test suite
 lint: ## Run linters and code formatters
 	eslint .
 
-dev: build ## Start development server with hot reload
+dev: 
 	yarn vite
 
 dev-build-watch: ## Watch and build in development mode

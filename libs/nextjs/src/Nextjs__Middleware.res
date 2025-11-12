@@ -126,12 +126,18 @@ let chat = async (req, config) => {
 
   let agent = await getOrCreateAgent(config)
 
+  // Convert Figma node to JSON string if present
+  let selectedFigmaNode = chat.selectedFigmaNode->Option.map(node => {
+    node->S.reverseConvertToJsonOrThrow(Nextjs__Types.figmaNodeSchema)->JSON.stringify
+  })
+
   agent
   ->Agent.sendMessage(
     Agent.TaskMessage.User({
       taskId: chat.taskId,
       content: String(chat.message),
       selectedElementSourceLocation: resolvedSourceLocation,
+      selectedFigmaNode,
     }),
   )
   ->ignore

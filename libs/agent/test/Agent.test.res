@@ -90,6 +90,7 @@ module TestHelpers = {
         taskId: Agent.TaskId.make(),
         content: String(userMessage),
         selectedElementSourceLocation: None,
+        selectedFigmaNode: None,
       }),
     )
     await waitForContextTask(context)
@@ -112,6 +113,7 @@ module TestHelpers = {
         taskId: Agent.TaskId.make(),
         content: String(userMessage),
         selectedElementSourceLocation: None,
+        selectedFigmaNode: None,
       }),
     )
     await waitForContextTask(context)
@@ -316,6 +318,7 @@ describe("Agent.sendMessage", () => {
             taskId: Agent.TaskId.make(),
             content: String("List files"),
             selectedElementSourceLocation: None,
+            selectedFigmaNode: None,
           }),
         )
         await waitForContextTask(context)
@@ -340,6 +343,7 @@ describe("Agent.sendMessage", () => {
             taskId,
             content: String("Can you explain the results?"),
             selectedElementSourceLocation: None,
+            selectedFigmaNode: None,
           }),
         )
 
@@ -411,6 +415,7 @@ describe("Agent.sendMessage", () => {
             taskId: Agent.TaskId.make(),
             content: String("List files"),
             selectedElementSourceLocation: None,
+            selectedFigmaNode: None,
           }),
         )
         await waitForContextTask(context)
@@ -431,6 +436,7 @@ describe("Agent.sendMessage", () => {
             taskId,
             content: String("Follow-up 1"),
             selectedElementSourceLocation: None,
+            selectedFigmaNode: None,
           }),
         )
         await waitForContextTask(context)
@@ -440,6 +446,7 @@ describe("Agent.sendMessage", () => {
             taskId,
             content: String("Follow-up 2"),
             selectedElementSourceLocation: None,
+            selectedFigmaNode: None,
           }),
         )
         await waitForContextTask(context)
@@ -449,6 +456,7 @@ describe("Agent.sendMessage", () => {
             taskId,
             content: String("Follow-up 3"),
             selectedElementSourceLocation: None,
+            selectedFigmaNode: None,
           }),
         )
         await waitForContextTask(context)

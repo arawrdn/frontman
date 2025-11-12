@@ -28,6 +28,9 @@ dev-client: ## Start development server for client app
 dev-nextjs: ## Start development server for Next.js test site
 	cd test/sites/blog-starter && $(MAKE) dev
 
+dev-extension: ## Start development server for Chrome extension
+	cd apps/chrome-extension && $(MAKE) dev
+
 pull-webapi: ## Pull latest changes from experimental-rescript-webapi subtree
 	git subtree pull --prefix libs/experimental-rescript-webapi git@github.com:itayadler/experimental-rescript-webapi.git main --squash
 

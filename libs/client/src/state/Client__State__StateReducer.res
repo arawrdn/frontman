@@ -11,6 +11,7 @@ module AssistantContentPart = Client__State__Types.AssistantContentPart
 module Nextjs__Types = AskTheLlmNextjs.Nextjs__Types
 module Message = Client__State__Types.Message
 module SelectedElement = Client__State__Types.SelectedElement
+module FigmaNode = Client__State__Types.FigmaNode
 module Task = Client__State__Types.Task
 type state = Client__State__Types.state
 
@@ -95,6 +96,11 @@ type action =
   | DeleteTask({taskId: string})
   | ClearCurrentTask // Used when clicking "+" to start a new task - clears selection so next message creates new task
   | UpdateTaskTitle({taskId: string, title: string})
+  // Figma node actions
+  | SetFigmaNode({figmaNode: FigmaNode.t})
+  | ClearFigmaNode
+  | SetFigmaNodeWaiting
+  | ClearFigmaNodeWaiting
 
 // Effects for side effects
 type effect =
@@ -141,6 +147,10 @@ let actionToString = action => {
   | DeleteTask({taskId}) => `DeleteTask(${taskId})`
   | ClearCurrentTask => `ClearCurrentTask`
   | UpdateTaskTitle({taskId, title}) => `UpdateTaskTitle(${taskId}, "${title}")`
+  | SetFigmaNode(_) => `SetFigmaNode`
+  | ClearFigmaNode => `ClearFigmaNode`
+  | SetFigmaNodeWaiting => `SetFigmaNodeWaiting`
+  | ClearFigmaNodeWaiting => `ClearFigmaNodeWaiting`
   }
 }
 
@@ -252,6 +262,16 @@ module Selectors = {
     )
     ->Array.slice(~start=0, ~end=2)
   }
+
+  // Get current task's figma node
+  let figmaNode = (state: state): option<FigmaNode.t> => {
+    currentTask(state)->Option.flatMap(task => task.figmaNode)
+  }
+
+  // Get current task's figma node waiting state
+  let figmaNodeWaiting = (state: state): bool => {
+    currentTask(state)->Option.mapOr(false, task => task.figmaNodeWaiting)
+  }
 }
 let handleEffect = (effect, state: state, dispatch) => {
   switch effect {
@@ -264,19 +284,13 @@ let handleEffect = (effect, state: state, dispatch) => {
       let selectedElement =
         Selectors.currentTask(state)->Option.flatMap(task => task.selectedElement)
 
+      let selectedFigmaNode = Selectors.figmaNode(state)
+
       let payload: AskTheLlmNextjs.Nextjs__Types.chat = {
         message,
         taskId,
-        selectedElement: selectedElement->Option.map(sel => {
-          let result: Nextjs__Types.selectedElement = {
-            selector: sel.selector,
-            screenshot: sel.screenshot,
-            sourceLocation: sel.sourceLocation->Option.map(
-              Client__Types.SourceLocation.toNextJsType,
-            ),
-          }
-          result
-        }),
+        selectedElement: SelectedElement.withoutElement(selectedElement),
+        selectedFigmaNode: selectedFigmaNode->Option.map(node => (node :> Nextjs__Types.figmaNode)),
       }
 
       let body =
@@ -738,6 +752,26 @@ let next = (state, action) => {
   | UpdateTaskTitle({taskId, title}) =>
     state
     ->Lens.updateTask(taskId, task => {...task, title})
+    ->AskTheLlmReactStatestore.StateReducer.update
+
+  | SetFigmaNode({figmaNode}) =>
+    state
+    ->Lens.updateCurrentTask(task => {...task, figmaNode: Some(figmaNode), figmaNodeWaiting: false})
+    ->AskTheLlmReactStatestore.StateReducer.update
+
+  | ClearFigmaNode =>
+    state
+    ->Lens.updateCurrentTask(task => {...task, figmaNode: None, figmaNodeWaiting: false})
+    ->AskTheLlmReactStatestore.StateReducer.update
+
+  | SetFigmaNodeWaiting =>
+    state
+    ->Lens.updateCurrentTask(task => {...task, figmaNodeWaiting: true})
+    ->AskTheLlmReactStatestore.StateReducer.update
+
+  | ClearFigmaNodeWaiting =>
+    state
+    ->Lens.updateCurrentTask(task => {...task, figmaNodeWaiting: false})
     ->AskTheLlmReactStatestore.StateReducer.update
   }
 }

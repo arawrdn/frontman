@@ -28,6 +28,11 @@ module Promises = {
   @module("fs") @scope("promises")
   external accessWithMode: (string, int) => promise<unit> = "access"
 
+  // Create directory with options
+  type mkdirOptions = {recursive: bool}
+  @module("fs") @scope("promises")
+  external mkdir: (string, mkdirOptions) => promise<option<string>> = "mkdir"
+
   // Access mode constants (from fs.promises.constants)
   module Constants = {
     @module("fs") @scope(("promises", "constants")) external f_OK: int = "F_OK"

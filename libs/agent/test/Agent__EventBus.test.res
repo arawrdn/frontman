@@ -22,6 +22,7 @@ describe("EventBus emission", () => {
       taskId: Agent.TaskId.make(),
       content: String("test message"),
       selectedElementSourceLocation: None,
+      selectedFigmaNode: None,
     })
     agent->Agent.sendMessage(message)->ignore
 
@@ -60,6 +61,7 @@ describe("EventBus emission", () => {
       taskId: Agent.TaskId.make(),
       content: String("test message"),
       selectedElementSourceLocation: None,
+      selectedFigmaNode: None,
     })
     agent->Agent.sendMessage(message)->ignore
 
@@ -93,6 +95,7 @@ describe("EventBus serialization", () => {
       taskId: "0c938b43-b1ca-4636-b6c7-bc4116e2231e",
       content: String("test"),
       selectedElementSourceLocation: None,
+      selectedFigmaNode: None,
     })
 
     // Create the task

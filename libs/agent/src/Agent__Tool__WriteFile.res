@@ -31,8 +31,11 @@ let execute = async (ctx: Agent__ToolExecutionContext.t, input: input): Agent__T
   output,
 > => {
   let fullPath = Bindings.Path.join([ctx.projectRoot, input.relativePath])
+  let dirPath = Bindings.Path.dirname(fullPath)
 
   try {
+    // Create directory if it doesn't exist (recursive: true will create parent directories)
+    let _ = await Bindings.Fs.Promises.mkdir(dirPath, {recursive: true})
     await Bindings.Fs.Promises.writeFile(fullPath, input.content)
     Ok(nullValue)
   } catch {

@@ -1,9 +1,9 @@
 {
-	"name": "@ask-the-llm/client",
+	"name": "@ask-the-llm/chrome-extension",
 	"namespace": true,
 	"sources": [
 		{
-			"dir": "src",
+			"dir": "entrypoints",
 			"subdirs": true
 		},
 		{
@@ -19,14 +19,10 @@
 			"suffix": ".res.mjs"
 		}
 	],
-	"ppx-flags": ["sury-ppx/bin"],
 	"dependencies": [
 		"@ask-the-llm/bindings",
 		"@rescript/react",
 		"@rescript/webapi",
-		"@ask-the-llm/agent",
-		"@ask-the-llm/react-statestore",
-		"@ask-the-llm/nextjs",
 		"sury"
 	],
 	"dev-dependencies": ["rescript-vitest"],

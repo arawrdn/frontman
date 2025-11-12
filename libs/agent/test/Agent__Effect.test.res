@@ -46,6 +46,7 @@ describe("extractToolCalls", () => {
       taskId,
       content: String("Hello"),
       selectedElementSourceLocation: None,
+      selectedFigmaNode: None,
     })
 
     let result = Agent__Task__Message.extractToolCalls(message)

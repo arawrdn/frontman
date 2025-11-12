@@ -87,4 +87,13 @@ module Actions = {
 
   let updateTaskTitle = (~taskId, ~title) =>
     Client__State__Store.dispatch(UpdateTaskTitle({taskId, title}))
+
+  // Figma node action creators
+  let setFigmaNode = (~figmaNode) => Client__State__Store.dispatch(SetFigmaNode({figmaNode: figmaNode}))
+
+  let clearFigmaNode = () => Client__State__Store.dispatch(ClearFigmaNode)
+
+  let setFigmaNodeWaiting = () => Client__State__Store.dispatch(SetFigmaNodeWaiting)
+
+  let clearFigmaNodeWaiting = () => Client__State__Store.dispatch(ClearFigmaNodeWaiting)
 }

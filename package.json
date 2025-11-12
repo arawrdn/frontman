@@ -3,6 +3,7 @@
 	"packageManager": "yarn@4.10.3",
 	"enableGlobalCache": false,
 	"workspaces": [
+		"apps/chrome-extension",
 		"libs/agent",
 		"libs/nextjs",
 		"libs/bindings",

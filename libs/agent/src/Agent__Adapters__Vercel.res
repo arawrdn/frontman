@@ -95,11 +95,13 @@ let messageToVercel = (msg: Message.t): Bindings.modelMessage => {
       content: systemMsg.content,
     })
 
-  | User({content: Message.User.String(text), selectedElementSourceLocation}) =>
+  | User({content: Message.User.String(text), selectedElementSourceLocation, selectedFigmaNode}) =>
     Bindings.UserMessage({
       content: Bindings.String(
         `${text} ${selectedElementSourceLocation->Option.mapOr("", loc =>
             `[React Component details the user selected together with his request: <${loc.componentName} /> in ${loc.file} on line ${loc.line->Int.toString} and column ${loc.column->Int.toString}]`
+          )} ${selectedFigmaNode->Option.mapOr("", node =>
+            `[Figma Node details the user selected together with his request, use flexbox instead of absolute positioning when appropriate, when building a component out of it break it down to components in the same file instead of one giant component: ${node}]`
           )}`,
       ),
     })
@@ -176,6 +178,7 @@ let messageFromVercel = (msg: Bindings.modelMessage, taskId: Agent__Task__Id.t):
         taskId,
         content: String(text),
         selectedElementSourceLocation: None,
+        selectedFigmaNode: None,
       }),
     )
 
@@ -186,6 +189,7 @@ let messageFromVercel = (msg: Bindings.modelMessage, taskId: Agent__Task__Id.t):
           taskId,
           content: List(domainParts),
           selectedElementSourceLocation: None,
+          selectedFigmaNode: None,
         }),
       )
     }

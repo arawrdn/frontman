@@ -1,6 +1,7 @@
 // State type definitions - extracted to avoid circular dependencies
 module Agent = AskTheLlmAgent.Agent
 module Vercel = AskTheLlmAgent.Agent__Bindings__Vercel
+module Nextjs__Types = AskTheLlmNextjs.Nextjs__Types
 module UserContentPart = Vercel.UserPart
 module AssistantContentPart = Vercel.AssistantPart
 
@@ -62,6 +63,34 @@ module SelectedElement = {
       sourceLocation,
     }
   }
+
+  // Helper to convert to API-safe format (without DOM element reference)
+  let withoutElement = (selected: option<t>): option<Nextjs__Types.selectedElement> => {
+    selected->Option.map(sel => {
+      let result: Nextjs__Types.selectedElement = {
+        selector: sel.selector,
+        screenshot: sel.screenshot,
+        sourceLocation: sel.sourceLocation->Option.map(Client__Types.SourceLocation.toNextJsType),
+      }
+      result
+    })
+  }
+}
+
+module FigmaNode = {
+  type rec t = {
+    id: string,
+    name: string,
+    @as("type") type_: string,
+    css: option<Dict.t<string>>,
+    width: option<float>,
+    height: option<float>,
+    x: option<float>,
+    y: option<float>,
+    visible: option<bool>,
+    locked: option<bool>,
+    children: option<array<t>>,
+  }
 }
 
 module Task = {
@@ -81,6 +110,8 @@ module Task = {
     previewFrame: previewFrame,
     webPreviewIsSelecting: bool,
     selectedElement: option<SelectedElement.t>,
+    figmaNode: option<FigmaNode.t>,
+    figmaNodeWaiting: bool,
   }
 
   let make = (~title: string, ~previewUrl: string, ~messages=Dict.make()): t => {
@@ -104,6 +135,8 @@ module Task = {
       lastMessageAt: None,
       webPreviewIsSelecting: false,
       selectedElement: None,
+      figmaNode: None,
+      figmaNodeWaiting: false,
     }
   }
 }

@@ -15,6 +15,7 @@ describe("MockLanguageModelV2", () => {
       taskId,
       content: String("Test prompt"),
       selectedElementSourceLocation: None,
+      selectedFigmaNode: None,
     })
     let task = Agent__Task.make(taskId, initialMessage, None)
 
@@ -34,6 +35,7 @@ describe("MockLanguageModelV2", () => {
       taskId,
       content: String("Test prompt"),
       selectedElementSourceLocation: None,
+      selectedFigmaNode: None,
     })
     let task = Agent__Task.make(taskId, initialMessage, None)
 
@@ -56,6 +58,7 @@ describe("MockLanguageModelV2", () => {
       taskId,
       content: String("Test prompt"),
       selectedElementSourceLocation: None,
+      selectedFigmaNode: None,
     })
     let task = Agent__Task.make(taskId, initialMessage, None)
 
@@ -98,6 +101,7 @@ describe("simulateReadableStream with delays", () => {
       taskId,
       content: String("Test"),
       selectedElementSourceLocation: None,
+      selectedFigmaNode: None,
     })
     let task = Agent__Task.make(taskId, initialMessage, None)
 
