@@ -231,6 +231,7 @@ __metadata:
   dependencies:
     "@ai-sdk/react": "npm:^2.0.92"
     "@ask-the-llm/agent": "npm:*"
+    "@ask-the-llm/nextjs": "npm:*"
     "@ask-the-llm/react-statestore": "npm:*"
     "@biomejs/biome": "npm:^2.3.5"
     "@medv/finder": "npm:^4.0.2"
@@ -329,6 +330,7 @@ __metadata:
     rescript: "catalog:"
     rescript-vitest: "catalog:"
     sury: "catalog:"
+    sury-ppx: "npm:^11.0.0-alpha.2"
     vite: "catalog:"
     vitest: "catalog:"
   languageName: unknown
