@@ -100,27 +100,12 @@ let make = () => {
   // Connect SSE
   Client__Hooks.useSSE(handleSSEEvent)
 
-  let entrypointUrl =
-    WebAPI.Global.document
-    ->WebAPI.Document.querySelector("#ask-the-llm-entrypoint-url")
-    ->Null.toOption
-    ->Option.map(element => {
-      element->WebAPI.Element.asNode->WebAPI.Node.textContent->Null.toOption->Option.getOr("")
-    })
-  let currentUrl =
-    WebAPI.Global.window->WebAPI.Window.location->WebAPI.Location.href->WebAPI.URL.make(~url=_)
-
-  let originUrl = switch entrypointUrl {
-  | Some(entrypointUrl) => entrypointUrl
-  | None => `${currentUrl.protocol}//${currentUrl.host}`
-  }
-
   <div className="flex h-screen w-screen bg-background text-foreground">
     <div className="h-full w-96 border-r flex flex-col p-2 overflow-hidden">
       <Client__Chatbox />
     </div>
     <div className="grow h-full p-1">
-      <Client__WebPreview url={originUrl} />
+      <Client__WebPreview />
     </div>
   </div>
 }

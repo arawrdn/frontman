@@ -1,6 +1,6 @@
 {
 	"name": "@ask-the-llm/vite-plugin",
-	"version": "0.1.7",
+	"version": "0.1.13",
 	"description": "Vite plugin to install ask-the-llm agent on the vite server",
 	"license": "MIT",
 	"author": "",
@@ -22,6 +22,9 @@
 	"scripts": {
 		"build": "vite build",
 		"prepublishOnly": "yarn build"
+	},
+	"dependencies": {
+		"next": "^16.0.3"
 	},
 	"devDependencies": {
 		"@ask-the-llm/nextjs": "*",

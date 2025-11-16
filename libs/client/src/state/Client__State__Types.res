@@ -78,7 +78,7 @@ module SelectedElement = {
 }
 
 module FigmaNode = {
-  type rec t = {
+  type rec nodeData = {
     id: string,
     name: string,
     @as("type") type_: string,
@@ -89,8 +89,13 @@ module FigmaNode = {
     y: option<float>,
     visible: option<bool>,
     locked: option<bool>,
-    children: option<array<t>>,
+    children: option<array<nodeData>>,
   }
+
+  type t =
+    | NoSelection
+    | WaitingForSelection
+    | SelectedNode(nodeData)
 }
 
 module Task = {
@@ -110,8 +115,7 @@ module Task = {
     previewFrame: previewFrame,
     webPreviewIsSelecting: bool,
     selectedElement: option<SelectedElement.t>,
-    figmaNode: option<FigmaNode.t>,
-    figmaNodeWaiting: bool,
+    figmaNode: FigmaNode.t,
   }
 
   let make = (~title: string, ~previewUrl: string, ~messages=Dict.make()): t => {
@@ -135,8 +139,7 @@ module Task = {
       lastMessageAt: None,
       webPreviewIsSelecting: false,
       selectedElement: None,
-      figmaNode: None,
-      figmaNodeWaiting: false,
+      figmaNode: FigmaNode.NoSelection,
     }
   }
 }

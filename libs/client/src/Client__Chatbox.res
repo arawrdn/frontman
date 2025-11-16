@@ -27,7 +27,6 @@ let toolStateToString = (state: Client__State__StateReducer.Message.toolCallStat
 let make = () => {
   let (input, setInput) = React.useState(() => "")
   let (model, setModel) = React.useState(() => Array.getUnsafe(models, 0).value)
-  let (webSearch, setWebSearch) = React.useState(() => false)
 
   // Get messages from our state store
   let messages = Client__State.useSelector(Client__State.Selectors.messages)
@@ -216,12 +215,6 @@ let make = () => {
               <AIElements.PromptInputActionAddAttachments />
             </AIElements.PromptInputActionMenuContent>
           </AIElements.PromptInputActionMenu>
-          <AIElements.PromptInputButton
-            variant={webSearch ? "default" : "ghost"} onClick={() => setWebSearch(prev => !prev)}
-          >
-            <Icons.GlobeIcon style={{"width": "16px", "height": "16px"}} />
-            <span> {React.string("Search")} </span>
-          </AIElements.PromptInputButton>
           <AIElements.PromptInputModelSelect
             onValueChange={value => setModel(_ => value)} value={model}
           >

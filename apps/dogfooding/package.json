@@ -19,8 +19,10 @@
 		"dist"
 	],
 	"dependencies": {
-		"@ask-the-llm/client": "0.1.4",
-		"@ask-the-llm/vite-plugin": "0.1.7"
+		"@ask-the-llm/client": "0.1.6",
+		"@ask-the-llm/vite-plugin": "0.1.13",
+		"react": "^19.2.0",
+		"react-dom": "^19.2.0"
 	},
 	"devDependencies": {
 		"vite": "^7.1.12"

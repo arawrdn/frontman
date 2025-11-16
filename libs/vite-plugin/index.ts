@@ -1,49 +1,62 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Plugin } from "vite";
-import {
-	createUIHandler,
-	createChatHandler,
-	createStreamHandler,
-	createToolResultsHandler,
-} from "@ask-the-llm/nextjs/src/Nextjs__ApiRoute.res.mjs";
+import { createMiddleware } from "@ask-the-llm/nextjs/src/Vite__Middleware.res.mjs";
+import { make as makeConfig } from "@ask-the-llm/nextjs/src/Nextjs__Config.res.mjs";
 
 /**
- * Helper to adapt Next.js API handlers to Vite middleware
+ * Helper to adapt middleware (Web API Request/Response) to Vite middleware (Node.js IncomingMessage/ServerResponse)
+ * The middleware returns option<Response> - None means pass through, Some(response) means handle it
  */
-const adaptNextJsHandler = (handler: any) => {
-	return async (req: IncomingMessage, res: ServerResponse) => {
-		// Add status method to response for Next.js compatibility
-		// @ts-ignore
-		res.status = (status: number) => {
-			res.statusCode = status;
-			return res;
-		};
-
+const adaptMiddlewareToVite = (middleware: any) => {
+	return async (req: IncomingMessage, res: ServerResponse, next: () => void) => {
 		// Parse request body
-		const body = await new Promise((resolve) => {
-			let bodyStr = "";
-			req.on("data", (chunk: Buffer) => {
-				bodyStr += chunk.toString();
-			});
-			req.on("end", () => {
-				try {
-					resolve(bodyStr ? JSON.parse(bodyStr) : {});
-				} catch {
-					resolve({});
-				}
-			});
+		const bodyChunks: Buffer[] = [];
+		for await (const chunk of req) {
+			bodyChunks.push(chunk);
+		}
+		const bodyBuffer = Buffer.concat(bodyChunks);
+		
+		// Create Web API Request from Node.js IncomingMessage
+		const url = `http://${req.headers.host || "localhost"}${req.url || ""}`;
+		const webRequest = new Request(url, {
+			method: req.method || "GET",
+			headers: req.headers as Record<string, string>,
+			body: bodyBuffer.length > 0 ? bodyBuffer : undefined,
 		});
 
-		// Adapt the request to match Next.js API format by adding properties
-		// We don't spread to preserve the IncomingMessage prototype methods
-		// @ts-ignore
-		req.query = Object.fromEntries(
-			new URL(req.url || "", `http://${req.headers.host}`).searchParams,
-		);
-		// @ts-ignore
-		req.body = body;
+		// Call the middleware with Web API Request
+		const webResponseOption = await middleware(webRequest);
 
-		await handler(req, res);
+		// If middleware returns None, pass through to next middleware
+		if (webResponseOption === null || webResponseOption === undefined) {
+			next();
+			return;
+		}
+
+		// Convert Web API Response to Node.js ServerResponse
+		const webResponse = webResponseOption;
+		res.statusCode = webResponse.status;
+		
+		// Set headers
+		webResponse.headers.forEach((value: string, key: string) => {
+			res.setHeader(key, value);
+		});
+
+		// Handle streaming response (for SSE)
+		if (webResponse.body) {
+			const reader = webResponse.body.getReader();
+			try {
+				while (true) {
+					const { done, value } = await reader.read();
+					if (done) break;
+					res.write(value);
+				}
+			} finally {
+				reader.releaseLock();
+			}
+		}
+
+		res.end();
 	};
 };
 
@@ -54,47 +67,55 @@ export interface AskTheLlmPluginOptions {
 	 */
 	isDev?: boolean;
 	/**
-	 * Whether to use light theme
-	 * @default true
+	 * Base path for the middleware routes
+	 * @default "ask-the-llm"
 	 */
-	isLightTheme?: boolean;
+	basePath?: string;
 	/**
-	 * Entrypoint URL for the API
-	 * @default "http://localhost:3000/api/ask-the-llm"
+	 * URL to the client JavaScript bundle
+	 * @default "http://localhost:5173/src/Main.res.mjs" (dev) or "https://ask-the-llm.vercel.app/ask-the-llm.es.js" (prod)
+	 */
+	clientUrl?: string;
+	/**
+	 * URL to the client CSS stylesheet (optional)
+	 */
+	clientCssUrl?: string;
+	/**
+	 * Entrypoint URL for the API (optional)
+	 * Will be injected as a template script tag with id "ask-the-llm-entrypoint-url"
 	 */
 	entrypointUrl?: string;
 	/**
-	 * Client URL for the API
-	 * @default "http://localhost:5173/src/Main.js"
+	 * Whether to use light theme instead of dark theme
+	 * @default false (dark theme)
 	 */
-	clientUrl?: string;
+	isLightTheme?: boolean;
 }
 
 /**
- * Vite plugin for integrating Ask-the-LLM API routes
+ * Vite plugin for integrating Ask-the-LLM middleware
  */
 export const askTheLlmPlugin = (
 	options: AskTheLlmPluginOptions = {},
 ): Plugin => {
 	const {
 		isDev = process.env.NODE_ENV !== "production",
-		isLightTheme = true,
-		entrypointUrl = "http://localhost:3000/api/ask-the-llm",
-		clientUrl = "http://localhost:5173/src/Main.js",
+		basePath = "ask-the-llm",
+		clientUrl,
+		clientCssUrl,
+		entrypointUrl,
+		isLightTheme,
 	} = options;
 
-	let uiHandler: any;
-	let chatHandler: any;
-	let streamHandler: any;
-	let toolResultsHandler: any;
+	let middleware: any;
 
 	return {
-		name: "ask-the-llm-api-routes",
+		name: "ask-the-llm-middleware",
 		configureServer(server) {
-			uiHandler = createUIHandler({ isDev, isLightTheme, entrypointUrl, clientUrl });
-			chatHandler = createChatHandler();
-			streamHandler = createStreamHandler();
-			toolResultsHandler = createToolResultsHandler();
+			// Create the config and middleware
+			const config = makeConfig(isDev, basePath, clientUrl, clientCssUrl, entrypointUrl, isLightTheme);
+			middleware = createMiddleware(config);
+			const adaptedMiddleware = adaptMiddlewareToVite(middleware);
 
 			server.middlewares.use(
 				async (
@@ -102,46 +123,11 @@ export const askTheLlmPlugin = (
 					res: ServerResponse,
 					next: () => void,
 				) => {
-					const url = req.url || "";
-
 					try {
-						// Handle /api/ask-the-llm (exact match) - UI handler
-						if (
-							url === "/api/ask-the-llm" ||
-							url.startsWith("/api/ask-the-llm?")
-						) {
-							await adaptNextJsHandler(uiHandler)(req, res);
-							return;
-						}
-
-						// Handle /api/ask-the-llm/chat - Chat handler
-						if (
-							url === "/api/ask-the-llm/chat" ||
-							url.startsWith("/api/ask-the-llm/chat?")
-						) {
-							await adaptNextJsHandler(chatHandler)(req, res);
-							return;
-						}
-
-						// Handle /api/ask-the-llm/chat-sse - SSE stream handler
-						if (
-							url === "/api/ask-the-llm/chat-sse" ||
-							url.startsWith("/api/ask-the-llm/chat-sse?")
-						) {
-							await adaptNextJsHandler(streamHandler)(req, res);
-							return;
-						}
-
-						// Handle /api/ask-the-llm/tool-results - Tool results handler
-						if (url === "/api/ask-the-llm/tool-results") {
-							await adaptNextJsHandler(toolResultsHandler)(req, res);
-							return;
-						}
-
-						// Not an API route, continue to next middleware
-						next();
+						// The adapted middleware handles pass-through internally
+						await adaptedMiddleware(req, res, next);
 					} catch (error) {
-						console.error("API route error:", error);
+						console.error("Middleware error:", error);
 						res.statusCode = 500;
 						res.end("Internal Server Error");
 					}

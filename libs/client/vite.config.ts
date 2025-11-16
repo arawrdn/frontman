@@ -18,6 +18,9 @@ export default vite.defineConfig({
 		},
 		rollupOptions: {
 			external: [
+				"react",
+				"react-dom",
+				"react/jsx-runtime",
 				/^node:.*/,
 			],
 			output: {

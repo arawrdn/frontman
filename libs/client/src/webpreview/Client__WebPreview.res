@@ -1,14 +1,15 @@
 module AIElements = Bindings__AIElements
 module RadixUI__Icons = Bindings__RadixUI__Icons
+module FigmaNode = Client__State__Types.FigmaNode
 
 @react.component
-let make = (~url) => {
+let make = () => {
   let currentTaskId = Client__State.useSelector(Client__State.Selectors.currentTaskId)
   let allTasks = Client__State.useSelector(Client__State.Selectors.tasks)
   let previewUrl = Client__State.useSelector(Client__State.Selectors.previewUrl)
   let previewFrame = Client__State.useSelector(Client__State.Selectors.previewFrame)
   let webPreviewIsSelecting = Client__State.useSelector(Client__State.Selectors.webPreviewIsSelecting)
-  let figmaNodeWaiting = Client__State.useSelector(Client__State.Selectors.figmaNodeWaiting)
+  let figmaNode = Client__State.useSelector(Client__State.Selectors.figmaNode)
 
 
   let handleBack = () => {
@@ -43,9 +44,9 @@ let make = (~url) => {
     )
   }
   let handleOpenInNewTab = () => {
-    WebAPI.Window.open_(WebAPI.Global.window, ~url=url, ~target="_blank", ~features="noopener,noreferrer")->ignore
+    WebAPI.Window.open_(WebAPI.Global.window, ~url=previewUrl, ~target="_blank", ~features="noopener,noreferrer")->ignore
   }
-  <AIElements.WebPreview defaultUrl={url}>
+  <AIElements.WebPreview defaultUrl={previewUrl}>
     <AIElements.WebPreviewNavigation>
       <AIElements.WebPreviewNavigationButton onClick={handleBack} tooltip="Go back">
         <RadixUI__Icons.ArrowLeftIcon className="size-4" />
@@ -57,12 +58,18 @@ let make = (~url) => {
         <RadixUI__Icons.ReloadIcon className="size-4" />
       </AIElements.WebPreviewNavigationButton>
       <AIElements.WebPreviewUrl value={previewUrl} />
-      <div className={figmaNodeWaiting ? "rounded bg-purple-500/20" : ""}>
+      <div className={switch figmaNode {
+      | FigmaNode.WaitingForSelection => "rounded bg-purple-500/20"
+      | _ => ""
+      }}>
         <AIElements.WebPreviewNavigationButton 
           onClick={handleFigma} 
           tooltip="Import from Figma"
         >
-          <RadixUI__Icons.FigmaIcon className={figmaNodeWaiting ? "size-4 text-purple-500" : "size-4"} style={{"width": "16px", "height": "16px"}} />
+          <RadixUI__Icons.FigmaIcon className={switch figmaNode {
+          | FigmaNode.WaitingForSelection => "size-4 text-purple-500"
+          | _ => "size-4"
+          }} style={{"width": "16px", "height": "16px"}} />
         </AIElements.WebPreviewNavigationButton>
       </div>
       <div className={webPreviewIsSelecting ? "rounded bg-blue-500/20" : ""}>

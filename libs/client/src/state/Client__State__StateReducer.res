@@ -97,7 +97,7 @@ type action =
   | ClearCurrentTask // Used when clicking "+" to start a new task - clears selection so next message creates new task
   | UpdateTaskTitle({taskId: string, title: string})
   // Figma node actions
-  | SetFigmaNode({figmaNode: FigmaNode.t})
+  | SetFigmaNode({figmaNode: FigmaNode.nodeData})
   | ClearFigmaNode
   | SetFigmaNodeWaiting
   | ClearFigmaNodeWaiting
@@ -109,7 +109,21 @@ type effect =
   | ExecuteClientTool({toolCallId: string, toolName: string, args: option<JSON.t>})
 
 let getInitialUrl = () => {
-  "http://localhost:3000" // Default for test environment
+  let entrypointUrl =
+    WebAPI.Global.document
+    ->WebAPI.Document.querySelector("#ask-the-llm-entrypoint-url")
+    ->Null.toOption
+    ->Option.map(element => {
+      element->WebAPI.Element.asNode->WebAPI.Node.textContent->Null.toOption->Option.getOr("")
+    })
+  let currentUrl =
+    WebAPI.Global.window->WebAPI.Window.location->WebAPI.Location.href->WebAPI.URL.make(~url=_)
+
+  let originUrl = switch entrypointUrl {
+  | Some(entrypointUrl) => entrypointUrl
+  | None => `${currentUrl.protocol}//${currentUrl.host}`
+  }
+  originUrl
 }
 
 // Normalize URL by removing trailing slash for comparison
@@ -263,14 +277,9 @@ module Selectors = {
     ->Array.slice(~start=0, ~end=2)
   }
 
-  // Get current task's figma node
-  let figmaNode = (state: state): option<FigmaNode.t> => {
-    currentTask(state)->Option.flatMap(task => task.figmaNode)
-  }
-
-  // Get current task's figma node waiting state
-  let figmaNodeWaiting = (state: state): bool => {
-    currentTask(state)->Option.mapOr(false, task => task.figmaNodeWaiting)
+  // Get current task's figma node state
+  let figmaNode = (state: state): FigmaNode.t => {
+    currentTask(state)->Option.mapOr(FigmaNode.NoSelection, task => task.figmaNode)
   }
 }
 let handleEffect = (effect, state: state, dispatch) => {
@@ -290,7 +299,10 @@ let handleEffect = (effect, state: state, dispatch) => {
         message,
         taskId,
         selectedElement: SelectedElement.withoutElement(selectedElement),
-        selectedFigmaNode: selectedFigmaNode->Option.map(node => (node :> Nextjs__Types.figmaNode)),
+        selectedFigmaNode: switch selectedFigmaNode {
+        | FigmaNode.SelectedNode(node) => Some((node :> Nextjs__Types.figmaNode))
+        | _ => None
+        },
       }
 
       let body =
@@ -756,22 +768,22 @@ let next = (state, action) => {
 
   | SetFigmaNode({figmaNode}) =>
     state
-    ->Lens.updateCurrentTask(task => {...task, figmaNode: Some(figmaNode), figmaNodeWaiting: false})
+    ->Lens.updateCurrentTask(task => {...task, figmaNode: FigmaNode.SelectedNode(figmaNode)})
     ->AskTheLlmReactStatestore.StateReducer.update
 
   | ClearFigmaNode =>
     state
-    ->Lens.updateCurrentTask(task => {...task, figmaNode: None, figmaNodeWaiting: false})
+    ->Lens.updateCurrentTask(task => {...task, figmaNode: FigmaNode.NoSelection})
     ->AskTheLlmReactStatestore.StateReducer.update
 
   | SetFigmaNodeWaiting =>
     state
-    ->Lens.updateCurrentTask(task => {...task, figmaNodeWaiting: true})
+    ->Lens.updateCurrentTask(task => {...task, figmaNode: FigmaNode.WaitingForSelection})
     ->AskTheLlmReactStatestore.StateReducer.update
 
   | ClearFigmaNodeWaiting =>
     state
-    ->Lens.updateCurrentTask(task => {...task, figmaNodeWaiting: false})
+    ->Lens.updateCurrentTask(task => {...task, figmaNode: FigmaNode.NoSelection})
     ->AskTheLlmReactStatestore.StateReducer.update
   }
 }

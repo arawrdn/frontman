@@ -15,6 +15,7 @@ export default defineConfig({
 				"vite",
 				"fs",
 				"node:path",
+				"next",
 				"node:fs",
 				"path",
 				"node:http",

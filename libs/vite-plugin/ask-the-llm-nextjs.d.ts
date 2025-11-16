@@ -1,6 +1,19 @@
-declare module "@ask-the-llm/nextjs/src/Nextjs__ApiRoute.res.mjs" {
-    export function createUIHandler({ isDev, isLightTheme, entrypointUrl, clientUrl }: { isDev: boolean, isLightTheme: boolean, entrypointUrl?: string, clientUrl?: string }): (req: any, res: any) => Promise<void>;
-    export function createChatHandler(): (req: any, res: any) => Promise<void>;
-    export function createStreamHandler(): (req: any, res: any) => Promise<void>;
+declare module "@ask-the-llm/nextjs/src/Nextjs__Middleware.res.mjs" {
+    export function createMiddleware(config: any): (req: any) => Promise<any>;
+}
+
+declare module "@ask-the-llm/nextjs/src/Vite__Middleware.res.mjs" {
+    export function createMiddleware(config: any): (req: any) => Promise<option<any>>;
+}
+
+declare module "@ask-the-llm/nextjs/src/Nextjs__Config.res.mjs" {
+    export function make(
+        isDev?: boolean, 
+        basePath?: string, 
+        clientUrl?: string, 
+        clientCssUrl?: string, 
+        entrypointUrl?: string,
+        isLightTheme?: boolean
+    ): any;
 }
 
