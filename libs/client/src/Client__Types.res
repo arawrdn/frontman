@@ -121,3 +121,10 @@ module ChatRequest = {
     }
   }
 }
+
+type consoleError = {
+  createdAt: Js.Date.t,
+  message: string,
+  stack: string,
+  name: option<string>,
+}
