@@ -6,32 +6,6 @@ module FigmaNode = Client__State__Types.FigmaNode
 let make = () => {
   let figmaNode = Client__State.useSelector(Client__State.Selectors.figmaNode)
 
-  React.useEffect(() => {
-    // Listen for incoming port connection from background
-    let listener = (message: 'message) => {
-      let type_ = message["type"]
-      let data = message["selectedFigmaNode"]
-      switch type_ {
-      | "DevServerImportFigmaNodeResponse" =>
-        Client__State.Actions.setFigmaNode(~figmaNode=data)
-      | _ => ()
-      }
-
-    }
-    let port = AskTheLlmBindings.Chrome.Runtime.Connect.connectExternal(
-      "kfdpjbmabcelpgoipaccjijhehdmeghp",
-      Some({name: "FigmaNodeDisplay"}),
-    )
-
-    AskTheLlmBindings.Chrome.Port.addMessageListener(port, listener)
-
-    Some(
-      () => {
-        AskTheLlmBindings.Chrome.Port.removeMessageListener(port, listener)
-      },
-    )
-  }, [])
-
   switch figmaNode {
   | FigmaNode.WaitingForSelection =>
     <div

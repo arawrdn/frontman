@@ -5,10 +5,96 @@ module RadixUI__Icons = Bindings__RadixUI__Icons
 module AgentEventBus = AskTheLlmAgent.Agent__EventBus
 module Vercel = AskTheLlmAgent.Agent__Bindings__Vercel
 module Agent = AskTheLlmAgent.Agent
+module Chrome = AskTheLlmBindings.Chrome
+
+let useExtensionState = () => {
+  React.useEffect(() => {
+    let checkAttempts = ref(0)
+    let maxAttempts = 3
+    let checkInterval = 1666.0 // ~5 seconds total / 3 attempts
+    let timeoutId = ref(None)
+    
+    let chromeRuntimeExists: unit => bool = %raw(`
+      function() {
+        return typeof chrome !== 'undefined' && chrome.runtime;
+      }
+    `)
+    
+    let hasExtensionClass = () => {
+      WebAPI.Global.document
+      ->WebAPI.Document.body
+      ->Null.toOption
+      ->Option.mapOr(false, body => {
+        body
+        ->WebAPI.Element.classList
+        ->WebAPI.DOMTokenList.contains("frontman-extension-active")
+      })
+    }
+    
+    let rec checkExtension = () => {
+      checkAttempts.contents = checkAttempts.contents + 1
+      
+      if !chromeRuntimeExists() || !hasExtensionClass() {
+        if checkAttempts.contents < maxAttempts {
+          let id = WebAPI.Global.setTimeout(
+            ~handler=() => {
+              checkExtension()
+            },
+            ~timeout=checkInterval->Float.toInt,
+          )
+          timeoutId.contents = Some(id)
+        } else {
+          Console.log("[Extension] Not detected after 3 attempts")
+          Client__ExtensionState.Actions.setExtensionNotInstalled()
+        }
+      } else {
+        // Extension is installed, connect to it
+        Console.log("[Extension] Detected, connecting...")
+        try {
+          let port = Chrome.Runtime.Connect.connectExternal(
+            "kfdpjbmabcelpgoipaccjijhehdmeghp",
+            Some({name: "AskTheLlmClient"}),
+          )
+          
+          // Set up message listener
+          let messageListener = (message: Client__ExtensionState__StateReducer.extensionMessage) => {
+            switch message.type_ {
+            | "DevServerImportFigmaNodeResponse" =>
+              message.selectedFigmaNode->Option.forEach(data => {
+                Client__State.Actions.setFigmaNode(~figmaNode=data)
+              })
+            | _ => ()
+            }
+          }
+          
+          Chrome.Port.addMessageListener(port, messageListener)
+          
+          Client__ExtensionState.Actions.setExtensionInstalled(~port)
+          Console.log("[Extension] Connected successfully")
+        } catch {
+        | exn => {
+            Console.error2("[Extension] Failed to connect:", exn)
+            Client__ExtensionState.Actions.setExtensionNotInstalled()
+          }
+        }
+      }
+    }
+    
+    checkExtension()
+    
+    Some(() => {
+      timeoutId.contents->Option.forEach(id => {
+        WebAPI.Global.clearTimeout(id)
+      })
+    })
+  }, [])
+}
 
 @react.component
 let make = () => {
-  // Handle SSE events and dispatch to state
+
+  useExtensionState()
+
   let handleSSEEvent = React.useCallback((event: AgentEventBus.events) => {
     switch event {
     | StreamEvent(taskId, TextStart({id})) => Client__State.Actions.streamingStarted(~taskId, ~id)

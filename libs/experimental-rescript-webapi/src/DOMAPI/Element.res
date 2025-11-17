@@ -489,6 +489,13 @@ Sets the value of element's attribute whose namespace is namespace and local nam
   @set
   external setId: (T.t, ~value: string) => unit = "id"
 
+  /**
+Allows for manipulation of element's class content attribute as a set of whitespace-separated tokens through a DOMTokenList object.
+[Read more on MDN](https://developer.mozilla.org/docs/Web/API/Element/classList)
+*/
+  @get
+  external classList: T.t => domTokenList = "classList"
+
   @send
   external setPointerCapture: (T.t, int) => unit = "setPointerCapture"
 

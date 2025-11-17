@@ -1,24 +1,11 @@
 let main = () => {
-  // WebAPI.Global.window->WebAPI.Window.addEventListener(Custom(("FrontmanImportFigmaNodeRequest")), (e) => {
-  //   Console.log("FrontmanImportFigmaNodeRequest")
-  //   Chrome.Runtime.sendMessageExternal("kfdpjbmabcelpgoipaccjijhehdmeghp", {"type": "DevServerImportFigmaNodeRequest"}, response => {
-  //     Console.log2("DevServerImportFigmaNodeRequest response:", response)
-  //   })
-  // })
-
-  // Chrome.Runtime.addMessageExternalListener((message, _sender, _sendResponse) => {
-  //   let messageType = message["type"]
-  //   switch messageType {
-  //   | "DevServerImportFigmaNodeResponse" =>
-  //     Console.log2("DevServerImportFigmaNodeResponse:", message["selectedFigmaNode"])
-  //     let customEvent = CustomEvent.make(~detail=message["selectedFigmaNode"], ~bubbles=true, ~cancelable=true)
-  //     WebAPI.Global.window->WebAPI.Window.postMessage(Custom(("FrontmanImportFigmaNodeResponse")), message["selectedFigmaNode"])
-  //   | _ => ()
-  //   }
-  // })
+  WebAPI.Global.document->WebAPI.Document.body->Null.toOption->Option.forEach(body => {
+    body->WebAPI.Element.classList->WebAPI.DOMTokenList.add("frontman-extension-active")
+    ()
+  })
   ()
 }
 
 let config = {
     "matches": ["http://localhost/*"],
-}
+ }
