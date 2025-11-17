@@ -1,4 +1,0 @@
-npx lint-staged
-# pnpm run lint
-
-npx ultracite fix
