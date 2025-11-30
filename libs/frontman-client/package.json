@@ -1,0 +1,17 @@
+{
+	"name": "@ask-the-llm/frontman-client",
+	"version": "0.1.0",
+	"type": "module",
+	"main": "./src/FrontmanClient.res.mjs",
+	"dependencies": {
+		"phoenix": "^1.7.0"
+	},
+	"devDependencies": {
+		"@rescript/webapi": "catalog:",
+		"@vitest/ui": "catalog:",
+		"rescript": "catalog:",
+		"rescript-vitest": "catalog:",
+		"sury": "catalog:",
+		"vitest": "catalog:"
+	}
+}

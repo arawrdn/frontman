@@ -1,4 +1,11 @@
 [tools]
 node="24.9.0"
-pnpm = "10.19.0"
 yarn="4.10.3"
+elixir="1.19.3-otp-28"
+erlang="28.1.1"
+"npm:@rescript/language-server"="latest"
+"npm:corepack"="latest"
+"npm:@tailwindcss/language-server"="latest"
+
+[env]
+MIX_OS_DEPS_COMPILE_PARTITION_COUNT = "1"

@@ -15,7 +15,8 @@
 		}
 	],
 	"dependencies": [
-		"sury"
+		"sury",
+		"@rescript/webapi"
 	],
 	"ppx-flags": ["sury-ppx/bin"],
 	"compiler-flags": []
