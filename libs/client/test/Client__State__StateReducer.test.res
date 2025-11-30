@@ -35,6 +35,7 @@ module TestHelpers = {
     ({
       tasks,
       currentTaskId: Some(taskId),
+      connectionState: Disconnected,
     }: Client__State__Types.state)
   }
 
@@ -715,6 +716,7 @@ describe("Client State Reducer - Task Management Actions", () => {
     let state: Reducer.state = {
       tasks,
       currentTaskId: Some("task-1"),
+      connectionState: Disconnected,
     }
 
     let (nextState, _) = Reducer.next(state, SwitchTask({taskId: "task-2"}))
@@ -751,6 +753,7 @@ describe("Client State Reducer - Task Management Actions", () => {
     let state: Reducer.state = {
       tasks,
       currentTaskId: Some("task-1"),
+      connectionState: Disconnected,
     }
 
     t->expect(Reducer.Selectors.webPreviewIsSelecting(state))->Expect.toBe(true)
@@ -772,6 +775,7 @@ describe("Client State Reducer - Task Management Actions", () => {
     let state: Reducer.state = {
       tasks,
       currentTaskId: Some("task-1"),
+      connectionState: Disconnected,
     }
 
     let (nextState, _) = Reducer.next(state, DeleteTask({taskId: "task-1"}))
@@ -789,6 +793,7 @@ describe("Client State Reducer - Task Management Actions", () => {
     let state: Reducer.state = {
       tasks,
       currentTaskId: Some("task-1"),
+      connectionState: Disconnected,
     }
 
     // Add message to task 1

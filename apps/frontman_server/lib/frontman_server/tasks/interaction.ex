@@ -18,35 +18,48 @@ defmodule FrontmanServer.Tasks.Interaction do
   defmodule UserMessage do
     @moduledoc """
     Represents a message sent by the user.
+
+    Uses ACP ContentBlocks as the single source of truth for message content.
+    The first ContentBlock is typically type="text" with the user's message.
     """
     use TypedStruct
 
     typedstruct enforce: true do
       field(:id, String.t())
-      field(:content, String.t())
       field(:timestamp, DateTime.t())
       field(:metadata, map(), enforce: false)
+      # ACP ContentBlocks from the prompt (includes text, resource_link, resource)
+      field(:content_blocks, list())
     end
 
-    def new(content, metadata \\ %{}) do
+    def new(content_blocks, metadata \\ %{}) do
       alias FrontmanServer.Tasks.Interaction
 
       %__MODULE__{
         id: Interaction.new_id(),
-        content: content,
         timestamp: Interaction.now(),
-        metadata: metadata
+        metadata: metadata,
+        content_blocks: content_blocks
       }
     end
   end
 
   defimpl Jason.Encoder, for: UserMessage do
     def encode(value, opts) do
+      # Extract text content from content_blocks for backward compatibility
+      content =
+        value.content_blocks
+        |> Enum.find(fn block -> Map.get(block, "type") == "text" end)
+        |> case do
+          nil -> ""
+          block -> Map.get(block, "text", "")
+        end
+
       Jason.Encode.map(
         %{
           type: "user_message",
           id: value.id,
-          content: value.content,
+          content: content,
           timestamp: DateTime.to_iso8601(value.timestamp),
           metadata: value.metadata
         },
@@ -317,9 +330,66 @@ defmodule FrontmanServer.Tasks.Interaction do
   defp is_conversation_message(%ToolResult{}), do: true
   defp is_conversation_message(_), do: false
 
-  defp to_llm_message(%UserMessage{content: content}) do
-    ReqLLM.Context.user(content)
+  defp to_llm_message(%UserMessage{content_blocks: content_blocks}) do
+    # Convert ACP ContentBlocks to LLM message content format
+    llm_content = convert_content_blocks_to_llm_format(content_blocks)
+    ReqLLM.Context.user(llm_content)
   end
+
+  # Convert ACP ContentBlocks to LLM message content format
+  defp convert_content_blocks_to_llm_format(blocks) do
+    content =
+      blocks
+      |> Enum.map(&content_block_to_llm_format/1)
+      |> Enum.reject(&is_nil/1)
+
+    case content do
+      [] ->
+        ""
+
+      text_blocks ->
+        # All blocks are now text blocks - concatenate them into a single string
+        text_blocks
+        |> Enum.map(fn %{"text" => text} -> text end)
+        |> Enum.join("")
+    end
+  end
+
+  # Convert text block
+  defp content_block_to_llm_format(%{"type" => "text", "text" => text}) do
+    %{"type" => "text", "text" => text}
+  end
+
+  # Convert resource_link (file reference) to text description
+  defp content_block_to_llm_format(%{"type" => "resource_link", "uri" => uri}) do
+    # Extract file path from URI (format: file://path:line:column)
+    text = case Regex.run(~r/^file:\/\/(.+):(\d+):(\d+)$/, uri) do
+      [_, file_path, line, column] ->
+        "\n\n[Selected Component Location]\nFile: #{file_path}\nLine: #{line}, Column: #{column}"
+      _ ->
+        "\n\n[Selected Component]\nURI: #{uri}"
+    end
+
+    %{"type" => "text", "text" => text}
+  end
+
+  # Convert resource (embedded JSON) to text description
+  defp content_block_to_llm_format(%{"type" => "resource", "resource" => resource}) do
+    case resource do
+      %{"uri" => uri, "mimeType" => _mime_type, "text" => text} ->
+        # For Figma nodes or other resources, include the data as text
+        %{
+          "type" => "text",
+          "text" => "\n\n[Embedded Resource: #{uri}]\n#{text}"
+        }
+
+      _ ->
+        nil
+    end
+  end
+
+  # Skip unknown block types
+  defp content_block_to_llm_format(_), do: nil
 
   defp to_llm_message(%AgentResponse{content: content, metadata: metadata}) do
     case Map.get(metadata || %{}, :tool_calls) do

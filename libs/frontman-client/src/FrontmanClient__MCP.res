@@ -1,15 +1,16 @@
 // MCP Client entry point
 // Handles MCP message routing for browser-as-server pattern
+// Generic over server type - can be used with any MCP server implementation
 
 module Types = FrontmanClient__MCP__Types
-module Server = FrontmanClient__MCP__Server
 module Channel = FrontmanClient__Phoenix__Channel
 module JsonRpc = FrontmanClient__JsonRpc
 
 type messageDirection = Send | Receive
 
-type mcpHandler = {
-  server: Server.t,
+// Generic handler type - parameterized over server type
+type mcpHandler<'server> = {
+  serverInterface: Types.serverInterface<'server>,
   channel: Channel.t,
   onMessage: option<(messageDirection, JSON.t) => unit>,
 }
@@ -56,7 +57,7 @@ let parse = (json: JSON.t): result<mcpMessage, string> => {
 }
 
 // Send a JSON-RPC response
-let sendResponse = (handler: mcpHandler, id: int, result: JSON.t): unit => {
+let sendResponse = (handler: mcpHandler<'server>, id: int, result: JSON.t): unit => {
   let response = JsonRpc.Response.makeSuccess(~id, ~result)
   let payload = response->S.reverseConvertToJsonOrThrow(JsonRpc.Response.schema)
   handler.onMessage->Option.forEach(cb => cb(Send, payload))
@@ -64,7 +65,7 @@ let sendResponse = (handler: mcpHandler, id: int, result: JSON.t): unit => {
 }
 
 // Send a JSON-RPC error response
-let sendError = (handler: mcpHandler, id: int, _code: int, message: string): unit => {
+let sendError = (handler: mcpHandler<'server>, id: int, _code: int, message: string): unit => {
   let error = JsonRpc.RpcError.make(~code=MethodNotFound, ~message, ~data=None)
   let response = JsonRpc.Response.makeError(~id, ~error)
   let payload = response->S.reverseConvertToJsonOrThrow(JsonRpc.Response.schema)
@@ -73,27 +74,35 @@ let sendError = (handler: mcpHandler, id: int, _code: int, message: string): uni
 }
 
 // Handle initialize request
-let handleInitialize = (handler: mcpHandler, id: int, _params: option<JSON.t>): unit => {
-  let result = Server.buildInitializeResult(handler.server)
+let handleInitialize = (handler: mcpHandler<'server>, id: int, _params: option<JSON.t>): unit => {
+  let {serverInterface} = handler
+  let result = serverInterface.buildInitializeResult(serverInterface.server)
   let resultJson = result->S.reverseConvertToJsonOrThrow(Types.initializeResultSchema)
   sendResponse(handler, id, resultJson)
 }
 
 // Handle tools/list request
-let handleToolsList = (handler: mcpHandler, id: int): unit => {
-  let result = Server.buildToolsListResult(handler.server)
+let handleToolsList = (handler: mcpHandler<'server>, id: int): unit => {
+  let {serverInterface} = handler
+  let result = serverInterface.buildToolsListResult(serverInterface.server)
   let resultJson = result->S.reverseConvertToJsonOrThrow(Types.toolsListResultSchema)
   sendResponse(handler, id, resultJson)
 }
 
 // Handle tools/call request
-let handleToolsCall = async (handler: mcpHandler, id: int, params: option<JSON.t>): unit => {
+let handleToolsCall = async (handler: mcpHandler<'server>, id: int, params: option<JSON.t>): unit => {
   switch params {
   | Some(paramsJson) =>
     try {
       let {name, arguments}: Types.toolCallParams =
         paramsJson->S.parseOrThrow(Types.toolCallParamsSchema)
-      let result = await Server.executeTool(handler.server, ~name, ~arguments?)
+      let {serverInterface} = handler
+      let result = await serverInterface.executeTool(
+        serverInterface.server,
+        ~name,
+        ~arguments,
+        ~onProgress=None,
+      )
       let resultJson = result->S.reverseConvertToJsonOrThrow(Types.callToolResultSchema)
       sendResponse(handler, id, resultJson)
     } catch {
@@ -106,7 +115,7 @@ let handleToolsCall = async (handler: mcpHandler, id: int, params: option<JSON.t
 }
 
 // Handle incoming MCP message
-let handleMessage = async (handler: mcpHandler, payload: JSON.t): unit => {
+let handleMessage = async (handler: mcpHandler<'server>, payload: JSON.t): unit => {
   handler.onMessage->Option.forEach(cb => cb(Receive, payload))
 
   switch parse(payload) {
@@ -127,13 +136,13 @@ let handleMessage = async (handler: mcpHandler, payload: JSON.t): unit => {
   }
 }
 
-// Attach MCP handler to a session channel
+// Attach MCP handler to a session channel with a server interface
 let attach = (
   ~channel: Channel.t,
-  ~server: Server.t,
+  ~serverInterface: Types.serverInterface<'server>,
   ~onMessage: option<(messageDirection, JSON.t) => unit>=?,
-): mcpHandler => {
-  let handler = {server, channel, onMessage}
+): mcpHandler<'server> => {
+  let handler = {serverInterface, channel, onMessage}
 
   channel->Channel.on(~event=#"mcp:message", ~callback=payload => {
     handleMessage(handler, payload)->ignore
@@ -143,6 +152,6 @@ let attach = (
 }
 
 // Detach MCP handler from channel
-let detach = (handler: mcpHandler): unit => {
+let detach = (handler: mcpHandler<'server>): unit => {
   handler.channel->Channel.off(~event=#"mcp:message")
 }

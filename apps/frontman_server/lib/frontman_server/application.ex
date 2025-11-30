@@ -9,6 +9,12 @@ defmodule FrontmanServer.Application do
   def start(_type, _args) do
     # Create ETS tables
     :ets.new(:tasks, [:named_table, :public, :set, read_concurrency: true])
+    :telemetry.attach(
+      "finch-logger",
+      [:finch, :request, :start],
+      &FrontmanServer.FinchLogger.handle_event/4,
+      nil
+    )
 
     children = [
       FrontmanServerWeb.Telemetry,

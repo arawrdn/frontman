@@ -75,3 +75,29 @@ module ErrorCode = {
   let serverError = -32000
   let methodNotFound = -32601
 }
+
+// Server interface - runtime-compatible record for generic MCP handlers
+type serverInterface<'server> = {
+  server: 'server,
+  buildInitializeResult: 'server => initializeResult,
+  buildToolsListResult: 'server => toolsListResult,
+  executeTool: (
+    'server,
+    ~name: string,
+    ~arguments: option<Dict.t<JSON.t>>,
+    ~onProgress: option<string => unit>,
+  ) => promise<callToolResult>,
+}
+
+// Server module type - implement this to create an MCP server
+module type Server = {
+  type t
+  let buildInitializeResult: t => initializeResult
+  let buildToolsListResult: t => toolsListResult
+  let executeTool: (
+    t,
+    ~name: string,
+    ~arguments: option<Dict.t<JSON.t>>=?,
+    ~onProgress: option<string => unit>=?,
+  ) => promise<callToolResult>
+}

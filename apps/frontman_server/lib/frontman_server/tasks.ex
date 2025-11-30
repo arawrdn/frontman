@@ -94,13 +94,20 @@ defmodule FrontmanServer.Tasks do
 
   Notifies Agents which decides whether to spawn or wake an agent.
 
+  Arguments:
+    - `task_id` - The ID of the task
+    - `content_blocks` - Array of ACP ContentBlocks (text, resource_link, resource)
+
   Options:
     - `:mcp_tools` - List of tool definitions to pass to the agent
+    - `:metadata` - Additional metadata for the message
   """
-  @spec add_user_message(String.t(), String.t(), keyword()) ::
+  @spec add_user_message(String.t(), list(), keyword()) ::
           {:ok, Interaction.t()} | {:error, :task_not_found}
-  def add_user_message(task_id, content, opts \\ []) do
-    interaction = Interaction.UserMessage.new(content)
+  def add_user_message(task_id, content_blocks, opts \\ []) do
+    metadata = Keyword.get(opts, :metadata, %{})
+
+    interaction = Interaction.UserMessage.new(content_blocks, metadata)
 
     case append_interaction(task_id, interaction) do
       {:ok, interaction} ->

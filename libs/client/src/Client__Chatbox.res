@@ -31,6 +31,7 @@ let make = () => {
   // Get messages from our state store
   let messages = Client__State.useSelector(Client__State.Selectors.messages)
   let isStreaming = Client__State.useSelector(Client__State.Selectors.isStreaming)
+  let isConnected = Client__State.useSelector(Client__State.Selectors.isConnected)
 
   let handleSubmit = (message: {"text": string, "files": option<array<WebAPI.FileAPI.file>>}) => {
     let hasText = message["text"] !== ""
@@ -233,7 +234,8 @@ let make = () => {
           </AIElements.PromptInputModelSelect>
         </AIElements.PromptInputTools>
         <AIElements.PromptInputSubmit
-          disabled={input === "" && !isStreaming} status={isStreaming ? "streaming" : "idle"}
+          disabled={!isConnected || (input === "" && !isStreaming)}
+          status={isStreaming ? "streaming" : "idle"}
         />
       </AIElements.PromptInputFooter>
     </AIElements.PromptInput>

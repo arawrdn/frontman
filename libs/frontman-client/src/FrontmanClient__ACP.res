@@ -200,21 +200,34 @@ let createSession = async (
   }
 }
 
-// Send a prompt to the session
-let sendPrompt = async (session: session, text: string): result<Types.promptResult, string> => {
+// Send a prompt to the session with additional content blocks
+let sendPrompt = async (
+  session: session,
+  text: string,
+  ~additionalBlocks: array<Types.contentBlock>=[],
+): result<Types.promptResult, string> => {
   let id = session.connection.state.contents.currentId + 1
+
+  // Build prompt array starting with the text block
+  let textBlock = JSON.Encode.object(
+    Dict.fromArray([("type", JSON.Encode.string("text")), ("text", JSON.Encode.string(text))]),
+  )
+
+  // Add additional blocks (for embedded context like resource_link and resource)
+  let allBlocks = [textBlock]
+  let allBlocks = if Array.length(additionalBlocks) > 0 {
+    let additionalBlocksJson = additionalBlocks->Array.map(block =>
+      block->S.reverseConvertToJsonOrThrow(Types.contentBlockSchema)
+    )
+    Array.concat(allBlocks, additionalBlocksJson)
+  } else {
+    allBlocks
+  }
 
   let promptParams = JSON.Encode.object(
     Dict.fromArray([
       ("sessionId", JSON.Encode.string(session.sessionId)),
-      (
-        "prompt",
-        JSON.Encode.array([
-          JSON.Encode.object(
-            Dict.fromArray([("type", JSON.Encode.string("text")), ("text", JSON.Encode.string(text))]),
-          ),
-        ]),
-      ),
+      ("prompt", JSON.Encode.array(allBlocks)),
     ]),
   )
 

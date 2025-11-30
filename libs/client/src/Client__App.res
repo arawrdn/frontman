@@ -6,6 +6,7 @@ module AgentEventBus = AskTheLlmAgent.Agent__EventBus
 module Vercel = AskTheLlmAgent.Agent__Bindings__Vercel
 module Agent = AskTheLlmAgent.Agent
 module Chrome = AskTheLlmBindings.Chrome
+module ACPTypes = AskTheLlmFrontmanClient.FrontmanClient__ACP__Types
 
 let useExtensionState = () => {
   React.useEffect(() => {
@@ -95,96 +96,143 @@ let make = () => {
 
   useExtensionState()
 
-  let handleSSEEvent = React.useCallback((event: AgentEventBus.events) => {
-    switch event {
-    | StreamEvent(taskId, TextStart({id})) => Client__State.Actions.streamingStarted(~taskId, ~id)
-    | StreamEvent(taskId, TextDelta({id, text})) =>
-      Client__State.Actions.textDeltaReceived(~taskId, ~id, ~text)
-    | StreamEvent(taskId, TextEnd({id})) => Client__State.Actions.messageCompleted(~taskId, ~id)
+  // Use Frontman context for ACP connection
+  let {connectionState, createSession, sendPrompt} = Client__FrontmanProvider.useFrontman()
 
-    | StreamEvent(taskId, ToolCall({toolCallId, toolName, input})) =>
-      Client__State.Actions.toolCallReceived(
-        ~taskId,
-        ~toolCall={
-          id: toolCallId,
-          toolName,
-          inputBuffer: "",
-          input: Some(input),
-          result: None,
-          errorText: None,
-          state: InputAvailable,
-          createdAt: Date.now(),
-        },
-      )
+  // Handle ACP session updates (streaming messages from the agent)
+  let handleSessionUpdate = React.useCallback((update: ACPTypes.sessionUpdate) => {
+    // Get current task ID directly from the store
+    let state = AskTheLlmReactStatestore.StateStore.getState(Client__State__Store.store)
+    let taskId = state.currentTaskId->Option.getOr("unknown")
 
-    | StreamEvent(_, Start(_))
-    | StreamEvent(_, FinishStep(_))
-    | StreamEvent(_, StartStep(_))
-    | StreamEvent(_, Finish(_))
-    | StreamEvent(_, ReasoningStart(_))
-    | StreamEvent(_, ReasoningDelta(_))
-    | StreamEvent(_, ReasoningEnd(_))
-    | StreamEvent(_, Source(_))
-    | StreamEvent(_, File(_))
-    | StreamEvent(_, Abort(_))
-    | StreamEvent(_, Error(_))
-    | StreamEvent(_, Raw(_)) => ()
-    | StreamEvent(taskId, ToolInputStart(toolInputStart)) =>
-      Client__State.Actions.toolInputStartReceived(
-        ~taskId,
-        ~id=toolInputStart.id,
-        ~toolName=toolInputStart.toolName,
-      )
-    | StreamEvent(taskId, ToolInputDelta(delta)) =>
-      Client__State.Actions.toolInputDeltaReceived(~taskId, ~id=delta.id, ~delta=delta.delta)
-    | StreamEvent(taskId, ToolInputEnd(end)) =>
-      Client__State.Actions.toolInputEndReceived(~taskId, ~id=end.id)
-    | StreamEvent(
-        _,
-        ToolResult(_)
-        | ToolError(_)
-        | ToolOutputDenied(_)
-        | ToolApprovalRequest(_),
-      ) =>
-      failwith("TODO")
-    | TaskEvent(taskId, MessageAdded({message: Tool(toolMessage)})) =>
-      toolMessage.content->Array.forEach(toolResult => {
-        let id = toolResult.toolCallId
-        switch toolResult.output {
-        | Text(text) => {
-            let result = text->JSON.stringifyAny->Option.getOr("null")->JSON.parseOrThrow
-            Client__State.Actions.toolResultReceived(~taskId, ~id, ~result)
-          }
+    switch update.sessionUpdate {
+    | "agent_message_chunk" =>
+      // Text delta from assistant
+      update.content->Option.flatMap(c => c.text)->Option.forEach(text => {
+        // Use a consistent ID for the current message stream
+        let id = `msg_${taskId}`
+        // Check if we have a streaming message - if not, create one first
+        let messages = Client__State.Selectors.streamingMessages(state)
+        if Array.length(messages) == 0 {
+          // No streaming message exists, create one first
+          Client__State.Actions.streamingStarted(~taskId, ~id)
+        }
+        Client__State.Actions.textDeltaReceived(~taskId, ~id, ~text)
+      })
 
-        | JSON(json) => Client__State.Actions.toolResultReceived(~taskId, ~id, ~result=json)
+    | "agent_message_start" =>
+      let id = `msg_${taskId}`
+      Client__State.Actions.streamingStarted(~taskId, ~id)
 
-        | ErrorText(error) => Client__State.Actions.toolErrorReceived(~taskId, ~id, ~error)
+    | "agent_message_end" =>
+      let id = `msg_${taskId}`
+      Client__State.Actions.messageCompleted(~taskId, ~id)
 
-        | ErrorJSON(errorJson) => {
-            let error = errorJson->JSON.stringifyAny->Option.getOr("Unknown error")
-            Client__State.Actions.toolErrorReceived(~taskId, ~id, ~error)
-          }
+    | "tool_call" =>
+      // Tool call started - create tool call entry
+      update.toolCallId->Option.forEach(toolCallId => {
+        let toolName = update.title->Option.getOr("unknown_tool")
+        Client__State.Actions.toolCallReceived(
+          ~taskId,
+          ~toolCall={
+            id: toolCallId,
+            toolName,
+            inputBuffer: "",
+            input: None, // Input will be provided in tool_call_update
+            result: None,
+            errorText: None,
+            state: InputStreaming,
+            createdAt: Date.now(),
+          },
+        )
+      })
 
-        | Content(_contentParts) => {
-            let result =
-              JSON.stringifyAny("[Content with media - display not implemented]")
-              ->Option.getOr("null")
-              ->JSON.parseOrThrow
-            Client__State.Actions.toolResultReceived(~taskId, ~id, ~result)
-          }
+    | "tool_call_update" =>
+      // Tool call status update
+      update.toolCallId->Option.forEach(toolCallId => {
+        switch update.status {
+        | Some("completed") =>
+          // Extract result from contents if available
+          let result =
+            update.contents
+            ->Option.flatMap(contents => contents->Array.get(0))
+            ->Option.flatMap(item => item.content)
+            ->Option.flatMap(content => content.text)
+            ->Option.mapOr(JSON.Encode.null, text => {
+              // Try to parse as JSON, fallback to string
+              try {
+                JSON.parseOrThrow(text)
+              } catch {
+              | _ => JSON.Encode.string(text)
+              }
+            })
+          Client__State.Actions.toolResultReceived(~taskId, ~id=toolCallId, ~result)
+
+        | Some("error") =>
+          let error =
+            update.contents
+            ->Option.flatMap(contents => contents->Array.get(0))
+            ->Option.flatMap(item => item.content)
+            ->Option.flatMap(content => content.text)
+            ->Option.getOr("Unknown error")
+          Client__State.Actions.toolErrorReceived(~taskId, ~id=toolCallId, ~error)
+
+        | Some("running") =>
+          // Tool is running - could update UI state if needed
+          Console.log2("[ACP] Tool running:", toolCallId)
+
+        | Some(status) =>
+          Console.log3("[ACP] Unknown tool_call_update status:", status, toolCallId)
+
+        | None =>
+          Console.log2("[ACP] tool_call_update missing status:", toolCallId)
         }
       })
 
-    // Ignore other TaskEvent variants
-    | TaskEvent(_, Created(_))
-    | TaskEvent(_, ProcessingStarted(_))
-    | TaskEvent(_, Completed(_))
-    | TaskEvent(_, MessageAdded(_)) => ()
+    | _ =>
+      Console.log2("[ACP] Unhandled session update:", update.sessionUpdate)
     }
   }, [])
 
-  // Connect SSE
-  Client__Hooks.useSSE(handleSSEEvent)
+  // Track if session was created to avoid duplicate creation
+  let sessionCreatedRef = React.useRef(false)
+
+  // Auto-create session when connected
+  React.useEffect(() => {
+    switch connectionState {
+    | Connected =>
+      if !sessionCreatedRef.current {
+        sessionCreatedRef.current = true
+        Console.log("[App] Connected to ACP, creating session...")
+        createSession(handleSessionUpdate)
+        ->Promise.thenResolve(result => {
+          switch result {
+          | Ok(sess) =>
+            Console.log2("[App] Session created:", sess.sessionId)
+          | Error(err) =>
+            sessionCreatedRef.current = false
+            Console.error2("[App] Failed to create session:", err)
+          }
+        })
+        ->ignore
+      }
+    | _ => ()
+    }
+    None
+  }, (connectionState, handleSessionUpdate, createSession))
+
+  // Separate effect to update sendPrompt in state when session becomes active
+  React.useEffect(() => {
+    switch connectionState {
+    | SessionActive(_sessionId) =>
+      Console.log("[App] Session active, storing sendPrompt in state")
+      Client__State.Actions.connect(~sendPrompt)
+    | Disconnected | Error(_) =>
+      Client__State.Actions.disconnect()
+    | _ => ()
+    }
+    None
+  }, (connectionState, sendPrompt))
 
   <div className="flex h-screen w-screen bg-background text-foreground">
     <div className="h-full w-96 border-r flex flex-col p-2 overflow-hidden">

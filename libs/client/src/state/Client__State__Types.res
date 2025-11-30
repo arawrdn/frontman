@@ -144,7 +144,94 @@ module Task = {
   }
 }
 
+// Re-export ACP types for convenience
+module ACPTypes = AskTheLlmFrontmanClient.FrontmanClient__ACP__Types
+
+// ============================================================================
+// ContentBlock builders for embedded context (ACP embeddedContext)
+// ============================================================================
+
+// Build a ResourceLink ContentBlock from SelectedElement
+// URI format: file://{path}:{line}:{column}
+let selectedElementToContentBlock = (sel: SelectedElement.t): option<ACPTypes.contentBlock> => {
+  sel.sourceLocation->Option.map(loc => {
+    let uri = `file://${loc.file}:${loc.line->Int.toString}:${loc.column->Int.toString}`
+    {
+      ACPTypes.type_: "resource_link",
+      uri: Some(uri),
+      text: None,
+      resource: None,
+      mimeType: None,
+    }
+  })
+}
+
+// Build a Resource ContentBlock from FigmaNode
+// Contains the full Figma node data as JSON
+let figmaNodeToContentBlock = (node: FigmaNode.nodeData): ACPTypes.contentBlock => {
+  // Serialize figma node to JSON string
+  let nodeJson = JSON.stringifyAny({
+    "id": node.id,
+    "name": node.name,
+    "type": node.type_,
+    "css": node.css,
+    "width": node.width,
+    "height": node.height,
+    "x": node.x,
+    "y": node.y,
+    "visible": node.visible,
+    "locked": node.locked,
+    "children": node.children,
+  })->Option.getOr("{}")
+
+  let embeddedResource: ACPTypes.embeddedResource = {
+    uri: `figma://node/${node.id}`,
+    mimeType: "application/json",
+    text: Some(nodeJson),
+  }
+
+  {
+    ACPTypes.type_: "resource",
+    text: None,
+    uri: None,
+    resource: Some(embeddedResource),
+    mimeType: Some("application/json"),
+  }
+}
+
+// Build ContentBlocks array from Task
+// Returns array of ContentBlocks to be added to the prompt
+let taskToContentBlocks = (task: Task.t): array<ACPTypes.contentBlock> => {
+  let blocks = []
+
+  // Add selectedElement as ResourceLink if available
+  let blocks = switch task.selectedElement->Option.flatMap(selectedElementToContentBlock) {
+  | Some(block) => Array.concat(blocks, [block])
+  | None => blocks
+  }
+
+  // Add figmaNode as Resource if available
+  let blocks = switch task.figmaNode {
+  | FigmaNode.SelectedNode(nodeData) => Array.concat(blocks, [figmaNodeToContentBlock(nodeData)])
+  | FigmaNode.NoSelection | FigmaNode.WaitingForSelection => blocks
+  }
+
+  blocks
+}
+
+// Send prompt function type (from ACP) - now accepts ContentBlocks
+type sendPromptFn = (
+  string,
+  ~additionalBlocks: array<ACPTypes.contentBlock>,
+) => promise<result<ACPTypes.promptResult, string>>
+
+// Connection state for the Frontman ACP session
+type connectionState =
+  | Disconnected
+  | Connected(sendPromptFn)
+
 type state = {
   tasks: Dict.t<Task.t>,
   currentTaskId: option<string>,
+  connectionState: connectionState,
 }

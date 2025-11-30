@@ -101,6 +101,9 @@ type action =
   | ClearFigmaNode
   | SetFigmaNodeWaiting
   | ClearFigmaNodeWaiting
+  // Connection actions
+  | Connect({sendPrompt: Client__State__Types.sendPromptFn})
+  | Disconnect
 
 // Effects for side effects
 type effect =
@@ -136,6 +139,7 @@ let normalizeUrl = (url: string): string => {
 let defaultState: state = {
   tasks: Dict.make(),
   currentTaskId: None,
+  connectionState: Disconnected,
 }
 
 let actionToString = action => {
@@ -165,6 +169,8 @@ let actionToString = action => {
   | ClearFigmaNode => `ClearFigmaNode`
   | SetFigmaNodeWaiting => `SetFigmaNodeWaiting`
   | ClearFigmaNodeWaiting => `ClearFigmaNodeWaiting`
+  | Connect(_) => `Connect`
+  | Disconnect => `Disconnect`
   }
 }
 
@@ -173,7 +179,6 @@ module Selectors = {
   let currentTask = (state: state): option<Task.t> => {
     state.currentTaskId->Option.flatMap(id => state.tasks->Dict.get(id))
   }
-  let currentTask = (state: state): option<Task.t> => currentTask(state)
 
   let getMessageCreatedAt = (msg: Message.t): float => {
     switch msg {
@@ -281,53 +286,48 @@ module Selectors = {
   let figmaNode = (state: state): FigmaNode.t => {
     currentTask(state)->Option.mapOr(FigmaNode.NoSelection, task => task.figmaNode)
   }
+
+  // Get connection state
+  let connectionState = (state: state): Client__State__Types.connectionState => {
+    state.connectionState
+  }
+
+  // Check if connected
+  let isConnected = (state: state): bool => {
+    switch state.connectionState {
+    | Connected(_) => true
+    | Disconnected => false
+    }
+  }
 }
+
 let handleEffect = (effect, state: state, dispatch) => {
   switch effect {
   | ExecuteClientTool({toolCallId, toolName, args}) =>
     Client__ToolExecutor.handleToolCall(~state, ~toolCallId, ~toolName, ~args)->ignore
-  | SendMessageToAPI({message, taskId}) => {
-      let headers = WebAPI.Headers.make()
-      headers->WebAPI.Headers.set(~name="Content-Type", ~value="application/json")
-
-      let selectedElement =
-        Selectors.currentTask(state)->Option.flatMap(task => task.selectedElement)
-
-      let selectedFigmaNode = Selectors.figmaNode(state)
-
-      let payload: AskTheLlmNextjs.Nextjs__Types.chat = {
-        message,
-        taskId,
-        selectedElement: SelectedElement.withoutElement(selectedElement),
-        selectedFigmaNode: switch selectedFigmaNode {
-        | FigmaNode.SelectedNode(node) => Some((node :> Nextjs__Types.figmaNode))
-        | _ => None
-        },
-      }
-
-      let body =
-        payload
-        ->S.reverseConvertToJsonOrThrow(AskTheLlmNextjs.Nextjs__Types.chatSchema)
-        ->JSON.stringify
+  | SendMessageToAPI({message, taskId}) =>
+    // Use ACP sendPrompt via the stored function
+    switch state.connectionState {
+    | Connected(sendPrompt) =>
+      // Get ContentBlocks from the task (selectedElement, figmaNode)
+      let additionalBlocks = state.tasks
+        ->Dict.get(taskId)
+        ->Option.mapOr([], Client__State__Types.taskToContentBlocks)
 
       let _ =
-        WebAPI.Global.fetch(
-          //TODO(BlueHotDog) - we should centralize routes before it becomes a nightmare to chase down
-          "/ask-the-llm/chat",
-          ~init={
-            method: "POST",
-            headers: WebAPI.HeadersInit.fromHeaders(headers),
-            body: WebAPI.BodyInit.fromString(body),
-          },
-        )
-        ->Promise.then(response => {
-          Console.log2("[Effect] Message sent to API:", response)
-          Promise.resolve()
+        sendPrompt(message, ~additionalBlocks)
+        ->Promise.thenResolve(result => {
+          switch result {
+          | Ok(_) => Console.log("[Effect] Message sent via ACP")
+          | Error(error) => Console.error2("[Effect] Failed to send message:", error)
+          }
         })
         ->Promise.catch(error => {
-          Console.error2("[Effect] Failed to send message to API:", error)
+          Console.error2("[Effect] Failed to send message:", error)
           Promise.resolve()
         })
+    | Disconnected =>
+      Console.error("[Effect] Cannot send message: not connected")
     }
   | FetchElementDetails({element, document}) => {
       // Fetch selector
@@ -376,25 +376,54 @@ let handleEffect = (effect, state: state, dispatch) => {
         sourceLocationPromise,
       ))->Promise.then(((selector, screenshot, sourceLocation)) => {
         let tagName = element.tagName
+        let sourceLocationWithTagName = sourceLocation->Option.map(sourceLoc => {
+          {
+            ...sourceLoc,
+            file: sourceLoc.file
+            ->String.split("?")
+            ->Array.get(0)
+            ->Option.getOr(sourceLoc.file),
+            tagName,
+          }
+        })
+        
         dispatch(
           SetSelectedElement({
             selectedElement: Some({
               element,
               selector,
               screenshot,
-              sourceLocation: sourceLocation->Option.map(sourceLoc => {
-                {
-                  ...sourceLoc,
-                  file: sourceLoc.file
-                  ->String.split("?")
-                  ->Array.get(0)
-                  ->Option.getOr(sourceLoc.file),
-                  tagName,
-                }
-              }),
+              sourceLocation: sourceLocationWithTagName,
             }),
           }),
         )
+        
+        // Resolve source location via server to get actual file paths
+        switch sourceLocationWithTagName {
+        | Some(sourceLoc) =>
+          let _ = Client__SourceLocationResolver.resolve(sourceLoc)->Promise.then(result => {
+            switch result {
+            | Ok(resolved) =>
+              Console.log2("[Effect] Source location resolved:", resolved)
+              // Update the source location with the resolved path
+              dispatch(
+                SetSelectedElement({
+                  selectedElement: Some({
+                    element,
+                    selector,
+                    screenshot,
+                    sourceLocation: Some(resolved),
+                  }),
+                }),
+              )
+            | Error(err) =>
+              Console.warn2("[Effect] Source location resolution failed (non-critical):", err)
+            }
+            Promise.resolve()
+          })
+        | None => ()
+        }
+        
         Promise.resolve()
       })
     }
@@ -434,7 +463,7 @@ let next = (state, action) => {
           let task = Task.make(~title=textContent, ~previewUrl)
           let updatedTasks = state.tasks->Dict.copy
           updatedTasks->Dict.set(task.id, task)
-          {tasks: updatedTasks, currentTaskId: Some(task.id)}
+          {...state, tasks: updatedTasks, currentTaskId: Some(task.id)}
         }
       }
 
@@ -675,7 +704,7 @@ let next = (state, action) => {
           let task = Task.make(~title="New Chat", ~previewUrl)
           let updatedTasks = state.tasks->Dict.copy
           updatedTasks->Dict.set(task.id, task)
-          {tasks: updatedTasks, currentTaskId: Some(task.id)}
+          {...state, tasks: updatedTasks, currentTaskId: Some(task.id)}
         }
       }
 
@@ -785,5 +814,11 @@ let next = (state, action) => {
     state
     ->Lens.updateCurrentTask(task => {...task, figmaNode: FigmaNode.NoSelection})
     ->AskTheLlmReactStatestore.StateReducer.update
+
+  | Connect({sendPrompt}) =>
+    {...state, connectionState: Connected(sendPrompt)}->AskTheLlmReactStatestore.StateReducer.update
+
+  | Disconnect =>
+    {...state, connectionState: Disconnected}->AskTheLlmReactStatestore.StateReducer.update
   }
 }

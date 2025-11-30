@@ -25,6 +25,9 @@ lint: ## Run linters
 dev-client: ## Start development server for client app
 	cd libs/client && $(MAKE) dev
 
+dev-server: ## Start development server for server app
+	cd apps/frontman_server && $(MAKE) dev
+
 dev-nextjs: ## Start development server for Next.js test site
 	cd test/sites/blog-starter && $(MAKE) dev
 

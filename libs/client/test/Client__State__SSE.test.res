@@ -62,6 +62,7 @@ describe("SSE Integration - Text Streaming", () => {
     let state = ref(({
       tasks,
       currentTaskId: Some(initialTask.id),
+      connectionState: Disconnected,
     }: Client__State__Types.state))
 
     // Simulate event sequence
@@ -124,6 +125,7 @@ describe("SSE Integration - Text Streaming", () => {
     let state = ref(({
       tasks,
       currentTaskId: Some(initialTask.id),
+      connectionState: Disconnected,
     }: Client__State__Types.state))
     let stableId = "text-stable-id"
     let taskId = initialTask.id

@@ -1,20 +1,9 @@
 // Middleware factory for NextJS
 
 module Server = FrontmanNextjs__Server
+module Config = FrontmanNextjs__Config
 
-type config = {
-  projectRoot: string,
-  basePath: string,
-  serverName: string,
-  serverVersion: string,
-}
-
-let defaultConfig = {
-  projectRoot: ".",
-  basePath: "__frontman",
-  serverName: "frontman-nextjs",
-  serverVersion: "1.0.0",
-}
+type config = Config.t
 
 // CORS headers for cross-origin requests (e.g., browser test page on different port)
 let corsHeaders = Dict.fromArray([
@@ -38,9 +27,42 @@ let handlePreflight = (): WebAPI.FetchAPI.response => {
   WebAPI.Response.fromNull(~init={status: 204, headers})
 }
 
+// Handle UI endpoint - serves the frontman client HTML
+let handleUI = (config: config): WebAPI.FetchAPI.response => {
+  let clientCssTag = config.clientCssUrl->Option.mapOr("", url => 
+    `<link rel="stylesheet" href="${url}">`
+  )
+  
+  let entrypointTemplate = config.entrypointUrl->Option.mapOr("", url => 
+    `<script type="template" id="frontman-entrypoint-url">${url}</script>`
+  )
+  
+  let themeClass = config.isLightTheme ? "" : "dark"
+  
+  let html = 
+    `<!DOCTYPE html>
+<html lang="en" class="${themeClass}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Frontman</title>
+    ${entrypointTemplate}
+    ${clientCssTag}
+</head>
+<body>
+    <div id="root"></div>
+    <script type="module" src="${config.clientUrl}"></script>
+</body>
+</html>`
+
+  let headers = WebAPI.HeadersInit.fromDict(Dict.fromArray([("Content-Type", "text/html")]))
+  WebAPI.Response.fromString(html, ~init={headers: headers})
+}
+
 // Create middleware that handles /__frontman/* routes
 // Returns None if route doesn't match, Some(response) if handled
-let createMiddleware = (~config: config=defaultConfig) => {
+let createMiddleware = (~config: option<config>=?) => {
+  let config = config->Option.getOr(Config.make())
   let server = Server.make(
     ~projectRoot=config.projectRoot,
     ~serverName=config.serverName,
@@ -61,14 +83,19 @@ let createMiddleware = (~config: config=defaultConfig) => {
 
     let toolsPath = config.basePath->String.toLowerCase ++ "/tools"
     let toolsCallPath = config.basePath->String.toLowerCase ++ "/tools/call"
+    let resolveSourceLocationPath = config.basePath->String.toLowerCase ++ "/resolve-source-location"
+
+    let uiPath = config.basePath->String.toLowerCase
 
     // Check if this is a frontman route (for CORS preflight)
-    let isFrontmanRoute = path == toolsPath || path == toolsCallPath
+    let isFrontmanRoute = path == toolsPath || path == toolsCallPath || path == resolveSourceLocationPath || path == uiPath
 
     switch (method, path) {
     | ("options", _) if isFrontmanRoute => Some(handlePreflight())
+    | ("get", p) if p == uiPath => Some(handleUI(config)->withCors)
     | ("get", p) if p == toolsPath => Some(server->Server.handleGetTools->withCors)
     | ("post", p) if p == toolsCallPath => Some((await server->Server.handleToolCall(req))->withCors)
+    | ("post", p) if p == resolveSourceLocationPath => Some((await server->Server.handleResolveSourceLocation(req))->withCors)
     | _ => None
     }
   }

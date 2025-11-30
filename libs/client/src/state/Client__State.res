@@ -1,6 +1,5 @@
 // Re-export types
 type state = Client__State__Types.state
-// type action = Client__State__StateReducer.action
 
 // Hook for selecting state
 let useSelector = selection =>
@@ -96,4 +95,10 @@ module Actions = {
   let setFigmaNodeWaiting = () => Client__State__Store.dispatch(SetFigmaNodeWaiting)
 
   let clearFigmaNodeWaiting = () => Client__State__Store.dispatch(ClearFigmaNodeWaiting)
+
+  // Connection action creators
+  let connect = (~sendPrompt) =>
+    Client__State__Store.dispatch(Connect({sendPrompt: sendPrompt}))
+
+  let disconnect = () => Client__State__Store.dispatch(Disconnect)
 }

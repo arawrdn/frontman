@@ -8,6 +8,8 @@
 		"@ask-the-llm/nextjs",
 		"@ask-the-llm/client",
 		"@ask-the-llm/frontman-client",
+		"@ask-the-llm/frontman-nextjs",
+		"@ask-the-llm/frontman-protocol",
 		"@ask-the-llm/react-statestore",
 		"@rescript/webapi"
 	],

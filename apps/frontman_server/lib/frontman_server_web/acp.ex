@@ -28,7 +28,7 @@ defmodule FrontmanServerWeb.ACP do
     %{
       "loadSession" => false,
       "mcpCapabilities" => %{"http" => false, "sse" => false, "websocket" => true},
-      "promptCapabilities" => %{"image" => false, "audio" => false, "embeddedContext" => false}
+      "promptCapabilities" => %{"image" => false, "audio" => false, "embeddedContext" => true}
     }
   end
 

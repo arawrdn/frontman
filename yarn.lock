@@ -281,6 +281,9 @@ __metadata:
     "@ai-sdk/react": "npm:^2.0.92"
     "@ask-the-llm/agent": "workspace:*"
     "@ask-the-llm/bindings": "workspace:*"
+    "@ask-the-llm/frontman-client": "workspace:*"
+    "@ask-the-llm/frontman-nextjs": "workspace:*"
+    "@ask-the-llm/frontman-protocol": "workspace:*"
     "@ask-the-llm/react-statestore": "workspace:*"
     "@biomejs/biome": "npm:^2.3.5"
     "@medv/finder": "npm:^4.0.2"
@@ -379,7 +382,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@ask-the-llm/frontman-protocol@workspace:libs/frontman-protocol":
+"@ask-the-llm/frontman-protocol@workspace:*, @ask-the-llm/frontman-protocol@workspace:libs/frontman-protocol":
   version: 0.0.0-use.local
   resolution: "@ask-the-llm/frontman-protocol@workspace:libs/frontman-protocol"
   dependencies:

@@ -57,7 +57,11 @@ defmodule FrontmanServer.Agents do
     result =
       DynamicSupervisor.start_child(
         FrontmanServer.AgentSupervisor,
-        {AgentServer, agent_id: agent_id, task_id: task_id, tools: tools, on_event: on_event}
+        {AgentServer,
+         agent_id: agent_id,
+         task_id: task_id,
+         tools: tools,
+         on_event: on_event}
       )
 
     case result do

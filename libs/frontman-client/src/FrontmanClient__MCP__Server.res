@@ -139,3 +139,12 @@ let buildInitializeResult = (server: t): Types.initializeResult => {
 let buildToolsListResult = (server: t): Types.toolsListResult => {
   {tools: getToolsJson(server)}
 }
+
+// Create a server interface for use with the generic MCP handler
+let toInterface = (server: t): Types.serverInterface<t> => {
+  server,
+  buildInitializeResult,
+  buildToolsListResult,
+  executeTool: (server, ~name, ~arguments, ~onProgress) =>
+    executeTool(server, ~name, ~arguments?, ~onProgress?),
+}

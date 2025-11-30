@@ -98,12 +98,38 @@ type sessionNewResult = {
   sessionId: string,
 }
 
+// Embedded resource for ContentBlock::Resource
+@schema
+type embeddedResource = {
+  uri: string,
+  @as("mimeType")
+  mimeType: string,
+  text: option<string>,
+}
+
 // Content block for prompts and responses
+// Supports text, resource_link, and resource types per ACP spec
 @schema
 type contentBlock = {
   @as("type")
   type_: string,
+  // For type="text"
   text: option<string>,
+  // For type="resource_link"
+  uri: option<string>,
+  // For type="resource"
+  resource: option<embeddedResource>,
+  // For type="resource" - mimeType is required per ACP spec
+  @as("mimeType")
+  mimeType: option<string>,
+}
+
+// Tool call content item (for tool_call_update)
+@schema
+type toolCallContentItem = {
+  @as("type")
+  type_: string,
+  content: option<contentBlock>,
 }
 
 // session/prompt result
@@ -114,11 +140,22 @@ type promptResult = {
 }
 
 // Session update - the update object from session/update notification
+// This is a flexible type that can represent different session update types
 @schema
 type sessionUpdate = {
   @as("sessionUpdate")
   sessionUpdate: string,
-  content: contentBlock,
+  // For agent_message_chunk
+  content: option<contentBlock>,
+  // For tool_call and tool_call_update
+  @as("toolCallId")
+  toolCallId: option<string>,
+  title: option<string>,
+  kind: option<string>,
+  status: option<string>,
+  // For tool_call_update with results (array of content items)
+  @as("contents")
+  contents: option<array<toolCallContentItem>>,
 }
 
 // session/update params

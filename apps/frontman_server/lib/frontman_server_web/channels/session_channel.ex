@@ -200,6 +200,7 @@ defmodule FrontmanServerWeb.SessionChannel do
     prompt_content = Map.get(params, "prompt", [])
     mcp_tools = socket.assigns[:mcp_tools] || []
 
+    # Extract text content from text blocks
     text_content =
       prompt_content
       |> Enum.filter(fn block -> Map.get(block, "type") == "text" end)
@@ -208,10 +209,27 @@ defmodule FrontmanServerWeb.SessionChannel do
 
     Logger.info("Received prompt for session #{session_id}: #{text_content}")
 
+    # Pass the full prompt_content (ContentBlocks) to the agent
+    # The agent will convert these to the appropriate LLM format
+    has_embedded_context =
+      Enum.any?(prompt_content, fn block ->
+        type = Map.get(block, "type")
+        type == "resource_link" or type == "resource"
+      end)
+
+    if has_embedded_context do
+      Logger.info("Prompt includes embedded context (resource_link or resource)")
+    end
+
     socket = assign(socket, :pending_prompt_id, id)
 
-    # Add user message to task - this triggers the real agent with MCP tools
-    case Tasks.add_user_message(session_id, text_content, mcp_tools: mcp_tools_to_llm_format(mcp_tools)) do
+    # Build options with MCP tools
+    opts = [
+      mcp_tools: mcp_tools_to_llm_format(mcp_tools)
+    ]
+
+    # Add user message to task - this triggers the real agent with MCP tools and content blocks
+    case Tasks.add_user_message(session_id, prompt_content, opts) do
       {:ok, _interaction} ->
         Logger.info("User message added, agent spawned for session #{session_id}")
 

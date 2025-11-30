@@ -7,6 +7,7 @@ module Tool = Protocol.FrontmanProtocol__Tool
 module ToolRegistry = FrontmanNextjs__ToolRegistry
 module SSE = FrontmanNextjs__SSE
 module WebStreams = AskTheLlmBindings.WebStreams
+module DOMElementToComponentSource = AskTheLlmBindings.DOMElementToComponentSource
 
 type config = {
   projectRoot: string,
@@ -134,6 +135,86 @@ let handleToolCall = async (server: t, req: WebAPI.FetchAPI.request): WebAPI.Fet
       })
 
       WebAPI.Response.fromReadableStream(stream, ~init={headers: SSE.headers()})
+    }
+  }
+}
+
+// POST /__frontman/resolve-source-location - resolves source location
+let handleResolveSourceLocation = async (
+  _server: t,
+  req: WebAPI.FetchAPI.request,
+): WebAPI.FetchAPI.response => {
+  let body = await req->WebAPI.Request.json
+
+  // Parse request body
+  let requestObj = body->JSON.Decode.object
+  
+  switch requestObj {
+  | None =>
+    WebAPI.Response.jsonR(
+      ~data=JSON.Encode.object(Dict.fromArray([("error", JSON.Encode.string("Invalid request body"))])),
+      ~init={status: 400},
+    )
+  | Some(obj) =>
+    let componentName = obj->Dict.get("componentName")->Option.flatMap(JSON.Decode.string)
+    let file = obj->Dict.get("file")->Option.flatMap(JSON.Decode.string)
+    let line = obj->Dict.get("line")->Option.flatMap(JSON.Decode.float)
+    let column = obj->Dict.get("column")->Option.flatMap(JSON.Decode.float)
+
+    // Validate required fields
+    switch (componentName, file, line, column) {
+    | (Some(componentName), Some(file), Some(line), Some(column)) =>
+      try {
+        let sourceLocation: DOMElementToComponentSource.sourceLocation = {
+          componentName,
+          file,
+          line: line->Float.toInt,
+          column: column->Float.toInt,
+        }
+
+        let resolved = await DOMElementToComponentSource.resolveSourceLocationInServer(
+          sourceLocation,
+        )
+
+        let responseJson = JSON.Encode.object(
+          Dict.fromArray([
+            ("componentName", JSON.Encode.string(resolved.componentName)),
+            ("file", JSON.Encode.string(resolved.file)),
+            ("line", JSON.Encode.float(resolved.line->Int.toFloat)),
+            ("column", JSON.Encode.float(resolved.column->Int.toFloat)),
+          ]),
+        )
+
+        let headers = WebAPI.HeadersInit.fromDict(
+          Dict.fromArray([("Content-Type", "application/json")]),
+        )
+        WebAPI.Response.jsonR(~data=responseJson, ~init={headers: headers})
+      } catch {
+      | exn =>
+        let msg =
+          exn->JsExn.fromException->Option.flatMap(JsExn.message)->Option.getOr("Unknown error")
+        WebAPI.Response.jsonR(
+          ~data=JSON.Encode.object(
+            Dict.fromArray([
+              ("error", JSON.Encode.string("Failed to resolve source location")),
+              ("details", JSON.Encode.string(msg)),
+            ]),
+          ),
+          ~init={status: 500},
+        )
+      }
+    | _ =>
+      WebAPI.Response.jsonR(
+        ~data=JSON.Encode.object(
+          Dict.fromArray([
+            (
+              "error",
+              JSON.Encode.string("Missing required fields: componentName, file, line, column"),
+            ),
+          ]),
+        ),
+        ~init={status: 400},
+      )
     }
   }
 }
