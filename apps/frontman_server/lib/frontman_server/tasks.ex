@@ -96,10 +96,10 @@ defmodule FrontmanServer.Tasks do
 
   Arguments:
     - `task_id` - The ID of the task
-    - `content_blocks` - Array of ACP ContentBlocks (text, resource_link, resource)
+    - `content_blocks` - Array of content blocks (text, resource_link, resource)
 
   Options:
-    - `:mcp_tools` - List of tool definitions to pass to the agent
+    - `:tools` - List of tool definitions to pass to the agent
     - `:metadata` - Additional metadata for the message
   """
   @spec add_user_message(String.t(), list(), keyword()) ::
@@ -178,4 +178,38 @@ defmodule FrontmanServer.Tasks do
         {:error, reason}
     end
   end
+
+  # Todo Management
+
+  alias FrontmanServer.Tasks.Todos
+
+  @doc """
+  Creates a new todo (in memory, returns for tool result).
+
+  This is a helper for creating todo structs. The actual persistence
+  happens when the todo is stored as a ToolResult interaction.
+  """
+  defdelegate create_todo(content, active_form, status \\ "pending"), to: Todos
+
+  @doc """
+  Lists all todos for a task.
+
+  Todos are managed through tool calls, not direct API calls.
+  This function is for reading the current state only.
+  """
+  @spec list_todos(String.t()) :: {:ok, [Todos.Todo.t()]} | {:error, :not_found}
+  def list_todos(task_id) do
+    case get_task(task_id) do
+      {:ok, task} ->
+        todos_map = Todos.list_todos(task.interactions)
+        todos_list = todos_map
+          |> Map.values()
+          |> Enum.sort_by(& &1.created_at, DateTime)
+        {:ok, todos_list}
+
+      {:error, :not_found} ->
+        {:error, :not_found}
+    end
+  end
+
 end

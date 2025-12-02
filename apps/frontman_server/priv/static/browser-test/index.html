@@ -286,6 +286,35 @@
         <input type="text" id="messageInput" placeholder="Type a message..." />
         <button class="btn-primary" id="sendBtn">Send</button>
       </div>
+
+      <!-- Quick test prompts for todos -->
+      <details class="info-panel" style="margin-top: 12px;">
+        <summary>Todo Tool Test Prompts</summary>
+        <div style="display: flex; flex-direction: column; gap: 6px; margin-top: 8px;">
+          <button class="btn-secondary" onclick="document.getElementById('messageInput').value='Create a todo to test the backend todo tools'; document.getElementById('sendBtn').click()">Create a todo</button>
+          <button class="btn-secondary" onclick="document.getElementById('messageInput').value='List all my todos'; document.getElementById('sendBtn').click()">List todos</button>
+          <button class="btn-secondary" onclick="document.getElementById('messageInput').value='Mark the first todo as in_progress'; document.getElementById('sendBtn').click()">Update todo status</button>
+          <button class="btn-secondary" onclick="document.getElementById('messageInput').value='Remove all completed todos'; document.getElementById('sendBtn').click()">Remove completed</button>
+        </div>
+      </details>
+    </div>
+
+    <!-- Plan Display -->
+    <div class="chat-container" id="planContainer" style="display: none;">
+      <div class="chat-header">
+        <h3>Plan (Todos)</h3>
+        <span id="planCount" style="font-size: 11px; color: #666;">0 items</span>
+      </div>
+      <div id="planEntries" style="background: #0a0a0a; border: 1px solid #333; border-radius: 4px; padding: 10px; min-height: 60px; max-height: 250px; overflow-y: auto;"></div>
+    </div>
+
+    <!-- Backend Tool Results -->
+    <div class="chat-container" id="toolResultsContainer" style="display: none;">
+      <div class="chat-header">
+        <h3>Backend Tool Calls</h3>
+        <button class="btn-secondary" id="clearToolsBtn">Clear</button>
+      </div>
+      <div id="toolResults" style="background: #0a0a0a; border: 1px solid #333; border-radius: 4px; padding: 10px; min-height: 100px; max-height: 300px; overflow-y: auto; font-family: monospace; font-size: 11px;"></div>
     </div>
   </div>
 
@@ -326,6 +355,12 @@
     const messagesEl = document.getElementById('messages');
     const messageInput = document.getElementById('messageInput');
     const sendBtn = document.getElementById('sendBtn');
+    const toolResultsContainer = document.getElementById('toolResultsContainer');
+    const toolResultsEl = document.getElementById('toolResults');
+    const clearToolsBtn = document.getElementById('clearToolsBtn');
+    const planContainer = document.getElementById('planContainer');
+    const planEntriesEl = document.getElementById('planEntries');
+    const planCountEl = document.getElementById('planCount');
 
     // State
     let relay = null;
@@ -334,6 +369,7 @@
     let mcpHandler = null;
     let mcpServer = null;
     let currentAssistantMessage = null;
+    const toolCallsMap = new Map(); // Store tool call metadata by toolCallId
 
     // Step management
     function setStepState(stepEl, state, statusText) {
@@ -553,7 +589,7 @@
           mcpInfoEl.style.display = 'block';
           chatContainer.style.display = 'block';
 
-          mcpHandler = MCP.attach(session.channel, mcpServer, logMcpMessage);
+          mcpHandler = MCP.attach(session.channel, MCPServer.toInterface(mcpServer), logMcpMessage);
           displayMcpTools();
 
           setStepState(step3, 'completed', 'active');
@@ -571,12 +607,130 @@
     }
 
     function handleSessionUpdate(update) {
-      if (update.sessionUpdate === 'agent_message_chunk') {
-        const content = update.content;
-        if (content.text) {
-          appendAssistantChunk(content.text);
+      // ReScript variants compile to {TAG: "VariantName", ...fields}
+      switch (update.TAG) {
+        case 'AgentMessageChunk': {
+          const content = update.content;
+          if (content && content.text) {
+            appendAssistantChunk(content.text);
+          }
+          break;
         }
+        case 'ToolCall': {
+          // Store tool call metadata for later lookups
+          const { toolCallId, title, kind } = update;
+          toolCallsMap.set(toolCallId, { title, kind });
+          break;
+        }
+        case 'ToolCallUpdate': {
+          handleToolCallUpdate(update);
+          break;
+        }
+        case 'Plan': {
+          handlePlanUpdate(update);
+          break;
+        }
+        default:
+          console.log('[ACP] Unknown update:', update);
       }
+    }
+
+    function handlePlanUpdate(update) {
+      const entries = update.entries || [];
+      log(`Plan update: ${entries.length} entries`, 'info');
+
+      planContainer.style.display = 'block';
+      planCountEl.textContent = `${entries.length} item${entries.length !== 1 ? 's' : ''}`;
+      planEntriesEl.innerHTML = '';
+
+      if (entries.length === 0) {
+        planEntriesEl.innerHTML = '<div style="color: #666; font-size: 12px; text-align: center; padding: 20px;">No plan entries</div>';
+        return;
+      }
+
+      entries.forEach((entry, index) => {
+        const entryDiv = document.createElement('div');
+        entryDiv.style.cssText = 'display: flex; align-items: center; gap: 10px; padding: 8px; border-bottom: 1px solid #1a2a3e;';
+
+        // Status indicator
+        const statusColors = {
+          'pending': '#666',
+          'in_progress': '#f39c12',
+          'completed': '#27ae60'
+        };
+        const statusIcons = {
+          'pending': '○',
+          'in_progress': '◐',
+          'completed': '●'
+        };
+
+        const statusEl = document.createElement('span');
+        statusEl.style.cssText = `color: ${statusColors[entry.status] || '#666'}; font-size: 14px;`;
+        statusEl.textContent = statusIcons[entry.status] || '○';
+
+        // Content
+        const contentEl = document.createElement('span');
+        contentEl.style.cssText = 'flex: 1; font-size: 12px; color: #ccc;';
+        contentEl.textContent = entry.content;
+
+        // Status badge
+        const badgeEl = document.createElement('span');
+        badgeEl.style.cssText = `font-size: 10px; padding: 2px 6px; border-radius: 3px; background: ${statusColors[entry.status] || '#666'}20; color: ${statusColors[entry.status] || '#666'};`;
+        badgeEl.textContent = entry.status;
+
+        entryDiv.appendChild(statusEl);
+        entryDiv.appendChild(contentEl);
+        entryDiv.appendChild(badgeEl);
+        planEntriesEl.appendChild(entryDiv);
+      });
+    }
+
+    function handleToolCallUpdate(update) {
+      const { toolCallId, status, content } = update;
+
+      // Look up title from initial tool_call
+      const toolInfo = toolCallsMap.get(toolCallId);
+      const title = toolInfo?.title || 'Unknown tool';
+
+      // Show tool results container
+      toolResultsContainer.style.display = 'block';
+
+      // Log tool call
+      if (status === 'completed' && content && Array.isArray(content)) {
+        content.forEach(block => {
+          if (block.content) {
+            // Structured content from backend tools
+            appendToolResult(title, block.content);
+          }
+        });
+      }
+    }
+
+    function appendToolResult(toolName, data) {
+      const time = new Date().toLocaleTimeString('en-US', { hour12: false });
+      const resultDiv = document.createElement('div');
+      resultDiv.style.marginBottom = '10px';
+      resultDiv.style.padding = '8px';
+      resultDiv.style.background = '#16213e';
+      resultDiv.style.borderRadius = '4px';
+      resultDiv.style.borderLeft = '3px solid #00d4ff';
+
+      const header = document.createElement('div');
+      header.style.color = '#00d4ff';
+      header.style.marginBottom = '4px';
+      header.textContent = `${time} ${toolName}`;
+
+      const content = document.createElement('pre');
+      content.style.margin = '0';
+      content.style.color = '#27ae60';
+      content.style.fontSize = '10px';
+      content.style.whiteSpace = 'pre-wrap';
+      content.textContent = JSON.stringify(data, null, 2);
+
+      resultDiv.appendChild(header);
+      resultDiv.appendChild(content);
+      toolResultsEl.appendChild(resultDiv);
+      toolResultsEl.scrollTop = toolResultsEl.scrollHeight;
     }
 
     function escapeHtml(text) {
@@ -646,6 +800,9 @@
     });
     clearLogBtn.addEventListener('click', () => {
       logEl.innerHTML = '';
+    });
+    clearToolsBtn.addEventListener('click', () => {
+      toolResultsEl.innerHTML = '';
     });
 
     log('Ready', 'success');

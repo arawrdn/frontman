@@ -11,6 +11,7 @@ defmodule FrontmanServerWeb.SessionChannel do
 
   alias FrontmanServer.Tasks
   alias FrontmanServer.Tasks.Interaction
+  alias FrontmanServer.ToolRegistry
   alias FrontmanServerWeb.{ACP, JsonRpc, MCPProtocol}
 
   @impl true
@@ -253,12 +254,15 @@ defmodule FrontmanServerWeb.SessionChannel do
 
     socket = assign(socket, :pending_prompt_id, id)
 
-    # Build options with MCP tools
+    # Merge backend tools with client tools
+    backend_tools = FrontmanServer.Tools.backend_tools(session_id)
+    all_tools = backend_tools ++ mcp_tools_to_llm_format(mcp_tools)
+
     opts = [
-      mcp_tools: mcp_tools_to_llm_format(mcp_tools)
+      tools: all_tools
     ]
 
-    # Add user message to task - this triggers the real agent with MCP tools and content blocks
+    # Add user message to task - this triggers the agent with ALL tools and content blocks
     case Tasks.add_user_message(session_id, prompt_content, opts) do
       {:ok, _interaction} ->
         Logger.info("User message added, agent spawned for session #{session_id}")
@@ -328,34 +332,38 @@ defmodule FrontmanServerWeb.SessionChannel do
     pending_notification = ACP.build_tool_call_notification(session_id, tool_call, "pending")
     push(socket, "acp:message", pending_notification)
 
-    # Route tool call to browser via MCP
-    request_id = System.unique_integer([:positive])
+    # Try backend execution first
+    case FrontmanServer.Tools.execute_backend_tool(tool_call, session_id) do
+      {:executed, result} ->
+        handle_backend_tool_result(tool_call, result, socket)
 
-    request =
-      JsonRpc.request(request_id, "tools/call", %{
-        "name" => tool_call.tool_name,
-        "arguments" => tool_call.arguments,
-        "callId" => tool_call.tool_call_id
-      })
+      :not_found ->
+        # Not a backend tool, route to MCP
+        route_to_mcp(tool_call, socket)
+    end
+  end
 
-    # Send ACP notification: in_progress
-    in_progress_notification =
-      ACP.build_tool_call_update_notification(session_id, tool_call.tool_call_id, "in_progress")
+  def handle_info({:interaction, %Interaction.ToolResult{} = tool_result}, socket) do
+    # Check if this was a todo tool that produces events
+    if ToolRegistry.produces_events?(tool_result.tool_name) do
+      session_id = socket.assigns.session_id
 
-    push(socket, "acp:message", in_progress_notification)
+      case Tasks.list_todos(session_id) do
+        {:ok, todos} ->
+          entries = ACP.todos_to_plan_entries(todos)
+          notification = ACP.plan_update(session_id, entries)
+          push(socket, "acp:message", notification)
 
-    # Track pending call to match response
-    pending_calls = socket.assigns[:pending_mcp_calls] || %{}
+        {:error, _reason} ->
+          :ok
+      end
+    end
 
-    socket =
-      assign(socket, :pending_mcp_calls, Map.put(pending_calls, request_id, tool_call))
-
-    push(socket, "mcp:message", request)
     {:noreply, socket}
   end
 
   def handle_info({:interaction, _interaction}, socket) do
-    # Other interactions are stored but don't need transport handling
+    # Other interactions don't need transport handling
     {:noreply, socket}
   end
 
@@ -375,6 +383,94 @@ defmodule FrontmanServerWeb.SessionChannel do
   end
 
   def handle_info(_msg, socket) do
+    {:noreply, socket}
+  end
+
+  defp handle_backend_tool_result(tool_call, result, socket) do
+    session_id = socket.assigns.session_id
+
+    # Send in_progress update
+    notification = ACP.tool_call_update(session_id, tool_call.tool_call_id, "in_progress")
+    push(socket, "acp:message", notification)
+
+    # Handle result
+    case result do
+      {:ok, content} ->
+        handle_tool_success(tool_call, content, socket)
+
+      {:error, reason} ->
+        handle_tool_error(tool_call, reason, socket)
+    end
+
+    {:noreply, socket}
+  end
+
+  defp handle_tool_success(tool_call, result, socket) do
+    session_id = socket.assigns.session_id
+
+    # Convert result to ACP content format
+    content = format_tool_content(result)
+
+    # Send completed update
+    notification = ACP.tool_call_update(session_id, tool_call.tool_call_id, "completed", content)
+    push(socket, "acp:message", notification)
+
+    # Store structured data (not JSON)
+    Tasks.add_tool_result(
+      session_id,
+      %{id: tool_call.tool_call_id, name: tool_call.tool_name},
+      result,
+      false
+    )
+  end
+
+  defp handle_tool_error(tool_call, error, socket) do
+    session_id = socket.assigns.session_id
+    error_message = to_string(error)
+
+    # Convert error to ACP content format
+    content = [%{type: "content", content: %{type: "text", text: error_message}}]
+
+    # Send failed update
+    notification = ACP.tool_call_update(session_id, tool_call.tool_call_id, "failed", content)
+    push(socket, "acp:message", notification)
+
+    # Store error
+    Tasks.add_tool_result(
+      session_id,
+      %{id: tool_call.tool_call_id, name: tool_call.tool_name},
+      error_message,
+      true
+    )
+  end
+
+  defp format_tool_content(result) when is_map(result) do
+    # Wrap structured result in ACP content block
+    [%{type: "content", content: %{type: "text", text: Jason.encode!(result)}}]
+  end
+
+  defp route_to_mcp(tool_call, socket) do
+    session_id = socket.assigns.session_id
+    request_id = System.unique_integer([:positive])
+
+    request =
+      JsonRpc.request(request_id, "tools/call", %{
+        "name" => tool_call.tool_name,
+        "arguments" => tool_call.arguments,
+        "callId" => tool_call.tool_call_id
+      })
+
+    # Send ACP notification: in_progress
+    in_progress_notification =
+      ACP.build_tool_call_update_notification(session_id, tool_call.tool_call_id, "in_progress")
+
+    push(socket, "acp:message", in_progress_notification)
+
+    # Track pending call for response correlation
+    pending_calls = socket.assigns[:pending_mcp_calls] || %{}
+    socket = assign(socket, :pending_mcp_calls, Map.put(pending_calls, request_id, tool_call))
+
+    push(socket, "mcp:message", request)
     {:noreply, socket}
   end
 
