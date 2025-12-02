@@ -122,7 +122,7 @@ defmodule FrontmanServer.Agents do
   defp handle_agent_event(task_id, event) do
     case event do
       {:token, agent_id, token} ->
-        broadcast(task_id, {:stream_token, agent_id, token})
+        broadcast(task_id, {:agent_stream_token, agent_id, token})
 
       {:response, agent_id, text, metadata} ->
         Tasks.add_agent_response(task_id, agent_id, text, metadata)

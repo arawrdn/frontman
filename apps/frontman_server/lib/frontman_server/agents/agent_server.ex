@@ -13,7 +13,7 @@ defmodule FrontmanServer.Agents.AgentServer do
   use GenServer
   require Logger
 
-  @default_model "anthropic:claude-sonnet-4-20250514"
+  @default_model "google:gemini-2.5-pro"
   @idle_timeout_ms 5 * 60 * 1000
 
   @base_system_prompt """
@@ -166,7 +166,7 @@ defmodule FrontmanServer.Agents.AgentServer do
   end
 
   @impl true
-  def handle_info({:tool_result, tool_call_id, _result, _is_error}, state) do
+  def handle_info({:tool_result, tool_call_id, _result, is_error}, state) do
     case Map.get(state.pending_tool_calls, tool_call_id) do
       nil ->
         {:noreply, state}
@@ -248,6 +248,7 @@ defmodule FrontmanServer.Agents.AgentServer do
         chunks = stream_chunks(state, response.stream)
         text = extract_text(chunks)
         tool_calls = extract_tool_calls(chunks)
+
         handle_response(state, text, tool_calls)
 
       {:error, reason} ->
@@ -257,6 +258,8 @@ defmodule FrontmanServer.Agents.AgentServer do
   end
 
   defp stream_chunks(state, chunk_stream) do
+    # ACP compliant: First agent_message_chunk implicitly signals message start
+    # No need for explicit message_start event
     chunk_stream
     |> Enum.map(fn chunk ->
       text = Map.get(chunk, :text) || ""
@@ -295,6 +298,9 @@ defmodule FrontmanServer.Agents.AgentServer do
 
       String.starts_with?(model, "anthropic:") ->
         Application.get_env(:frontman_server, :anthropic_api_key)
+
+      String.starts_with?(model, "google:") ->
+        Application.get_env(:frontman_server, :google_api_key)
 
       true ->
         Application.get_env(:frontman_server, :anthropic_api_key)
