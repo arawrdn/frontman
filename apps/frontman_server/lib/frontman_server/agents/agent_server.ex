@@ -13,7 +13,7 @@ defmodule FrontmanServer.Agents.AgentServer do
   use GenServer
   require Logger
 
-  @default_model "google:gemini-2.5-pro"
+  @default_model "xai:grok-code-fast-1"
   @idle_timeout_ms 5 * 60 * 1000
 
   @base_system_prompt """
@@ -301,6 +301,9 @@ defmodule FrontmanServer.Agents.AgentServer do
 
       String.starts_with?(model, "google:") ->
         Application.get_env(:frontman_server, :google_api_key)
+
+      String.starts_with?(model, "xai:") ->
+        Application.get_env(:frontman_server, :xai_api_key)
 
       true ->
         Application.get_env(:frontman_server, :anthropic_api_key)

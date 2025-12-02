@@ -313,8 +313,8 @@ defmodule FrontmanServer.Tasks.Interaction do
 
   This is the boundary translation from Tasks domain (Interactions)
   to Agents domain (LLM messages). Conversation messages include
-  UserMessage, AgentResponse, ToolCall, and ToolResult.
-  ToolCall interactions are skipped as they're embedded in AgentResponse metadata.
+  UserMessage, AgentResponse, and ToolResult.
+  ToolCall interactions are excluded as they're embedded in AgentResponse metadata.
   """
   @spec to_llm_messages(list(t())) :: list(map())
   def to_llm_messages(interactions) do
@@ -326,7 +326,7 @@ defmodule FrontmanServer.Tasks.Interaction do
 
   defp is_conversation_message(%UserMessage{}), do: true
   defp is_conversation_message(%AgentResponse{}), do: true
-  defp is_conversation_message(%ToolCall{}), do: true
+  # ToolCall is skipped - it's embedded in AgentResponse metadata
   defp is_conversation_message(%ToolResult{}), do: true
   defp is_conversation_message(_), do: false
 
@@ -345,6 +345,8 @@ defmodule FrontmanServer.Tasks.Interaction do
         ReqLLM.Context.assistant(content)
     end
   end
+
+  defp to_llm_message(%ToolCall{}), do: nil
 
   defp to_llm_message(%ToolResult{tool_name: name, tool_call_id: id, result: result}) do
     ReqLLM.Context.tool_result_message(name, id, result)
