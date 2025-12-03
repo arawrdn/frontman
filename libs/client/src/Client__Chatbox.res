@@ -79,6 +79,7 @@ let make = () => {
   let messages = Client__State.useSelector(Client__State.Selectors.messages)
   let isStreaming = Client__State.useSelector(Client__State.Selectors.isStreaming)
   let isConnected = Client__State.useSelector(Client__State.Selectors.isConnected)
+  let planEntries = Client__State.useSelector(Client__State.Selectors.currentPlanEntries)
 
   let handleSubmit = (message: {"text": string, "files": option<array<WebAPI.FileAPI.file>>}) => {
     let hasText = message["text"] !== ""
@@ -240,8 +241,15 @@ let make = () => {
             </React.Fragment>
 
             | ToolCall({toolName, state, input, inputBuffer, result, errorText, _}) =>
-            // Render tool call message
-            <React.Fragment key={messageId}>
+            // Hide todo tool calls from UI
+            let isTodoTool = String.includes(toolName, "todo_list") ||
+                             String.includes(toolName, "todo_add") ||
+                             String.includes(toolName, "todo_update") ||
+                             String.includes(toolName, "todo_remove")
+            if isTodoTool {
+              React.null
+            } else {
+              <React.Fragment key={messageId}>
               <div className="max-w-full">
                 <AIElements.Tool
                   defaultOpen={switch state {
@@ -301,7 +309,8 @@ let make = () => {
               } else {
                 React.null
               }}
-            </React.Fragment>
+              </React.Fragment>
+            }
             }
           })
           ->React.array
@@ -310,6 +319,7 @@ let make = () => {
       </AIElements.ConversationContent>
       <AIElements.ConversationScrollButton />
     </AIElements.Conversation>
+    <Client__PlanDisplay entries=planEntries />
     <Client__SelectedElementDisplay />
     <Client__FigmaNodeDisplay />
     <AIElements.PromptInput
