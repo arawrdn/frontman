@@ -494,45 +494,82 @@ let next = (state, action) => {
       )
     }
 
-  | StreamingStarted({taskId, id}) =>
+  | StreamingStarted({taskId, id: _}) =>
     state
-    ->Lens.updateTask(taskId, task =>
-      Lens.insertTaskMessage(
-        task,
-        Message.Assistant(
-          Streaming({
-            id,
-            textBuffer: "Waiting for response...",
-            createdAt: Date.now(),
-          }),
-        ),
-      )
-    )
+    ->Lens.updateTask(taskId, task => {
+        // Get all messages sorted by creation time
+        let messages = task.messages->Dict.valuesToArray
+        let sortedMessages = messages->Array.toSorted((a, b) => {
+          let aTime = Selectors.getMessageCreatedAt(a)
+          let bTime = Selectors.getMessageCreatedAt(b)
+          aTime -. bTime
+        })
+        let lastMessage = sortedMessages->Array.get(Array.length(sortedMessages) - 1)
+        
+        // Only create new streaming message if last message is not already streaming
+        switch lastMessage {
+        | Some(Message.Assistant(Streaming(_))) =>
+          // Already have a streaming message, don't create another
+          task
+        | _ =>
+          // Create new streaming message
+          let newId = `msg_${taskId}_${Date.now()->Float.toString}`
+          let newMessage = Message.Assistant(
+            Streaming({
+              id: newId,
+              textBuffer: "",
+              createdAt: Date.now(),
+            }),
+          )
+          let updatedMessages = task.messages->Dict.copy
+          updatedMessages->Dict.set(newId, newMessage)
+          {...task, messages: updatedMessages}
+        }
+      })
     ->AskTheLlmReactStatestore.StateReducer.update
 
-  | TextDeltaReceived({taskId, id, text}) =>
+  | TextDeltaReceived({taskId, id: _, text}) =>
     state
-    ->Lens.updateTask(taskId, task =>
-      Lens.updateTaskMessage(task, id, msg =>
-        switch msg {
-        | Message.Assistant(Streaming({id: msgId, textBuffer, createdAt})) =>
-          // Replace "Waiting for response..." with actual text when first chunk arrives
-          let newBuffer = if textBuffer == "Waiting for response..." {
-            text
-          } else {
-            textBuffer ++ text
-          }
-          Message.Assistant(
+    ->Lens.updateTask(taskId, task => {
+        // Get all messages sorted by creation time
+        let messages = task.messages->Dict.valuesToArray
+        let sortedMessages = messages->Array.toSorted((a, b) => {
+          let aTime = Selectors.getMessageCreatedAt(a)
+          let bTime = Selectors.getMessageCreatedAt(b)
+          aTime -. bTime
+        })
+        let lastMessage = sortedMessages->Array.get(Array.length(sortedMessages) - 1)
+        
+        // Check if last message is a streaming assistant message
+        switch lastMessage {
+        | Some(Message.Assistant(Streaming({id: msgId, textBuffer, createdAt}))) =>
+          // Append to existing streaming message
+          let newBuffer = textBuffer ++ text
+          let updatedMsg = Message.Assistant(
             Streaming({
               id: msgId,
               textBuffer: newBuffer,
               createdAt,
             }),
           )
-        | other => other
+          let updatedMessages = task.messages->Dict.copy
+          updatedMessages->Dict.set(msgId, updatedMsg)
+          {...task, messages: updatedMessages}
+        | _ =>
+          // Last message is not a streaming assistant - create new streaming message
+          let newId = `msg_${taskId}_${Date.now()->Float.toString}`
+          let newMessage = Message.Assistant(
+            Streaming({
+              id: newId,
+              textBuffer: text,
+              createdAt: Date.now(),
+            }),
+          )
+          let updatedMessages = task.messages->Dict.copy
+          updatedMessages->Dict.set(newId, newMessage)
+          {...task, messages: updatedMessages}
         }
-      )
-    )
+      })
     ->AskTheLlmReactStatestore.StateReducer.update
 
   | ToolCallReceived({taskId, toolCall}) =>
@@ -663,23 +700,25 @@ let next = (state, action) => {
     )
     ->AskTheLlmReactStatestore.StateReducer.update
 
-  | MessageCompleted({taskId, id}) =>
+  | MessageCompleted({taskId, id: _}) =>
     state
-    ->Lens.updateTask(taskId, task =>
-      Lens.updateTaskMessage(task, id, msg =>
-        switch msg {
-        | Message.Assistant(Streaming({id, textBuffer, createdAt})) => {
-            let content = if String.length(textBuffer) > 0 {
-              [AssistantContentPart.Text({text: textBuffer})]
-            } else {
-              []
+    ->Lens.updateTask(taskId, task => {
+        // Find all streaming assistant messages and complete them
+        let updatedMessages = task.messages->Dict.mapValues(msg =>
+          switch msg {
+          | Message.Assistant(Streaming({id, textBuffer, createdAt})) => {
+              let content = if String.length(textBuffer) > 0 {
+                [AssistantContentPart.Text({text: textBuffer})]
+              } else {
+                []
+              }
+              Message.Assistant(Completed({id, content, createdAt}))
             }
-            Message.Assistant(Completed({id, content, createdAt}))
+          | other => other
           }
-        | other => other
-        }
-      )
-    )
+        )
+        {...task, messages: updatedMessages}
+      })
     ->AskTheLlmReactStatestore.StateReducer.update
 
   | SetPreviewUrl({url}) =>

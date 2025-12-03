@@ -103,12 +103,8 @@ let make = () => {
       content->Option.flatMap(c => c.text)->Option.forEach(text => {
         // Use a consistent ID for the current message stream
         let id = `msg_${taskId}`
-        // Check if we have a streaming message - if not, create one first
-        let messages = Client__State.Selectors.streamingMessages(state)
-        if Array.length(messages) == 0 {
-          // No streaming message exists, create one first
-          Client__State.Actions.streamingStarted(~taskId, ~id)
-        }
+        // The reducer will handle creating a new streaming message if needed
+        // (e.g., if last message is not an assistant message)
         Client__State.Actions.textDeltaReceived(~taskId, ~id, ~text)
       })
 
