@@ -13,7 +13,8 @@ defmodule FrontmanServer.Agents.AgentServer do
   use GenServer
   require Logger
 
-  @default_model "openrouter:anthropic/claude-sonnet-4.5"
+  @default_model "openrouter:openai/gpt-5.1-codex"
+  # @default_model "openrouter:anthropic/claude-sonnet-4.5"
   @idle_timeout_ms 5 * 60 * 1000
 
   @base_system_prompt """
@@ -242,6 +243,8 @@ defmodule FrontmanServer.Agents.AgentServer do
         [] -> llm_opts
         tools -> Keyword.put(llm_opts, :tools, tools)
       end
+
+    IO.inspect(System.get_env("REQ_LLM_TIMEOUT"), label: "REQ_LLM_TIMEOUT")
 
     case ReqLLM.stream_text(@default_model, messages_with_system, llm_opts) do
       {:ok, response} ->
