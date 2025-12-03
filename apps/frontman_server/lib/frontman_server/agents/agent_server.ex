@@ -13,7 +13,7 @@ defmodule FrontmanServer.Agents.AgentServer do
   use GenServer
   require Logger
 
-  @default_model "anthropic:claude-opus-4.1"
+  @default_model "openrouter:anthropic/claude-sonnet-4.5"
   @idle_timeout_ms 5 * 60 * 1000
 
   @base_system_prompt """
@@ -304,6 +304,9 @@ defmodule FrontmanServer.Agents.AgentServer do
 
       String.starts_with?(model, "xai:") ->
         Application.get_env(:frontman_server, :xai_api_key)
+
+      String.starts_with?(model, "openrouter:") ->
+        Application.get_env(:frontman_server, :openrouter_api_key)
 
       true ->
         Application.get_env(:frontman_server, :anthropic_api_key)
