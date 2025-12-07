@@ -65,7 +65,11 @@ defmodule FrontmanServerWeb.SessionChannel do
         case payload do
           %{"id" => id} ->
             error_response =
-              JsonRpc.error_response(id, JsonRpc.error_invalid_request(), "Invalid JSON-RPC message")
+              JsonRpc.error_response(
+                id,
+                JsonRpc.error_invalid_request(),
+                "Invalid JSON-RPC message"
+              )
 
             push(socket, "acp:message", error_response)
             {:noreply, socket}
@@ -164,6 +168,7 @@ defmodule FrontmanServerWeb.SessionChannel do
         # Store result and notify agent
         Tasks.add_tool_result(
           session_id,
+          tool_call.agent_id,
           %{id: tool_call.tool_call_id, name: tool_call.tool_name},
           text_result,
           is_error
@@ -213,6 +218,7 @@ defmodule FrontmanServerWeb.SessionChannel do
         # Store error result and notify agent
         Tasks.add_tool_result(
           session_id,
+          tool_call.agent_id,
           %{id: tool_call.tool_call_id, name: tool_call.tool_name},
           error_message,
           true
@@ -305,20 +311,25 @@ defmodule FrontmanServerWeb.SessionChannel do
   def handle_info({:agent_stream_token, _agent_id, text}, socket) do
     # Translate domain event to ACP notification
     # ACP compliant: agent_message_chunk implicitly signals message start
+    Logger.debug("Channel received agent_stream_token: #{byte_size(text)} bytes, text=#{inspect(text)}")
     session_id = socket.assigns.session_id
     notification = ACP.build_agent_message_chunk_notification(session_id, text)
+    Logger.debug("Pushing notification: #{inspect(notification)}")
     push(socket, "acp:message", notification)
     {:noreply, socket}
   end
 
   def handle_info({:agent_completed, _agent_id}, socket) do
+    Logger.debug("Channel received agent_completed, pending_prompt_id=#{inspect(socket.assigns[:pending_prompt_id])}")
     # Translate domain event to ACP response
     case socket.assigns[:pending_prompt_id] do
       nil ->
+        Logger.warning("agent_completed but no pending_prompt_id - response not sent!")
         {:noreply, socket}
 
       id ->
         response = JsonRpc.success_response(id, ACP.build_prompt_result("end_turn"))
+        Logger.info("Pushing prompt response with id=#{id}")
         push(socket, "acp:message", response)
         socket = assign(socket, :pending_prompt_id, nil)
         {:noreply, socket}
@@ -418,6 +429,7 @@ defmodule FrontmanServerWeb.SessionChannel do
     # Store structured data (not JSON)
     Tasks.add_tool_result(
       session_id,
+      tool_call.agent_id,
       %{id: tool_call.tool_call_id, name: tool_call.tool_name},
       result,
       false
@@ -438,6 +450,7 @@ defmodule FrontmanServerWeb.SessionChannel do
     # Store error
     Tasks.add_tool_result(
       session_id,
+      tool_call.agent_id,
       %{id: tool_call.tool_call_id, name: tool_call.tool_name},
       error_message,
       true

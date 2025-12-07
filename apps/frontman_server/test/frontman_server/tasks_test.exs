@@ -38,6 +38,31 @@ defmodule FrontmanServer.TasksTest do
     end
   end
 
+  describe "get_llm_messages/2" do
+    test "filters messages by agent_id" do
+      task_id = "test_llm_filter_#{System.unique_integer([:positive])}"
+      {:ok, ^task_id} = Tasks.create_task(task_id)
+
+      # Add a user message
+      Tasks.add_user_message(task_id, [%{"type" => "text", "text" => "Hello"}])
+
+      # Add responses from two different agents
+      Tasks.add_agent_response(task_id, "agent_a", "Response from A", %{})
+      Tasks.add_agent_response(task_id, "agent_b", "Response from B", %{})
+      Tasks.add_agent_response(task_id, "agent_a", "Another from A", %{})
+
+      # Filter for agent_a
+      messages = Tasks.get_llm_messages(task_id, "agent_a")
+
+      # Should have: UserMessage + 2 responses from agent_a = 3 messages
+      assert length(messages) == 3
+
+      # All assistant messages should be from agent_a
+      assistant_messages = Enum.filter(messages, &(&1.role == :assistant))
+      assert length(assistant_messages) == 2
+    end
+  end
+
   describe "add_tool_call/3" do
     test "creates tool call interaction" do
       task_id = "test_tool_call_#{System.unique_integer([:positive])}"
@@ -59,34 +84,63 @@ defmodule FrontmanServer.TasksTest do
 
     test "returns error for non-existent task" do
       tool_call_data = %{id: "call_123", name: "test", arguments: %{}}
-      assert {:error, :task_not_found} = Tasks.add_tool_call("nonexistent", "agent", tool_call_data)
+
+      assert {:error, :task_not_found} =
+               Tasks.add_tool_call("nonexistent", "agent", tool_call_data)
     end
   end
 
-  describe "add_tool_result/4" do
+  describe "add_tool_result/5" do
     test "creates tool result interaction" do
       task_id = "test_tool_result_#{System.unique_integer([:positive])}"
       {:ok, ^task_id} = Tasks.create_task(task_id)
+      agent_id = "agent_#{System.unique_integer([:positive])}"
 
       tool_call_data = %{id: "call_123", name: "calculator"}
 
-      {:ok, interaction} = Tasks.add_tool_result(task_id, tool_call_data, 2, false)
+      # Register the tool call in Registry (simulating what agent does)
+      Registry.register(FrontmanServer.AgentRegistry, {:tool_call, tool_call_data.id}, agent_id)
+
+      {:ok, interaction} = Tasks.add_tool_result(task_id, agent_id, tool_call_data, 2, false)
 
       assert interaction.result == 2
       assert interaction.is_error == false
       assert interaction.tool_call_id == "call_123"
+      assert interaction.agent_id == agent_id
     end
 
     test "creates error tool result" do
       task_id = "test_tool_error_#{System.unique_integer([:positive])}"
       {:ok, ^task_id} = Tasks.create_task(task_id)
+      agent_id = "agent_#{System.unique_integer([:positive])}"
 
       tool_call_data = %{id: "call_456", name: "failing_tool"}
 
-      {:ok, interaction} = Tasks.add_tool_result(task_id, tool_call_data, "error message", true)
+      # Register the tool call in Registry
+      Registry.register(FrontmanServer.AgentRegistry, {:tool_call, tool_call_data.id}, agent_id)
+
+      {:ok, interaction} = Tasks.add_tool_result(task_id, agent_id, tool_call_data, "error message", true)
 
       assert interaction.is_error == true
       assert interaction.result == "error message"
+      assert interaction.agent_id == agent_id
+    end
+
+    test "notifies agent via Registry" do
+      task_id = "test_tool_notify_#{System.unique_integer([:positive])}"
+      {:ok, ^task_id} = Tasks.create_task(task_id)
+      agent_id = "agent_#{System.unique_integer([:positive])}"
+
+      tool_call_data = %{id: "call_notify", name: "some_tool"}
+
+      # Register the tool call in Registry
+      Registry.register(FrontmanServer.AgentRegistry, {:tool_call, tool_call_data.id}, agent_id)
+
+      {:ok, _interaction} = Tasks.add_tool_result(task_id, agent_id, tool_call_data, "result", false)
+
+      # The tool result should have been stored successfully
+      interactions = Tasks.get_interactions(task_id)
+      assert length(interactions) == 1
     end
   end
 
@@ -105,14 +159,15 @@ defmodule FrontmanServer.TasksTest do
     test "returns todos from task" do
       task_id = "test_list_todos_#{System.unique_integer([:positive])}"
       {:ok, ^task_id} = Tasks.create_task(task_id)
+      agent_id = "agent_#{System.unique_integer([:positive])}"
 
       {:ok, todo1} = Tasks.create_todo("First", "First", "pending")
       event1 = FrontmanServer.Tasks.Todos.Tools.TodoAdded.from_todo(todo1)
-      Tasks.add_tool_result(task_id, %{id: "c1", name: "todo_add"}, event1, false)
+      Tasks.add_tool_result(task_id, agent_id, %{id: "c1", name: "todo_add"}, event1, false)
 
       {:ok, todo2} = Tasks.create_todo("Second", "Second", "in_progress")
       event2 = FrontmanServer.Tasks.Todos.Tools.TodoAdded.from_todo(todo2)
-      Tasks.add_tool_result(task_id, %{id: "c2", name: "todo_add"}, event2, false)
+      Tasks.add_tool_result(task_id, agent_id, %{id: "c2", name: "todo_add"}, event2, false)
 
       {:ok, todos} = Tasks.list_todos(task_id)
 
@@ -127,10 +182,11 @@ defmodule FrontmanServer.TasksTest do
       task_b = "test_isolation_b_#{System.unique_integer([:positive])}"
       {:ok, ^task_a} = Tasks.create_task(task_a)
       {:ok, ^task_b} = Tasks.create_task(task_b)
+      agent_id = "agent_#{System.unique_integer([:positive])}"
 
       {:ok, todo} = Tasks.create_todo("Task A todo", "Working", "pending")
       event = FrontmanServer.Tasks.Todos.Tools.TodoAdded.from_todo(todo)
-      Tasks.add_tool_result(task_a, %{id: "c1", name: "todo_add"}, event, false)
+      Tasks.add_tool_result(task_a, agent_id, %{id: "c1", name: "todo_add"}, event, false)
 
       {:ok, todos_a} = Tasks.list_todos(task_a)
       {:ok, todos_b} = Tasks.list_todos(task_b)

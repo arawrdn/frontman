@@ -6,21 +6,23 @@ defmodule FrontmanServer.ToolsTest do
   alias FrontmanServer.Tasks.Interaction.ToolCall
 
   setup do
-    task_id = "test_task_#{:rand.uniform(1000000)}"
+    task_id = "test_task_#{:rand.uniform(1_000_000)}"
+    agent_id = "agent_#{:rand.uniform(1_000_000)}"
     {:ok, ^task_id} = Tasks.create_task(task_id)
-    {:ok, task_id: task_id}
+    {:ok, task_id: task_id, agent_id: agent_id}
   end
 
   describe "backend_tools/1" do
-    test "returns 4 backend tools", %{task_id: task_id} do
+    test "returns 5 backend tools", %{task_id: task_id} do
       tools = Tools.backend_tools(task_id)
-      assert length(tools) == 4
+      assert length(tools) == 5
 
       tool_names = Enum.map(tools, & &1.name)
       assert "todo_list" in tool_names
       assert "todo_add" in tool_names
       assert "todo_update" in tool_names
       assert "todo_remove" in tool_names
+      assert "spawn_sub_agent" in tool_names
     end
 
     test "all tools have proper structure", %{task_id: task_id} do
@@ -92,23 +94,28 @@ defmodule FrontmanServer.ToolsTest do
     test "todo_add tool callback works", %{task_id: task_id} do
       {:ok, tool} = Tools.find_backend_tool("todo_add", task_id)
 
-      result = tool.callback.(%{
-        "content" => "Test todo",
-        "active_form" => "Testing todo"
-      })
+      result =
+        tool.callback.(%{
+          "content" => "Test todo",
+          "active_form" => "Testing todo"
+        })
 
       assert {:ok, %FrontmanServer.Tasks.Todos.Tools.TodoAdded{} = event} = result
       assert event.content == "Test todo"
       assert event.status == :pending
     end
 
-    test "todo_list tool callback works", %{task_id: task_id} do
+    test "todo_list tool callback works", %{task_id: task_id, agent_id: agent_id} do
       {:ok, add_tool} = Tools.find_backend_tool("todo_add", task_id)
-      {:ok, %FrontmanServer.Tasks.Todos.Tools.TodoAdded{} = event} = add_tool.callback.(%{
-        "content" => "Test",
-        "active_form" => "Testing"
-      })
-      {:ok, _interaction} = Tasks.add_tool_result(task_id, %{id: "call1", name: "todo_add"}, event, false)
+
+      {:ok, %FrontmanServer.Tasks.Todos.Tools.TodoAdded{} = event} =
+        add_tool.callback.(%{
+          "content" => "Test",
+          "active_form" => "Testing"
+        })
+
+      {:ok, _interaction} =
+        Tasks.add_tool_result(task_id, agent_id, %{id: "call1", name: "todo_add"}, event, false)
 
       {:ok, task} = Tasks.get_task(task_id)
       assert length(task.interactions) == 1
@@ -123,24 +130,28 @@ defmodule FrontmanServer.ToolsTest do
       assert length(todos) == 1
     end
 
-    test "todo_update tool callback works", %{task_id: task_id} do
+    test "todo_update tool callback works", %{task_id: task_id, agent_id: agent_id} do
       {:ok, add_tool} = Tools.find_backend_tool("todo_add", task_id)
-      {:ok, %FrontmanServer.Tasks.Todos.Tools.TodoAdded{} = add_event} = add_tool.callback.(%{
-        "content" => "Test",
-        "active_form" => "Testing"
-      })
 
-      Tasks.add_tool_result(task_id, %{id: "call1", name: "todo_add"}, add_event, false)
+      {:ok, %FrontmanServer.Tasks.Todos.Tools.TodoAdded{} = add_event} =
+        add_tool.callback.(%{
+          "content" => "Test",
+          "active_form" => "Testing"
+        })
+
+      Tasks.add_tool_result(task_id, agent_id, %{id: "call1", name: "todo_add"}, add_event, false)
 
       {:ok, update_tool} = Tools.find_backend_tool("todo_update", task_id)
-      {:ok, %FrontmanServer.Tasks.Todos.Tools.TodoUpdated{} = update_event} = update_tool.callback.(%{
-        "id" => add_event.todo_id,
-        "status" => "completed"
-      })
+
+      {:ok, %FrontmanServer.Tasks.Todos.Tools.TodoUpdated{} = update_event} =
+        update_tool.callback.(%{
+          "id" => add_event.todo_id,
+          "status" => "completed"
+        })
 
       assert update_event.status == :completed
 
-      Tasks.add_tool_result(task_id, %{id: "call2", name: "todo_update"}, update_event, false)
+      Tasks.add_tool_result(task_id, agent_id, %{id: "call2", name: "todo_update"}, update_event, false)
 
       {:ok, list_tool} = Tools.find_backend_tool("todo_list", task_id)
       {:ok, %{"todos" => todos}} = list_tool.callback.(%{})
@@ -148,19 +159,23 @@ defmodule FrontmanServer.ToolsTest do
       assert updated_todo["status"] == "completed"
     end
 
-    test "todo_remove tool callback works", %{task_id: task_id} do
+    test "todo_remove tool callback works", %{task_id: task_id, agent_id: agent_id} do
       {:ok, add_tool} = Tools.find_backend_tool("todo_add", task_id)
-      {:ok, %FrontmanServer.Tasks.Todos.Tools.TodoAdded{} = add_event} = add_tool.callback.(%{
-        "content" => "Test",
-        "active_form" => "Testing"
-      })
 
-      Tasks.add_tool_result(task_id, %{id: "call1", name: "todo_add"}, add_event, false)
+      {:ok, %FrontmanServer.Tasks.Todos.Tools.TodoAdded{} = add_event} =
+        add_tool.callback.(%{
+          "content" => "Test",
+          "active_form" => "Testing"
+        })
+
+      Tasks.add_tool_result(task_id, agent_id, %{id: "call1", name: "todo_add"}, add_event, false)
 
       {:ok, remove_tool} = Tools.find_backend_tool("todo_remove", task_id)
-      {:ok, %FrontmanServer.Tasks.Todos.Tools.TodoRemoved{} = remove_event} = remove_tool.callback.(%{"id" => add_event.todo_id})
 
-      Tasks.add_tool_result(task_id, %{id: "call2", name: "todo_remove"}, remove_event, false)
+      {:ok, %FrontmanServer.Tasks.Todos.Tools.TodoRemoved{} = remove_event} =
+        remove_tool.callback.(%{"id" => add_event.todo_id})
+
+      Tasks.add_tool_result(task_id, agent_id, %{id: "call2", name: "todo_remove"}, remove_event, false)
 
       {:ok, list_tool} = Tools.find_backend_tool("todo_list", task_id)
       {:ok, %{"todos" => todos}} = list_tool.callback.(%{})
