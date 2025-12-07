@@ -1,6 +1,6 @@
 import Config
 
-config :req_llm, receive_timeout: 180_000
+config :req_llm, receive_timeout: 600_000
 
 # Configure your database
 config :frontman_server, FrontmanServer.Repo,
