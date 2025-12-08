@@ -16,10 +16,11 @@ defmodule FrontmanServer.Agents.AgentServer do
   use GenServer
   require Logger
 
-  @default_model "openrouter:anthropic/claude-sonnet-4.5"
+  @default_model "anthropic:claude-sonnet-4"
   @idle_timeout_ms 5 * 60 * 1000
 
-  alias FrontmanServer.Agents.{Agent, Prompts, SubAgent, SubAgentTool}
+  alias FrontmanServer.Agents.{Agent, Prompts, StreamParser, SubAgent, SubAgentTool}
+  alias ReqLLM.ToolCall
 
   # Infrastructure state - domain state lives in `agent`
   defstruct [
@@ -210,7 +211,7 @@ defmodule FrontmanServer.Agents.AgentServer do
         {:noreply, state}
 
       tool_call ->
-        Logger.info("Tool #{tool_call.name} completed")
+        Logger.info("Tool #{ToolCall.name(tool_call)} completed")
         Registry.unregister(FrontmanServer.AgentRegistry, {:tool_call, tool_call_id})
         state = %{state | agent: agent}
 
@@ -342,7 +343,7 @@ defmodule FrontmanServer.Agents.AgentServer do
       {:ok, response} ->
         chunks = stream_chunks(state, response.stream)
         text = Enum.map_join(chunks, "", fn chunk -> chunk.text || "" end)
-        tool_calls = extract_tool_calls(chunks)
+        tool_calls = StreamParser.extract_tool_calls(chunks)
 
         response_id =
           Enum.find_value(chunks, fn
@@ -351,7 +352,7 @@ defmodule FrontmanServer.Agents.AgentServer do
           end)
 
         Logger.info(
-          "Agent #{state.agent.id} extracted: text=#{byte_size(text || "")} bytes, tool_calls=#{length(tool_calls)}, response_id=#{inspect(response_id)}, chunks=#{length(chunks)}"
+          "Agent #{state.agent.id} extracted: text=#{byte_size(text)} bytes, tool_calls=#{length(tool_calls)}, response_id=#{inspect(response_id)}, chunks=#{length(chunks)}"
         )
 
         handle_response(state, text, tool_calls, response_id)
@@ -376,7 +377,7 @@ defmodule FrontmanServer.Agents.AgentServer do
   end
 
   defp handle_response(state, text, [], _response_id) do
-    Logger.info("Agent #{state.agent.id} completing with text: #{byte_size(text || "")} bytes")
+    Logger.info("Agent #{state.agent.id} completing with text: #{byte_size(text)} bytes")
     emit(state, {:response, state.agent.id, text, %{}})
 
     if not Agent.root?(state.agent) do
@@ -388,7 +389,7 @@ defmodule FrontmanServer.Agents.AgentServer do
 
   defp handle_response(state, text, tool_calls, response_id) do
     Logger.info(
-      "Agent #{state.agent.id} has #{length(tool_calls)} tool calls, text: #{byte_size(text || "")} bytes"
+      "Agent #{state.agent.id} has #{length(tool_calls)} tool calls, text: #{byte_size(text)} bytes"
     )
 
     metadata = %{tool_calls: tool_calls}
@@ -396,7 +397,7 @@ defmodule FrontmanServer.Agents.AgentServer do
     emit(state, {:response, state.agent.id, text, metadata})
 
     {spawn_calls, regular_tools} =
-      Enum.split_with(tool_calls, fn tc -> tc.name == SubAgentTool.tool_name() end)
+      Enum.split_with(tool_calls, fn tc -> ToolCall.name(tc) == SubAgentTool.tool_name() end)
 
     state =
       state
@@ -446,7 +447,7 @@ defmodule FrontmanServer.Agents.AgentServer do
   end
 
   defp spawn_sub_agent(state, tool_call) do
-    case SubAgentTool.parse_arguments(tool_call.arguments) do
+    case SubAgentTool.parse_arguments(ToolCall.args_map(tool_call)) do
       {:ok, %{role: role, task: task}} ->
         id = "sub_#{:crypto.strong_rand_bytes(8) |> Base.encode16(case: :lower)}"
 
@@ -491,7 +492,7 @@ defmodule FrontmanServer.Agents.AgentServer do
         end
 
       {:error, reason} ->
-        {:error, :unknown, inspect(tool_call.arguments), reason}
+        {:error, :unknown, ToolCall.args_json(tool_call), reason}
     end
   end
 
@@ -517,46 +518,6 @@ defmodule FrontmanServer.Agents.AgentServer do
       true ->
         Application.get_env(:frontman_server, :anthropic_api_key)
     end
-  end
-
-  defp extract_tool_calls(chunks) do
-    tool_calls =
-      chunks
-      |> Enum.filter(&(&1.type == :tool_call))
-      |> Enum.map(fn chunk ->
-        %{
-          id: Map.get(chunk.metadata, :id) || "call_#{:erlang.unique_integer([:positive])}",
-          name: chunk.name,
-          arguments: chunk.arguments || %{},
-          index: Map.get(chunk.metadata, :index, 0)
-        }
-      end)
-
-    arg_fragments =
-      chunks
-      |> Enum.filter(fn
-        %{type: :meta, metadata: %{tool_call_args: _}} -> true
-        _ -> false
-      end)
-      |> Enum.group_by(& &1.metadata.tool_call_args.index)
-      |> Map.new(fn {index, fragments} ->
-        json = fragments |> Enum.map_join("", & &1.metadata.tool_call_args.fragment)
-        {index, json}
-      end)
-
-    tool_calls
-    |> Enum.map(fn call ->
-      case Map.get(arg_fragments, call.index) do
-        nil ->
-          Map.delete(call, :index)
-
-        json ->
-          case Jason.decode(json) do
-            {:ok, args} -> call |> Map.put(:arguments, args) |> Map.delete(:index)
-            {:error, _} -> Map.delete(call, :index)
-          end
-      end
-    end)
   end
 
   # -- Registry Helpers --

@@ -15,6 +15,7 @@ defmodule FrontmanServer.Agents.Agent do
   use TypedStruct
 
   alias FrontmanServer.Agents.SubAgent
+  alias ReqLLM.ToolCall
 
   typedstruct enforce: true do
     field :id, String.t()
@@ -22,7 +23,7 @@ defmodule FrontmanServer.Agents.Agent do
     field :role, atom() | nil, enforce: false
     field :task, String.t() | nil, enforce: false
     field :parent_id, String.t() | nil, enforce: false
-    field :pending_tools, %{String.t() => map()}, default: %{}
+    field :pending_tools, %{String.t() => ToolCall.t()}, default: %{}
     field :sub_agents, %{String.t() => SubAgent.t()}, default: %{}
     field :started_at, integer(), default: 0
     field :iteration_count, non_neg_integer(), default: 0
@@ -69,17 +70,18 @@ defmodule FrontmanServer.Agents.Agent do
   end
 
   @doc "Track a new tool call"
-  @spec track_tool(t(), map()) :: t()
-  def track_tool(%__MODULE__{} = agent, tool_call) do
-    %{agent | pending_tools: Map.put(agent.pending_tools, tool_call.id, tool_call)}
+  @spec track_tool(t(), ToolCall.t()) :: t()
+  def track_tool(%__MODULE__{} = agent, %ToolCall{id: id} = tool_call) do
+    %{agent | pending_tools: Map.put(agent.pending_tools, id, tool_call)}
   end
 
   @doc "Complete a tool call"
-  @spec complete_tool(t(), String.t()) :: {map() | nil, t()}
-  def complete_tool(%__MODULE__{} = agent, tool_call_id) do
-    tool_call = Map.get(agent.pending_tools, tool_call_id)
-    updated = %{agent | pending_tools: Map.delete(agent.pending_tools, tool_call_id)}
-    {tool_call, updated}
+  @spec complete_tool(t(), String.t()) :: {ToolCall.t() | nil, t()}
+  def complete_tool(%__MODULE__{pending_tools: pending} = agent, tool_call_id) do
+    case Map.pop(pending, tool_call_id) do
+      {nil, _} -> {nil, agent}
+      {tool_call, remaining} -> {tool_call, %{agent | pending_tools: remaining}}
+    end
   end
 
   @doc "Track a spawned sub-agent"
