@@ -55,6 +55,10 @@ jobs:
   test-frontman-server:
     name: Test frontman-server
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      checks: write
     services:
       postgres:
         image: postgres:16
@@ -103,8 +107,20 @@ jobs:
       - name: Install dependencies
         run: make -C apps/frontman_server install
 
-      - name: Run tests
-        run: make -C apps/frontman_server test
+      - name: Run tests with coverage
+        run: make -C apps/frontman_server test-coverage
+
+      - name: Coverage details
+        run: cd apps/frontman_server && MIX_ENV=test mix coveralls.detail
+
+      - name: Coverage report
+        uses: 5monkeys/cobertura-action@master
+        with:
+          path: apps/frontman_server/cover/cobertura.xml
+          minimum_coverage: 75
+          show_missing: true
+          skip_covered: false
+          only_changed_files: false
 
       - name: Run Dialyzer
         run: make -C apps/frontman_server dialyzer
