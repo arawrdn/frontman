@@ -36,3 +36,18 @@ config :phoenix, :plug_init_mode, :runtime
 config :phoenix_live_view,
   enable_expensive_runtime_checks: true
 
+# LLM Configuration
+config :frontman_server,
+  anthropic_api_key: "sk-ant-test-key",
+  openai_api_key: "sk-proj-test-key"
+
+# OpenTelemetry - disable in tests
+config :opentelemetry,
+  span_processor: :simple,
+  traces_exporter: :none
+
+config :opentelemetry, :resource, %{
+  service: %{name: "frontman-server", version: "0.0.1"},
+  deployment: %{environment: "test"}
+}
+

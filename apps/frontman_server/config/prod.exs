@@ -17,5 +17,11 @@ config :swoosh, local: false
 # Do not print debug messages in production
 config :logger, level: :info
 
+# OpenTelemetry resource configuration
+config :opentelemetry, :resource, %{
+  service: %{name: "frontman-server", version: "0.0.1"},
+  deployment: %{environment: "production"}
+}
+
 # Runtime production configuration, including reading
 # of environment variables, is done on config/runtime.exs.
