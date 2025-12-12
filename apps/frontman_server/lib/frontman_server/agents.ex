@@ -133,8 +133,7 @@ defmodule FrontmanServer.Agents do
   @spec get_agents_for_task(String.t()) :: [{String.t(), pid(), map()}]
   def get_agents_for_task(task_id) do
     match_spec = [
-      {{{:agent, :"$1"}, :"$2", :"$3"},
-       [{:==, {:map_get, :task_id, :"$3"}, task_id}],
+      {{{:agent, :"$1"}, :"$2", :"$3"}, [{:==, {:map_get, :task_id, :"$3"}, task_id}],
        [{{:"$1", :"$2", :"$3"}}]}
     ]
 

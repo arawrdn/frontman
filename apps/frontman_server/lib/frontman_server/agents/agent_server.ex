@@ -20,7 +20,7 @@ defmodule FrontmanServer.Agents.AgentServer do
   @idle_timeout_ms 5 * 60 * 1000
 
   alias FrontmanServer.Agents.{Agent, Prompts, StreamParser, SubAgent, SubAgentTool}
-  alias FrontmanServer.Observability.LLMInstrumentation
+  alias FrontmanServer.Observability.TelemetryEvents
   alias ReqLLM.ToolCall
 
   # Infrastructure state - domain state lives in `agent`
@@ -138,8 +138,13 @@ defmodule FrontmanServer.Agents.AgentServer do
   # Server Callbacks
 
   @impl true
-  def init({:root, %{agent_id: agent_id, task_id: task_id, tools: tools, on_event: on_event} = opts}) do
+  def init(
+        {:root, %{agent_id: agent_id, task_id: task_id, tools: tools, on_event: on_event} = opts}
+      ) do
     agent = Agent.new_root(agent_id, task_id)
+
+    # Emit telemetry event for root agent start
+    TelemetryEvents.agent_start(agent_id, task_id)
 
     state = %__MODULE__{
       agent: agent,
@@ -168,6 +173,7 @@ defmodule FrontmanServer.Agents.AgentServer do
     Process.monitor(parent_pid)
 
     agent = Agent.new_sub_agent(agent_id, task_id, parent_agent_id, role, task)
+    TelemetryEvents.sub_agent_start(agent_id, task_id, parent_agent_id, role)
 
     state = %__MODULE__{
       agent: agent,
@@ -183,23 +189,35 @@ defmodule FrontmanServer.Agents.AgentServer do
 
   @impl true
   def handle_info({:execute_iteration, messages}, state) do
-    agent = state.agent
-    Logger.info("Agent #{agent.id} starting iteration with #{length(messages)} messages")
+    agent = Agent.increment_iteration(state.agent)
+    state = %{state | agent: agent}
+    iteration_number = agent.iteration_count
+
+    Logger.info(
+      "Agent #{agent.id} starting iteration #{iteration_number} with #{length(messages)} messages"
+    )
+
     set_registry_state(agent.id, :processing)
 
-    case stream_and_handle_response(state, messages) do
+    TelemetryEvents.iteration_start(agent.id, iteration_number)
+
+    result = stream_and_handle_response(state, messages)
+
+    case result do
       {:wait_for_tools, state} ->
         set_registry_state(state.agent.id, :waiting_for_tools)
         state = schedule_idle_timeout(state)
         {:noreply, state}
 
       {:stop, state} ->
+        TelemetryEvents.iteration_stop(agent.id, iteration_number)
         emit(state, {:completed, state.agent.id})
         set_registry_state(state.agent.id, :idle)
         state = schedule_idle_timeout(state)
         {:noreply, state}
 
       {:error, reason, state} ->
+        TelemetryEvents.iteration_stop(agent.id, iteration_number, status: :error, error: reason)
         emit(state, {:error, state.agent.id, reason})
         {:stop, :normal, state}
     end
@@ -315,6 +333,12 @@ defmodule FrontmanServer.Agents.AgentServer do
     end
   end
 
+  @impl true
+  def terminate(_reason, state) do
+    TelemetryEvents.agent_stop(state.agent.id)
+    :ok
+  end
+
   # Private Functions
 
   # -- Event Emission --
@@ -345,41 +369,43 @@ defmodule FrontmanServer.Agents.AgentServer do
         end
       end)
 
-    # Wrap LLM call with OpenTelemetry instrumentation
-    LLMInstrumentation.with_llm_span(
+    TelemetryEvents.llm_start(
+      state.agent.id,
+      state.agent.task_id,
       @default_model,
-      messages_with_system,
-      [agent_id: state.agent.id, task_id: state.agent.task_id],
-      fn ->
-        case ReqLLM.stream_text(@default_model, messages_with_system, llm_opts) do
-          {:ok, response} ->
-            chunks = stream_chunks(state, response.stream)
-            text = Enum.map_join(chunks, "", fn chunk -> chunk.text || "" end)
-            tool_calls = StreamParser.extract_tool_calls(chunks)
-
-            response_id =
-              Enum.find_value(chunks, fn
-                %{type: :meta, metadata: %{response_id: id}} when is_binary(id) -> id
-                _ -> nil
-              end)
-
-            # Record observability data
-            LLMInstrumentation.record_response_id(response_id)
-            LLMInstrumentation.record_output(text, tool_calls)
-
-            Logger.info(
-              "Agent #{state.agent.id} extracted: text=#{byte_size(text)} bytes, tool_calls=#{length(tool_calls)}, response_id=#{inspect(response_id)}, chunks=#{length(chunks)}"
-            )
-
-            handle_response(state, text, tool_calls, response_id)
-
-          {:error, reason} ->
-            LLMInstrumentation.record_error(reason)
-            Logger.error("LLM stream failed: #{inspect(reason)}")
-            {:error, reason, state}
-        end
-      end
+      messages_with_system
     )
+
+    case ReqLLM.stream_text(@default_model, messages_with_system, llm_opts) do
+      {:ok, response} ->
+        chunks = stream_chunks(state, response.stream)
+        text = Enum.map_join(chunks, "", fn chunk -> chunk.text || "" end)
+        tool_calls = StreamParser.extract_tool_calls(chunks)
+
+        response_id =
+          Enum.find_value(chunks, fn
+            %{type: :meta, metadata: %{response_id: id}} when is_binary(id) -> id
+            _ -> nil
+          end)
+
+        TelemetryEvents.llm_stop(state.agent.id,
+          response_id: response_id,
+          output_text: text,
+          tool_calls: tool_calls
+        )
+
+        Logger.info(
+          "Agent #{state.agent.id} extracted: text=#{byte_size(text)} bytes, tool_calls=#{length(tool_calls)}, response_id=#{inspect(response_id)}, chunks=#{length(chunks)}"
+        )
+
+        handle_response(state, text, tool_calls, response_id)
+
+      {:error, reason} ->
+        # Emit LLM stop event with error
+        TelemetryEvents.llm_stop(state.agent.id, error: reason)
+        Logger.error("LLM stream failed: #{inspect(reason)}")
+        {:error, reason, state}
+    end
   end
 
   defp stream_chunks(state, chunk_stream) do
@@ -468,50 +494,68 @@ defmodule FrontmanServer.Agents.AgentServer do
   defp spawn_sub_agent(state, tool_call) do
     case SubAgentTool.parse_arguments(ToolCall.args_map(tool_call)) do
       {:ok, %{role: role, task: task}} ->
-        id = "sub_#{:crypto.strong_rand_bytes(8) |> Base.encode16(case: :lower)}"
+        # Emit spawn start event
+        TelemetryEvents.spawn_sub_agent_start(state.agent.id, state.agent.task_id, role, task)
 
-        child_spec = %{
-          id: id,
-          start:
-            {__MODULE__, :start_sub_agent,
-             [
-               [
-                 agent_id: id,
-                 task_id: state.agent.task_id,
-                 tools: state.tools,
-                 on_event: state.on_event,
-                 parent_agent_id: state.agent.id,
-                 parent_pid: self(),
-                 role: role,
-                 task: task
-               ]
-             ]},
-          restart: :temporary
-        }
+        result = do_spawn_sub_agent(state, tool_call, role, task)
 
-        case DynamicSupervisor.start_child(FrontmanServer.AgentSupervisor, child_spec) do
-          {:ok, pid} ->
-            Process.monitor(pid)
+        # Emit spawn stop event based on result
+        case result do
+          {:ok, sub_agent} ->
+            TelemetryEvents.spawn_sub_agent_stop(state.agent.id, sub_agent_id: sub_agent.id)
 
-            sub_agent = %SubAgent{
-              id: id,
-              tool_call_id: tool_call.id,
-              role: role,
-              task: task,
-              pid: pid,
-              status: :running,
-              started_at: System.monotonic_time(:millisecond)
-            }
-
-            send(pid, {:execute_iteration, [%{role: "user", content: task}]})
-            {:ok, sub_agent}
-
-          {:error, reason} ->
-            {:error, role, task, reason}
+          {:error, _role, _task, reason} ->
+            TelemetryEvents.spawn_sub_agent_stop(state.agent.id, error: reason)
         end
+
+        result
 
       {:error, reason} ->
         {:error, :unknown, ToolCall.args_json(tool_call), reason}
+    end
+  end
+
+  defp do_spawn_sub_agent(state, tool_call, role, task) do
+    id = "sub_#{:crypto.strong_rand_bytes(8) |> Base.encode16(case: :lower)}"
+
+    child_spec = %{
+      id: id,
+      start:
+        {__MODULE__, :start_sub_agent,
+         [
+           [
+             agent_id: id,
+             task_id: state.agent.task_id,
+             tools: state.tools,
+             on_event: state.on_event,
+             parent_agent_id: state.agent.id,
+             parent_pid: self(),
+             role: role,
+             task: task
+           ]
+         ]},
+      restart: :temporary
+    }
+
+    case DynamicSupervisor.start_child(FrontmanServer.AgentSupervisor, child_spec) do
+      {:ok, pid} ->
+        Process.monitor(pid)
+
+        sub_agent = %SubAgent{
+          id: id,
+          tool_call_id: tool_call.id,
+          role: role,
+          task: task,
+          pid: pid,
+          status: :running,
+          started_at: System.monotonic_time(:millisecond)
+        }
+
+        send(pid, {:execute_iteration, [%{role: "user", content: task}]})
+        {:ok, sub_agent}
+
+      {:error, reason} ->
+        {:error, role, task, reason}
     end
   end
 

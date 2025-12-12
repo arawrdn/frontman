@@ -9,7 +9,7 @@ defmodule FrontmanServer.Tools do
   require Logger
 
   alias FrontmanServer.Agents.SubAgentTool
-  alias FrontmanServer.Observability.LLMInstrumentation
+  alias FrontmanServer.Observability.TelemetryEvents
   alias FrontmanServer.Tasks.Interaction.ToolCall
   alias FrontmanServer.Tasks.Todos.Tools, as: TodoTools
 
@@ -60,18 +60,30 @@ defmodule FrontmanServer.Tools do
   Returns :not_found if the tool is not a backend tool.
   """
   @spec execute_backend_tool(ToolCall.t(), String.t()) :: {:executed, term()} | :not_found
-  def execute_backend_tool(%ToolCall{} = tool_call, task_id) do
+  def execute_backend_tool(%ToolCall{agent_id: agent_id} = tool_call, task_id) do
     case find_backend_tool(tool_call.tool_name, task_id) do
       {:ok, tool} ->
         Logger.info("Executing backend tool: #{tool_call.tool_name}")
 
-        # Wrap tool execution with OpenTelemetry span
-        result =
-          LLMInstrumentation.with_tool_span(
-            tool_call.tool_name,
-            tool_call.id,
-            fn -> execute_tool(tool, tool_call.arguments) end
-          )
+        # Emit tool start telemetry event
+        TelemetryEvents.tool_start(
+          tool_call.tool_call_id,
+          tool_call.tool_name,
+          agent_id,
+          task_id,
+          tool_call.arguments
+        )
+
+        result = execute_tool(tool, tool_call.arguments)
+
+        # Emit tool stop telemetry event
+        case result do
+          {:ok, _} ->
+            TelemetryEvents.tool_stop(tool_call.tool_call_id, status: "success")
+
+          {:error, reason} ->
+            TelemetryEvents.tool_stop(tool_call.tool_call_id, status: "error", error: reason)
+        end
 
         Logger.debug("Backend tool #{tool_call.tool_name} result: #{inspect(result)}")
 

@@ -78,21 +78,16 @@ defmodule FrontmanServer.AgentCase do
     quote do
       alias FrontmanServer.Agents.{Agent, AgentServer, SubAgent}
       import FrontmanServer.Test.Fixtures.Agents
-      import FrontmanServer.AgentCase, only: [fixture_opts: 1, fixture_opts: 2]
     end
   end
 
   setup context do
-    # Compute fixture_path for LLM integration tests
     fixture_path = compute_fixture_path(context)
-
-    # Build agent fixtures if requested
     fixtures = Map.get(context, :fixtures, [])
 
     if Enum.empty?(fixtures) do
       {:ok, fixture_path: fixture_path}
     else
-      # Pass fixture_path through context so agents get llm_opts
       context_with_fixture = Map.put(context, :fixture_path, fixture_path)
       ctx = AgentFixtures.build_fixtures(fixtures, context_with_fixture)
 
@@ -104,15 +99,6 @@ defmodule FrontmanServer.AgentCase do
     end
   end
 
-  @doc """
-  Build LLM options with fixture path included.
-
-  Merges fixture_path with any additional options.
-
-  ## Examples
-
-      llm_opts = fixture_opts(context, api_key: key, tools: tools)
-  """
   defp compute_fixture_path(%{llm_fixture: explicit_path}) when is_binary(explicit_path) do
     FixturePath.for_explicit(explicit_path)
   end
