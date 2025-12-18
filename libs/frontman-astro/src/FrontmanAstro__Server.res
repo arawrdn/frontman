@@ -1,50 +1,22 @@
-// Request handlers for Frontman endpoints
+// Request handlers for Frontman Astro endpoints
 
 module Protocol = AskTheLlmFrontmanProtocol
 module MCP = Protocol.FrontmanProtocol__MCP
 module Relay = Protocol.FrontmanProtocol__Relay
-module Tool = Protocol.FrontmanProtocol__Tool
 module Core = AskTheLlmFrontmanCore
 module CoreServer = Core.FrontmanCore__Server
 module CoreSSE = Core.FrontmanCore__SSE
-module ToolRegistry = FrontmanNextjs__ToolRegistry
+module ToolRegistry = FrontmanAstro__ToolRegistry
+module Config = FrontmanAstro__Config
 module WebStreams = AskTheLlmBindings.WebStreams
 module DOMElementToComponentSource = AskTheLlmBindings.DOMElementToComponentSource
 
-type config = {
-  projectRoot: string,
-  // sourceRoot: root for file paths (monorepo root in monorepo setups, same as projectRoot otherwise)
-  sourceRoot: string,
-  serverName: string,
-  serverVersion: string,
-}
-
-type t = {
-  config: config,
-  registry: ToolRegistry.t,
-}
-
-let make = (
-  ~projectRoot: string,
-  ~sourceRoot: option<string>=?,
-  ~serverName="frontman-nextjs",
-  ~serverVersion="1.0.0",
-): t => {
-  config: {
-    projectRoot,
-    sourceRoot: sourceRoot->Option.getOr(projectRoot),
-    serverName,
-    serverVersion,
-  },
-  registry: ToolRegistry.make(),
-}
-
 // GET /__frontman/tools
-let handleGetTools = (server: t): WebAPI.FetchAPI.response => {
+let handleGetTools = (~registry: ToolRegistry.t, ~config: Config.t): WebAPI.FetchAPI.response => {
   let response = CoreServer.getToolsResponse(
-    ~registry=server.registry,
-    ~serverName=server.config.serverName,
-    ~serverVersion=server.config.serverVersion,
+    ~registry,
+    ~serverName=config.serverName,
+    ~serverVersion=config.serverVersion,
   )
 
   let json = response->S.reverseConvertToJsonOrThrow(Relay.toolsResponseSchema)
@@ -53,7 +25,11 @@ let handleGetTools = (server: t): WebAPI.FetchAPI.response => {
 }
 
 // POST /__frontman/tools/call - executes tool with SSE streaming
-let handleToolCall = async (server: t, req: WebAPI.FetchAPI.request): WebAPI.FetchAPI.response => {
+let handleToolCall = async (
+  ~registry: ToolRegistry.t,
+  ~config: Config.t,
+  req: WebAPI.FetchAPI.request,
+): WebAPI.FetchAPI.response => {
   let body = await req->WebAPI.Request.json
 
   let request = try {
@@ -74,13 +50,13 @@ let handleToolCall = async (server: t, req: WebAPI.FetchAPI.request): WebAPI.Fet
   | Ok(request) =>
     // Execute tool using core
     let ctx: CoreServer.executionContext = {
-      projectRoot: server.config.projectRoot,
-      sourceRoot: server.config.sourceRoot,
+      projectRoot: config.projectRoot,
+      sourceRoot: config.sourceRoot,
       onProgress: None,
     }
 
     let resultPromise = CoreServer.executeTool(
-      ~registry=server.registry,
+      ~registry,
       ~ctx,
       ~name=request.name,
       ~arguments=request.arguments,
@@ -106,14 +82,26 @@ let handleToolCall = async (server: t, req: WebAPI.FetchAPI.request): WebAPI.Fet
   }
 }
 
-// POST /__frontman/resolve-source-location - resolves source location
-let handleResolveSourceLocation = async (
-  _server: t,
-  req: WebAPI.FetchAPI.request,
-): WebAPI.FetchAPI.response => {
+// CORS headers for preflight requests
+let corsHeaders = () => {
+  WebAPI.HeadersInit.fromDict(
+    Dict.fromArray([
+      ("Access-Control-Allow-Origin", "*"),
+      ("Access-Control-Allow-Methods", "GET, POST, OPTIONS"),
+      ("Access-Control-Allow-Headers", "Content-Type"),
+    ]),
+  )
+}
+
+// Handle CORS preflight
+let handleCORS = (): WebAPI.FetchAPI.response => {
+  WebAPI.Response.fromNull(~init={status: 204, headers: corsHeaders()})
+}
+
+// POST /__frontman/resolve-source-location - resolves source location via source maps
+let handleResolveSourceLocation = async (req: WebAPI.FetchAPI.request): WebAPI.FetchAPI.response => {
   let body = await req->WebAPI.Request.json
 
-  // Parse request body
   let requestObj = body->JSON.Decode.object
 
   switch requestObj {
@@ -128,7 +116,6 @@ let handleResolveSourceLocation = async (
     let line = obj->Dict.get("line")->Option.flatMap(JSON.Decode.float)
     let column = obj->Dict.get("column")->Option.flatMap(JSON.Decode.float)
 
-    // Validate required fields
     switch (componentName, file, line, column) {
     | (Some(componentName), Some(file), Some(line), Some(column)) =>
       try {
@@ -139,9 +126,7 @@ let handleResolveSourceLocation = async (
           column: column->Float.toInt,
         }
 
-        let resolved = await DOMElementToComponentSource.resolveSourceLocationInServer(
-          sourceLocation,
-        )
+        let resolved = await DOMElementToComponentSource.resolveSourceLocationInServer(sourceLocation)
 
         let responseJson = JSON.Encode.object(
           Dict.fromArray([
@@ -152,9 +137,7 @@ let handleResolveSourceLocation = async (
           ]),
         )
 
-        let headers = WebAPI.HeadersInit.fromDict(
-          Dict.fromArray([("Content-Type", "application/json")]),
-        )
+        let headers = WebAPI.HeadersInit.fromDict(Dict.fromArray([("Content-Type", "application/json")]))
         WebAPI.Response.jsonR(~data=responseJson, ~init={headers: headers})
       } catch {
       | exn =>
@@ -174,10 +157,7 @@ let handleResolveSourceLocation = async (
       WebAPI.Response.jsonR(
         ~data=JSON.Encode.object(
           Dict.fromArray([
-            (
-              "error",
-              JSON.Encode.string("Missing required fields: componentName, file, line, column"),
-            ),
+            ("error", JSON.Encode.string("Missing required fields: componentName, file, line, column")),
           ]),
         ),
         ~init={status: 400},
