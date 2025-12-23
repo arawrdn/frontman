@@ -103,11 +103,14 @@ type action =
   | Disconnect
   // Plan actions
   | PlanReceived({taskId: string, entries: array<Client__State__Types.ACPTypes.planEntry>})
+  // Initialization actions
+  | ReceivedDiscoveredProjectRule({taskId: string})
 
 // Effects for side effects
 type effect =
   | SendMessageToAPI({message: string, taskId: string})
   | FetchElementDetails({element: WebAPI.DOMAPI.element, document: option<WebAPI.DOMAPI.document>})
+  | StartInitializationTimeout({taskId: string, timeoutMs: int})
 
 let getInitialUrl = () => {
   let entrypointUrl =
@@ -138,6 +141,7 @@ let defaultState: state = {
   tasks: Dict.make(),
   currentTaskId: None,
   connectionState: Disconnected,
+  sessionInitialized: false,
 }
 
 let actionToString = action => {
@@ -170,6 +174,7 @@ let actionToString = action => {
   | Connect(_) => `Connect`
   | Disconnect => `Disconnect`
   | PlanReceived({taskId, _}) => `PlanReceived(${taskId})`
+  | ReceivedDiscoveredProjectRule({taskId}) => `ReceivedDiscoveredProjectRule(${taskId})`
   }
 }
 
@@ -302,6 +307,11 @@ module Selectors = {
   // Get current task's plan entries
   let currentPlanEntries = (state: state): array<Client__State__Types.ACPTypes.planEntry> => {
     currentTask(state)->Option.mapOr([], task => task.planEntries)
+  }
+
+  // Check if session has been initialized (project rules loaded)
+  let sessionInitialized = (state: state): bool => {
+    state.sessionInitialized
   }
 }
 
@@ -440,6 +450,13 @@ let handleEffect = (effect, state: state, dispatch) => {
         Promise.resolve()
       })
     }
+  | StartInitializationTimeout({taskId, timeoutMs}) =>
+    let taskId = taskId
+    let _ = Js.Global.setTimeout(() => {
+      if !state.sessionInitialized {
+        dispatch(ReceivedDiscoveredProjectRule({taskId: taskId}))
+      }
+    }, timeoutMs)
   }
 }
 
@@ -860,7 +877,12 @@ let next = (state, action) => {
     ->AskTheLlmReactStatestore.StateReducer.update
 
   | Connect({sendPrompt}) =>
-    {...state, connectionState: Connected(sendPrompt)}->AskTheLlmReactStatestore.StateReducer.update
+    {...state, connectionState: Connected(sendPrompt)}
+    ->AskTheLlmReactStatestore.StateReducer.update(
+      ~sideEffects=state.currentTaskId
+      ->Option.map(taskId => [StartInitializationTimeout({taskId, timeoutMs: 3000})])
+      ->Option.getOr([]),
+    )
 
   | Disconnect =>
     {...state, connectionState: Disconnected}->AskTheLlmReactStatestore.StateReducer.update
@@ -869,5 +891,12 @@ let next = (state, action) => {
     state
     ->Lens.updateTask(taskId, task => {...task, planEntries: entries})
     ->AskTheLlmReactStatestore.StateReducer.update
+
+  | ReceivedDiscoveredProjectRule({taskId: _}) =>
+    // Mark initialization complete
+    {
+      ...state,
+      sessionInitialized: true,
+    }->AskTheLlmReactStatestore.StateReducer.update
   }
 }
