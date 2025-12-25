@@ -69,13 +69,19 @@ defmodule FrontmanServer.Tools.FinishComponent do
   4. **Check for errors** - Use `get_errors` tool to check for errors. Fix any errors found.
 
   5. **Visual verification loop**:
-     a. **Take a screenshot** - Use `take_screenshot` tool to capture the rendered component
+     a. **Take a screenshot** - Use `take_screenshot` tool to capture the rendered component.
+        If a CSS selector (e.g., `[data-test-id="..."]`) is provided in your task, use it with the `selector` parameter
+        of `take_screenshot` to capture ONLY the component.
      b. **Compare with Figma** - Compare the screenshot against the Figma design image
      c. **Assess the match** - Determine if the implementation roughly matches:
-        - If YES: Proceed to cleanup
+        - If YES: Proceed to the final audit
         - If NO: Make targeted fixes and repeat the loop (max 3 iterations)
 
-  6. **Cleanup and complete**:
+  6. **Final Page Audit** - After completing the verification loop:
+     a. **Check for errors again** - Use `get_errors` tool to ensure no runtime errors occurred during rendering or interaction.
+     b. **Take a full-page screenshot** - Use `take_screenshot` tool WITHOUT a selector to capture the entire page. Verify the component is correctly positioned and no error overlays or blocking elements are present.
+
+  7. **Cleanup and complete**:
      a. Use `navigate_back` tool to leave the test page
      b. Delete the temporary test page file
      c. Report your findings
@@ -117,8 +123,7 @@ defmodule FrontmanServer.Tools.FinishComponent do
         },
         "nodeId" => %{
           "type" => "string",
-          "description" =>
-            "The Figma node ID to compare against WITHOUT the # prefix (e.g., '0:1927' not '#0:1927')"
+          "description" => "The Figma node ID to compare against WITHOUT the # prefix"
         },
         "filePaths" => %{
           "type" => "array",
@@ -134,9 +139,19 @@ defmodule FrontmanServer.Tools.FinishComponent do
           "type" => "string",
           "description" =>
             "Key details learned from analyzing the Figma design (colors, typography, spacing, etc.)"
+        },
+        "dataTestId" => %{
+          "type" => "string",
+          "description" => "The data-test-id value used on the component's root element"
         }
       },
-      "required" => ["componentName", "nodeId", "filePaths", "implementationSummary"]
+      "required" => [
+        "componentName",
+        "nodeId",
+        "filePaths",
+        "implementationSummary",
+        "dataTestId"
+      ]
     }
   end
 
@@ -190,6 +205,9 @@ defmodule FrontmanServer.Tools.FinishComponent do
     file_paths = Map.get(args, "filePaths", [])
     implementation_summary = Map.get(args, "implementationSummary", "")
     design_details = Map.get(args, "designDetails")
+    data_test_id = Map.get(args, "dataTestId")
+
+    selector_str = if data_test_id, do: "[data-test-id=\"#{data_test_id}\"]", else: nil
 
     file_paths_str =
       file_paths
@@ -208,11 +226,19 @@ defmodule FrontmanServer.Tools.FinishComponent do
         ""
       end
 
+    selector_instruction =
+      if selector_str do
+        "\n- **Selector:** `#{selector_str}` (Use this with `take_screenshot` to capture ONLY the component)"
+      else
+        ""
+      end
+
     task_text = """
     ## Verify Component Implementation
 
     - **Component:** #{component_name}
     - **Node ID:** #{node_id}
+    - **Data Test ID:** `#{data_test_id || "None"}`#{selector_instruction}
 
     ## Files Created
 
