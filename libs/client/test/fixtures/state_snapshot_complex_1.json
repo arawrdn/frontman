@@ -1988,7 +1988,9 @@
 					"status": "completed"
 				}
 			],
-			"previewUrl": "http://localhost:3038/"
+			"previewUrl": "http://localhost:3038/",
+			"selectedElement": null,
+			"figmaNode": "no_selection"
 		}
 	],
 	"currentTaskId": "1ff75d3f-0879-4a68-8f4b-2084894ca599",
