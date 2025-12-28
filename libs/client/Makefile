@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help install test lint format dev dev-hot build build-lib clean serve preview check
+.PHONY: help install test lint format dev dev-hot build build-lib clean serve preview check storybook storybook-build
 
 SHELL := /bin/bash
 PATH := ./node_modules/.bin:$(PATH)
@@ -14,10 +14,10 @@ test: build ## Run test suite
 	yarn vitest run
 
 lint: ## Run linters and code formatters
-	biome check .
+	yarn biome check .
 
 format: ## Format code with biome
-	biome check --write .
+	yarn biome check --write .
 
 dev: 
 	yarn vite
@@ -50,3 +50,9 @@ publish:
 	npm publish
 
 check: lint ## Run all checks (lint + test)
+
+storybook: ## Start Storybook development server
+	yarn storybook
+
+storybook-build: build ## Build Storybook for production
+	yarn build-storybook
