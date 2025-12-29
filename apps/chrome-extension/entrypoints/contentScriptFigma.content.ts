@@ -3,7 +3,7 @@ import {main, config} from './Figma.res.mjs'
 
 export default defineContentScript({
   matches: config.matches,
-  runAt: "document_start",
+  runAt: "document_idle",
   world: "MAIN",
   main() {
     main()
