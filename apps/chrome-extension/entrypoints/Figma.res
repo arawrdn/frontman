@@ -1,26 +1,31 @@
 open AskTheLlmBindings
 
-// Monkey patch Error.prototype.stack to hide chrome-extension:// URLs
-let patchErrorStack: unit => unit = %raw(`
+// Bulletproof monkey patching for Figma API access
+// This patches Error.prototype.stack AND intercepts Object.defineProperty
+// to handle both cases: running before OR after Figma's code
+let patchForFigmaAccess: unit => unit = %raw(`
   function() {
-    const originalStackDescriptor = Object.getOwnPropertyDescriptor(Error.prototype, 'stack');
-    const originalStackGetter = originalStackDescriptor?.get;
+    // Storage for intercepted property values
+    const propertyValues = new Map();
+    const originalDefineProperty = Object.defineProperty;
+    
+    // Regex to match extension URLs in stack traces
     const chromeExtRegex = new RegExp('chrome-extension://[^/]+/', 'g');
+    const mozExtRegex = new RegExp('moz-extension://[^/]+/', 'g');
     
     function cleanStack(stack) {
       if (typeof stack === 'string') {
-        return stack
-          .split('\\n')
-          .map(line => line.replace(chromeExtRegex, ''))
-          .join('\\n');
+        return stack.replace(chromeExtRegex, '').replace(mozExtRegex, '');
       }
-      // If stack is not a string (e.g., array of CallSites), return as-is
       return stack;
     }
     
+    // Step 1: Patch Error.prototype.stack to hide extension URLs
+    const originalStackDescriptor = Object.getOwnPropertyDescriptor(Error.prototype, 'stack');
+    const originalStackGetter = originalStackDescriptor?.get;
+    
     if (originalStackGetter) {
-      // For browsers that use a getter
-      Object.defineProperty(Error.prototype, 'stack', {
+      originalDefineProperty.call(Object, Error.prototype, 'stack', {
         get: function() {
           const stack = originalStackGetter.call(this);
           return cleanStack(stack);
@@ -28,13 +33,12 @@ let patchErrorStack: unit => unit = %raw(`
         configurable: true
       });
     } else {
-      // Fallback: override stack on each Error instance
       const OriginalError = Error;
       Error = function(...args) {
         const err = new OriginalError(...args);
         const originalStack = err.stack;
         if (originalStack) {
-          Object.defineProperty(err, 'stack', {
+          originalDefineProperty.call(Object, err, 'stack', {
             get: function() {
               return cleanStack(originalStack);
             },
@@ -45,43 +49,158 @@ let patchErrorStack: unit => unit = %raw(`
       };
       Error.prototype = OriginalError.prototype;
     }
+    
+    // Step 2: Intercept Object.defineProperty to catch Figma's property definitions
+    Object.defineProperty = function(obj, prop, descriptor) {
+      // Only intercept window properties with getters (likely Figma's anti-extension code)
+      if (obj === window && descriptor && (descriptor.get || descriptor.set)) {
+        const propName = String(prop);
+        
+        // Check if this looks like a Figma-protected property
+        // We intercept all getter/setter definitions on window to be safe
+        const originalSet = descriptor.set;
+        const originalGet = descriptor.get;
+        
+        // Create a clean property that bypasses any stack checks in the original getter
+        return originalDefineProperty.call(Object, obj, prop, {
+          get: function() {
+            // Return our stored value if we have one
+            if (propertyValues.has(propName)) {
+              return propertyValues.get(propName);
+            }
+            // Try calling original getter - should work since Error.stack is patched
+            if (originalGet) {
+              try {
+                const value = originalGet.call(this);
+                if (value !== undefined) {
+                  propertyValues.set(propName, value);
+                }
+                return value;
+              } catch (e) {
+                console.warn('[Frontman] Getter failed for', propName, e);
+                return undefined;
+              }
+            }
+            return undefined;
+          },
+          set: function(value) {
+            propertyValues.set(propName, value);
+            // Also call original setter to maintain Figma's internal state
+            if (originalSet) {
+              try {
+                originalSet.call(this, value);
+              } catch (e) {
+                // Ignore errors from original setter
+              }
+            }
+          },
+          configurable: true,
+          enumerable: descriptor.enumerable !== false
+        });
+      }
+      
+      // Pass through for all other cases
+      return originalDefineProperty.call(Object, obj, prop, descriptor);
+    };
+    
+    // Copy static properties from original
+    Object.keys(originalDefineProperty).forEach(key => {
+      Object.defineProperty[key] = originalDefineProperty[key];
+    });
+    
+    // Step 3: If window.figma already exists (we ran after Figma), re-patch it
+    const existingDescriptor = Object.getOwnPropertyDescriptor(window, 'figma');
+    if (existingDescriptor && existingDescriptor.get) {
+      console.log('[Frontman] Figma property already exists, re-patching...');
+      
+      // Try to get the current value
+      try {
+        const currentValue = window.figma;
+        if (currentValue !== undefined) {
+          propertyValues.set('figma', currentValue);
+        }
+      } catch (e) {
+        console.warn('[Frontman] Could not read existing figma value:', e);
+      }
+      
+      // Redefine with our clean getter
+      const originalGet = existingDescriptor.get;
+      const originalSet = existingDescriptor.set;
+      
+      originalDefineProperty.call(Object, window, 'figma', {
+        get: function() {
+          if (propertyValues.has('figma')) {
+            return propertyValues.get('figma');
+          }
+          if (originalGet) {
+            try {
+              const value = originalGet.call(this);
+              if (value !== undefined) {
+                propertyValues.set('figma', value);
+              }
+              return value;
+            } catch (e) {
+              return undefined;
+            }
+          }
+          return undefined;
+        },
+        set: function(value) {
+          propertyValues.set('figma', value);
+          if (originalSet) {
+            try {
+              originalSet.call(this, value);
+            } catch (e) {}
+          }
+        },
+        configurable: true,
+        enumerable: true
+      });
+    }
+    
+    console.log('[Frontman] Figma access patches applied');
   }
 `)
 
-// Check if window.figma and window.figma.on exist
-let figmaExists: unit => bool = %raw(`
-  function() {
-    return typeof window !== 'undefined' && 
-           typeof window.figma !== 'undefined';
-  }
-`)
-
-// Wait for window.figma and window.figma.on to be available
+// Wait for window.figma to be available with an actual value
+// This handles the case where the property is defined but value is not yet set
 let waitForFigma: unit => promise<FigmaClientApiBindings.figmaApi> = %raw(`
   function() {
     return new Promise((resolve) => {
       let timeoutId = null;
-      if (typeof window !== 'undefined' && 
-          typeof window.figma !== 'undefined') {
+      
+      function checkFigma() {
+        // Check if figma exists AND has actual content (not just defined but undefined)
+        if (typeof window !== 'undefined' && 
+            window.figma !== undefined && 
+            window.figma !== null &&
+            typeof window.figma === 'object') {
+          return true;
+        }
+        return false;
+      }
+      
+      if (checkFigma()) {
+        console.log('[Frontman] Figma API already available');
         resolve(window.figma);
         return;
       }
       
+      console.log('[Frontman] Waiting for Figma API...');
+      
       const checkInterval = setInterval(() => {
-        if (typeof window !== 'undefined' && 
-            typeof window.figma !== 'undefined') {
+        if (checkFigma()) {
           clearInterval(checkInterval);
           clearTimeout(timeoutId);
+          console.log('[Frontman] Figma API now available');
           resolve(window.figma);
         }
-      }, 100);
+      }, 50); // Check more frequently
       
       timeoutId = setTimeout(() => {
-        if (timeoutId) {
-          clearInterval(checkInterval);
-          console.warn('[Frontman] Figma API not found after 10 seconds');
-          resolve();
-        }
+        clearInterval(checkInterval);
+        console.warn('[Frontman] Figma API not found after 10 seconds');
+        resolve(undefined);
       }, 10000);
     });
   }
@@ -95,7 +214,7 @@ let postMessageRaw: ('port, 'message) => unit = %raw(`
 `)
 
 let main = () => {
-  patchErrorStack()
+  patchForFigmaAccess()
 
   let runAsync = async () => {
     let figma = await waitForFigma()
