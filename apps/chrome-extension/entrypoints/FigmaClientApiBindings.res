@@ -45,7 +45,7 @@ external figmaToDSL: (
 
 // Get full JSON for a node by ID
 @module("@ask-the-llm/figma-client-api")
-external getFigmaNodeJSON: (string, conversionSettings) => promise<Js.Nullable.t<convertedNode>> =
+external getFigmaNodeJSON: (figmaApi, string, conversionSettings) => promise<Js.Nullable.t<convertedNode>> =
   "getFigmaNodeJSON"
 
 // Default settings

@@ -514,8 +514,8 @@ export function expandSkeleton(compact: CompactNodeSkeleton): NodeSkeleton {
 
 /**
  * Fetch a Figma node by ID using the Figma API
- * Requires window.figma.getNodeByIdAsync to be available
  * 
+ * @param figma - The Figma API object
  * @param nodeId - The Figma node ID (e.g., "0:1927")
  * @param options - Optional settings for conversion
  * @returns The converted node or null if not found
@@ -526,25 +526,20 @@ export function expandSkeleton(compact: CompactNodeSkeleton): NodeSkeleton {
  * ```
  */
 export async function getFigmaNodeJSON(
+  figma: {
+    getNodeByIdAsync: ((nodeId: string) => Promise<FigmaNode | null>) | undefined;
+  },
   nodeId: string,
   userSettings: Partial<ConversionSettings> = {}
 ): Promise<ConvertedNode | null> {
-  // Check if we're in a Figma plugin environment
-  if (typeof window === "undefined" || !window.figma) {
-    throw new Error(
-      "getFigmaNodeJSON requires window.figma API. This function must be called from a Figma plugin context."
-    );
-  }
-
-  if (!window.figma.getNodeByIdAsync) {
-    throw new Error(
-      "window.figma.getNodeByIdAsync is not available. Make sure you're using a compatible Figma API version."
-    );
-  }
-
   try {
+    // Ensure getNodeByIdAsync is available
+    if (!figma.getNodeByIdAsync) {
+      throw new Error("figma.getNodeByIdAsync is not available in this context");
+    }
+
     // Fetch the node from Figma
-    const node = await window.figma.getNodeByIdAsync(nodeId);
+    const node = await figma.getNodeByIdAsync(nodeId);
 
     if (!node) {
       return null;
@@ -589,10 +584,10 @@ export async function figmaToDSL(
   dslOptions: DSLConversionOptions = {}
 ): Promise<string | null> {
   const skeleton = await figmaToTailwindJSONSkeleton(node, conversionSettings);
-  
+
   if (!skeleton) {
     return null;
   }
-  
+
   return skeletonToDSL(skeleton, dslOptions);
 }

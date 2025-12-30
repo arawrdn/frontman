@@ -344,6 +344,7 @@ let main = () => {
               let includeImage = settings["includeImage"] == true
 
               let nodeResult = await FigmaClientApiBindings.getFigmaNodeJSON(
+                figma,
                 nodeId,
                 conversionSettings,
               )
