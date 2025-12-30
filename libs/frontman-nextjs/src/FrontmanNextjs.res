@@ -6,8 +6,11 @@ module Middleware = FrontmanNextjs__Middleware
 module Server = FrontmanNextjs__Server
 module ToolRegistry = FrontmanNextjs__ToolRegistry
 
-// Re-export core SSE for convenience
 module SSE = AskTheLlmFrontmanCore.FrontmanCore__SSE
+
+module OpenTelemetry = FrontmanNextjs__OpenTelemetry
+
+module Instrumentation = FrontmanNextjs__Instrumentation
 
 // Re-export for convenience
 let createMiddleware = Middleware.createMiddleware
