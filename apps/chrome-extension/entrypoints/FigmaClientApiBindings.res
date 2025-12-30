@@ -92,8 +92,8 @@ let exportAsync: (figmaNode, exportOptions) => promise<Uint8Array.t> = %raw(`
 `)
 
 // Base64 encode bytes (from figma API)
-let base64Encode: Uint8Array.t => string = %raw(`
-  function(bytes) {
+let base64Encode: (figmaApi, Uint8Array.t) => string = %raw(`
+  function(figma, bytes) {
     return figma.base64Encode(bytes);
   }
 `)
@@ -105,7 +105,7 @@ let onSelectionChange: (figmaApi, unit => unit) => unit = %raw(`
     
     const checkSelection = () => {
       try {
-        const selection = window.figma?.currentPage?.selection;
+        const selection = figma.currentPage?.selection;
         
         // Check if selection exists and is not empty
         if (selection && selection.length > 0) {
