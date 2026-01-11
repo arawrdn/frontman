@@ -14,7 +14,9 @@ defmodule FrontmanServerWeb.TaskChannel.MCPInitializer do
   require Logger
 
   alias FrontmanServer.Tasks
-  alias FrontmanServerWeb.{JsonRpc, MCPProtocol}
+  alias FrontmanServer.Tools.MCP, as: MCPTools
+  alias JsonRpc
+  alias ModelContextProtocol, as: MCP
 
   @type status ::
           :pending
@@ -54,6 +56,15 @@ defmodule FrontmanServerWeb.TaskChannel.MCPInitializer do
     GenServer.cast(pid, {:mcp_error, request_id, error})
   end
 
+  @doc """
+  Returns true if this initializer is expecting a response with the given request_id.
+  Used by TaskChannel to route MCP responses to the correct handler.
+  """
+  @spec expects_response?(pid(), integer()) :: boolean()
+  def expects_response?(pid, request_id) do
+    GenServer.call(pid, {:expects_response?, request_id})
+  end
+
   # Server Callbacks
 
   @impl true
@@ -78,9 +89,19 @@ defmodule FrontmanServerWeb.TaskChannel.MCPInitializer do
   end
 
   @impl true
+  def handle_call({:expects_response?, request_id}, _from, state) do
+    owns_id =
+      request_id == state.mcp_init_request_id or
+        request_id == state.tools_request_id or
+        request_id == state.project_rules_request_id
+
+    {:reply, owns_id, state}
+  end
+
+  @impl true
   def handle_info(:start_initialization, state) do
     request_id = System.unique_integer([:positive])
-    request = JsonRpc.request(request_id, "initialize", MCPProtocol.initialize_params())
+    request = JsonRpc.request(request_id, "initialize", MCP.initialize_params())
 
     # Send request to channel, which will push to client
     send(state.channel_pid, {:mcp_initializer_request, request})
@@ -164,7 +185,7 @@ defmodule FrontmanServerWeb.TaskChannel.MCPInitializer do
 
   defp handle_tools_response(result, state) do
     raw_tools = Map.get(result, "tools", [])
-    tools = FrontmanServer.Tools.MCP.from_maps(raw_tools)
+    tools = MCPTools.from_maps(raw_tools)
 
     Logger.info("MCPInitializer: Received #{length(tools)} tools from MCP server")
 
@@ -197,7 +218,7 @@ defmodule FrontmanServerWeb.TaskChannel.MCPInitializer do
     content = Map.get(result, "content", [])
 
     text_result =
-      Enum.map(content, fn block -> Map.get(block, "text", "") end) |> Enum.join("\n")
+      Enum.map_join(content, "\n", fn block -> Map.get(block, "text", "") end)
 
     case Jason.decode(text_result) do
       {:ok, results} when is_list(results) ->

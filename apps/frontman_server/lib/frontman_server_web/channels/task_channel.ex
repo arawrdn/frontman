@@ -9,14 +9,12 @@ defmodule FrontmanServerWeb.TaskChannel do
   use FrontmanServerWeb, :channel
   require Logger
 
-  alias FrontmanServer.Agents
-  alias FrontmanServer.Observability.TelemetryEvents
+  alias AgentClientProtocol, as: ACP
   alias FrontmanServer.Tasks
   alias FrontmanServer.Tasks.Interaction
   alias FrontmanServer.Tools
-  alias FrontmanServerWeb.{ACP, JsonRpc}
-  alias FrontmanServerWeb.MCPProtocol
   alias FrontmanServerWeb.TaskChannel.MCPInitializer
+  alias ModelContextProtocol, as: MCP
 
   @impl true
   def join("task:" <> task_id, _params, socket) do
@@ -24,7 +22,12 @@ defmodule FrontmanServerWeb.TaskChannel do
       {:ok, _task} ->
         Logger.info("Client joining: #{task_id}, socket_id: #{inspect(self())}")
 
-        # Start MCP initialization process
+        # Start MCP initialization process.
+        # Note: We always reinitialize on join because:
+        # 1. MCPInitializer performs a stateful handshake with the browser-side MCP client
+        # 2. Each websocket connection needs its own MCP session
+        # 3. Project rules loading depends on client-specific context
+        # Tools are persisted to task.mcp_tools for agent access, not for reuse on reconnect.
         {:ok, initializer_pid} = MCPInitializer.start_link(self(), task_id)
 
         socket =
@@ -88,6 +91,8 @@ defmodule FrontmanServerWeb.TaskChannel do
 
   @impl true
   def handle_in("mcp:message", payload, socket) do
+    Logger.debug("Received mcp:message payload: #{inspect(payload)}")
+
     case JsonRpc.parse_response(payload) do
       {:ok, {:success, id, result}} ->
         handle_mcp_response(id, result, socket)
@@ -113,15 +118,17 @@ defmodule FrontmanServerWeb.TaskChannel do
 
   defp handle_mcp_response(id, result, socket) do
     pending_requests = socket.assigns[:pending_requests] || %{}
+    initializer_pid = socket.assigns[:mcp_initializer_pid]
+
+    Logger.debug(
+      "MCP response received: id=#{id}, pending_keys=#{inspect(Map.keys(pending_requests))}"
+    )
 
     cond do
-      # During initialization, forward all responses to MCPInitializer
-      socket.assigns[:mcp_status] != :ready and socket.assigns[:mcp_initializer_pid] ->
-        MCPInitializer.handle_mcp_response(socket.assigns.mcp_initializer_pid, id, result)
-        {:noreply, socket}
-
-      # After initialization, handle tool call responses
+      # Tool call response - channel owns these IDs
       Map.has_key?(pending_requests, id) ->
+        Logger.debug("MCP response #{id} matched pending tool call")
+
         case Map.pop(pending_requests, id) do
           {{:tool_call, tool_call}, remaining_requests} ->
             handle_tool_call_response(id, tool_call, result, socket, remaining_requests)
@@ -131,31 +138,36 @@ defmodule FrontmanServerWeb.TaskChannel do
             {:noreply, socket}
         end
 
+      # Initialization response - MCPInitializer owns these IDs
+      initializer_pid && initializer_expects_response?(initializer_pid, id) ->
+        Logger.debug("MCP response #{id} matched MCPInitializer")
+        MCPInitializer.handle_mcp_response(initializer_pid, id, result)
+        {:noreply, socket}
+
       true ->
         Logger.warning("Received MCP response for unknown request_id: #{id}")
         {:noreply, socket}
     end
   end
 
-  defp handle_tool_call_response(id, tool_call, result, socket, remaining_requests) do
+  # Safely check if MCPInitializer expects this response, with timeout protection
+  defp initializer_expects_response?(pid, id) do
+    MCPInitializer.expects_response?(pid, id)
+  catch
+    :exit, {:timeout, _} ->
+      Logger.warning("MCPInitializer.expects_response? timed out for id=#{id}")
+      false
+
+    :exit, reason ->
+      Logger.warning("MCPInitializer.expects_response? failed: #{inspect(reason)}")
+      false
+  end
+
+  defp handle_tool_call_response(_id, tool_call, result, socket, remaining_requests) do
     task_id = socket.assigns.task_id
-
-    # Extract text from MCP content array
-    text_result = MCPProtocol.extract_content_text(result)
-
-    # Try to parse the result as JSON to preserve structured data (e.g., screenshots)
-    parsed_result = MCPProtocol.parse_tool_result(text_result)
-
-    # Check if the tool call resulted in an error
-    is_error = MCPProtocol.is_error?(result)
-
-    # Emit MCP tool stop telemetry event
-    if is_error do
-      TelemetryEvents.mcp_tool_stop(id, status: "error", error: text_result)
-    else
-      TelemetryEvents.mcp_tool_stop(id, status: "success")
-    end
-
+    text_result = MCP.extract_content_text(result)
+    parsed_result = MCP.parse_tool_result(text_result)
+    is_error = MCP.error?(result)
     status = if is_error, do: "failed", else: "completed"
     Logger.info("MCP tool #{tool_call.tool_name} #{status}: #{text_result}")
 
@@ -173,7 +185,6 @@ defmodule FrontmanServerWeb.TaskChannel do
     # Store result and notify agent (use parsed result to preserve structured data like screenshots)
     Tasks.add_tool_result(
       task_id,
-      tool_call.agent_id,
       %{id: tool_call.tool_call_id, name: tool_call.tool_name},
       parsed_result,
       is_error
@@ -185,14 +196,14 @@ defmodule FrontmanServerWeb.TaskChannel do
 
   defp handle_mcp_error(id, error, socket) do
     pending_requests = socket.assigns[:pending_requests] || %{}
+    initializer_pid = socket.assigns[:mcp_initializer_pid]
+
+    Logger.debug(
+      "MCP error received: id=#{id}, pending_keys=#{inspect(Map.keys(pending_requests))}"
+    )
 
     cond do
-      # During initialization, forward all errors to MCPInitializer
-      socket.assigns[:mcp_status] != :ready and socket.assigns[:mcp_initializer_pid] ->
-        MCPInitializer.handle_mcp_error(socket.assigns.mcp_initializer_pid, id, error)
-        {:noreply, socket}
-
-      # After initialization, handle tool call errors
+      # Tool call error - channel owns these IDs
       Map.has_key?(pending_requests, id) ->
         case Map.pop(pending_requests, id) do
           {{:tool_call, tool_call}, remaining_requests} ->
@@ -203,19 +214,20 @@ defmodule FrontmanServerWeb.TaskChannel do
             {:noreply, socket}
         end
 
+      # Initialization error - MCPInitializer owns these IDs
+      initializer_pid && initializer_expects_response?(initializer_pid, id) ->
+        MCPInitializer.handle_mcp_error(initializer_pid, id, error)
+        {:noreply, socket}
+
       true ->
         Logger.warning("Received MCP error for unknown request_id: #{id}")
         {:noreply, socket}
     end
   end
 
-  defp handle_tool_call_error(id, tool_call, error, socket, remaining_requests) do
+  defp handle_tool_call_error(_id, tool_call, error, socket, remaining_requests) do
     task_id = socket.assigns.task_id
     error_message = error["message"] || "Unknown MCP error"
-
-    # Emit MCP tool stop telemetry event with error
-    TelemetryEvents.mcp_tool_stop(id, status: "error", error: error_message)
-
     Logger.error("MCP tool #{tool_call.tool_name} failed: #{error_message}")
 
     # Send ACP notification: failed
@@ -232,7 +244,6 @@ defmodule FrontmanServerWeb.TaskChannel do
     # Store error result and notify agent
     Tasks.add_tool_result(
       task_id,
-      tool_call.agent_id,
       %{id: tool_call.tool_call_id, name: tool_call.tool_name},
       error_message,
       true
@@ -288,9 +299,6 @@ defmodule FrontmanServerWeb.TaskChannel do
     # Track request ID (channel state)
     socket = assign(socket, :pending_prompt_id, id)
 
-    # Execute domain command with telemetry
-    TelemetryEvents.task_start(task_id)
-
     case Tasks.add_user_message(task_id, prompt.content, all_tools) do
       {:ok, _interaction} ->
         Logger.info("User message added, agent spawned for task #{task_id}")
@@ -298,18 +306,16 @@ defmodule FrontmanServerWeb.TaskChannel do
 
       {:error, reason} ->
         Logger.error("Failed to add user message: #{inspect(reason)}")
-        error_response = JsonRpc.error_response(id, -32000, to_string(reason))
+        error_response = JsonRpc.error_response(id, -32_000, to_string(reason))
         {:reply, {:ok, %{"acp:message" => error_response}}, socket}
     end
   end
 
   @impl true
-  def handle_info({:agent_stream_token, _agent_id, text}, socket) do
+  def handle_info({:stream_token, text}, socket) do
     # Translate domain event to ACP notification
     # ACP compliant: agent_message_chunk implicitly signals message start
-    Logger.debug(
-      "Channel received agent_stream_token: #{byte_size(text)} bytes, text=#{inspect(text)}"
-    )
+    Logger.debug("Channel received stream_token: #{byte_size(text)} bytes, text=#{inspect(text)}")
 
     task_id = socket.assigns.task_id
     notification = ACP.build_agent_message_chunk_notification(task_id, text)
@@ -318,15 +324,16 @@ defmodule FrontmanServerWeb.TaskChannel do
     {:noreply, socket}
   end
 
-  def handle_info({:agent_completed, _agent_id}, socket) do
+  def handle_info({:stream_thinking, _text}, socket) do
+    # Thinking tokens not forwarded to client yet - client infers thinking state from message status
+    # Broadcast kept in agents.ex for future implementation of visible thinking
+    {:noreply, socket}
+  end
+
+  def handle_info(:agent_completed, socket) do
     Logger.debug(
       "Channel received agent_completed, pending_prompt_id=#{inspect(socket.assigns[:pending_prompt_id])}"
     )
-
-    task_id = socket.assigns.task_id
-
-    # Emit task stop telemetry event
-    TelemetryEvents.task_stop(task_id)
 
     # Translate domain event to ACP response
     case socket.assigns[:pending_prompt_id] do
@@ -348,22 +355,9 @@ defmodule FrontmanServerWeb.TaskChannel do
   def handle_info({:interaction, %Interaction.ToolCall{} = tool_call}, socket) do
     task_id = socket.assigns.task_id
 
-    # Check if this tool call is from a sub-agent and get spawning tool name
-    parent_agent_id = Agents.get_parent_agent_id(tool_call.agent_id)
-    spawning_tool_name = Agents.get_spawning_tool_name(tool_call.agent_id)
-
-    acp_opts =
-      []
-      |> then(fn opts ->
-        if parent_agent_id, do: [{:parent_agent_id, parent_agent_id} | opts], else: opts
-      end)
-      |> then(fn opts ->
-        if spawning_tool_name, do: [{:spawning_tool_name, spawning_tool_name} | opts], else: opts
-      end)
-
     # Send ACP notification: pending with tool arguments in content
     pending_notification =
-      ACP.build_tool_call_notification(task_id, tool_call, "pending", acp_opts)
+      ACP.build_tool_call_notification(task_id, tool_call, "pending", [])
 
     push(socket, "acp:message", pending_notification)
 
@@ -380,53 +374,39 @@ defmodule FrontmanServerWeb.TaskChannel do
 
     push(socket, "acp:message", args_notification)
 
-    # Check if it's a backend tool
+    # Check if it's a backend tool or MCP tool
     case Tools.find_tool(tool_call.tool_name) do
       {:ok, _tool_module} ->
-        # Execute backend tool ASYNC to avoid blocking the channel
-        channel_pid = self()
-
-        Task.start(fn ->
-          result = Tools.execute_backend_tool(tool_call, task_id)
-          send(channel_pid, {:backend_tool_completed, tool_call, result})
-        end)
-
+        # Backend tools are executed by ToolExecutor in the agent loop.
+        # The channel just notifies the UI (already done above).
+        # When the tool completes, we'll receive a ToolResult notification.
         {:noreply, socket}
 
       :not_found ->
-        # Not a backend tool, route to MCP
+        # Not a backend tool, route to MCP client for execution
         route_to_mcp(tool_call, socket)
     end
-  end
-
-  def handle_info({:backend_tool_completed, tool_call, {:executed, result}}, socket) do
-    handle_backend_tool_result(tool_call, result, socket)
-  end
-
-  def handle_info({:backend_tool_completed, tool_call, :not_found}, socket) do
-    # This shouldn't happen since we checked find_backend_tool first,
-    # but handle it gracefully by routing to MCP
-    Logger.warning("Backend tool #{tool_call.tool_name} not found after async execution")
-    route_to_mcp(tool_call, socket)
   end
 
   def handle_info({:interaction, %Interaction.ToolResult{} = tool_result}, socket) do
     task_id = socket.assigns.task_id
 
     if Tools.todo_mutation?(tool_result.tool_name) do
-      # Send plan_update as before
       case Tasks.list_todos(task_id) do
         {:ok, todos} ->
           entries = todos_to_plan_entries(todos)
-          notification = ACP.plan_update(task_id, entries)
-          push(socket, "acp:message", notification)
+          plan_notification = ACP.plan_update(task_id, entries)
+          push(socket, "acp:message", plan_notification)
 
         {:error, _reason} ->
           :ok
       end
-
-      # Send additional todo-specific notifications for UX
-      emit_todo_event_notification(socket, tool_result)
+    else
+      # Regular tools: send tool_call_update
+      status = if tool_result.is_error, do: "error", else: "completed"
+      content = format_tool_content(tool_result.result)
+      notification = ACP.tool_call_update(task_id, tool_result.tool_call_id, status, content)
+      push(socket, "acp:message", notification)
     end
 
     {:noreply, socket}
@@ -437,7 +417,7 @@ defmodule FrontmanServerWeb.TaskChannel do
     {:noreply, socket}
   end
 
-  def handle_info({:agent_error, _agent_id, message}, socket) do
+  def handle_info({:agent_error, message}, socket) do
     Logger.error("Agent error: #{message}")
 
     case socket.assigns[:pending_prompt_id] do
@@ -445,7 +425,7 @@ defmodule FrontmanServerWeb.TaskChannel do
         {:noreply, socket}
 
       id ->
-        response = JsonRpc.error_response(id, -32000, message)
+        response = JsonRpc.error_response(id, -32_000, message)
         push(socket, "acp:message", response)
         socket = assign(socket, :pending_prompt_id, nil)
         {:noreply, socket}
@@ -465,11 +445,14 @@ defmodule FrontmanServerWeb.TaskChannel do
   end
 
   def handle_info({:mcp_initializer, {:initialization_complete, data}}, socket) do
-    Logger.info("MCP initialization complete for task #{socket.assigns.task_id}")
+    task_id = socket.assigns.task_id
+    Logger.info("MCP initialization complete for task #{task_id}")
+
+    # Store MCP tools on task immediately - ensures backend tools have access
+    # even if prompt arrived before MCP init completed
+    Tasks.set_mcp_tools(task_id, data.tools)
 
     # Notify client that project rules are initialized
-    task_id = socket.assigns.task_id
-
     notification =
       JsonRpc.notification("project_rules_initialized", %{
         "count" => length(data.tools),
@@ -521,89 +504,36 @@ defmodule FrontmanServerWeb.TaskChannel do
     end
   end
 
-  def handle_info(_msg, socket) do
-    {:noreply, socket}
-  end
-
-  defp handle_backend_tool_result(tool_call, result, socket) do
-    task_id = socket.assigns.task_id
-
-    # Send in_progress update
-    notification = ACP.tool_call_update(task_id, tool_call.tool_call_id, "in_progress")
-    push(socket, "acp:message", notification)
-
-    # Handle result
-    case result do
-      {:ok, content} ->
-        handle_tool_success(tool_call, content, socket)
-
-      {:error, reason} ->
-        handle_tool_error(tool_call, reason, socket)
-    end
-
-    {:noreply, socket}
-  end
-
-  defp handle_tool_success(tool_call, result, socket) do
-    task_id = socket.assigns.task_id
-
-    # Convert result to ACP content format
-    content = format_tool_content(result)
-
-    # Send completed update
-    notification = ACP.tool_call_update(task_id, tool_call.tool_call_id, "completed", content)
-    push(socket, "acp:message", notification)
-
-    # Store structured data (not JSON)
-    Tasks.add_tool_result(
-      task_id,
-      tool_call.agent_id,
-      %{id: tool_call.tool_call_id, name: tool_call.tool_name},
-      result,
-      false
-    )
-  end
-
-  defp handle_tool_error(tool_call, error, socket) do
-    task_id = socket.assigns.task_id
-    error_message = to_string(error)
-
-    # Convert error to ACP content format
-    content = [%{type: "content", content: %{type: "text", text: error_message}}]
-
-    # Send failed update
-    notification = ACP.tool_call_update(task_id, tool_call.tool_call_id, "failed", content)
-    push(socket, "acp:message", notification)
-
-    # Store error
-    Tasks.add_tool_result(
-      task_id,
-      tool_call.agent_id,
-      %{id: tool_call.tool_call_id, name: tool_call.tool_name},
-      error_message,
-      true
-    )
+  def handle_info(msg, _socket) do
+    raise "Unhandled message in TaskChannel: #{inspect(msg)}"
   end
 
   defp format_tool_content(result) when is_map(result) do
     [%{type: "content", content: %{type: "text", text: Jason.encode!(result)}}]
   end
 
+  defp format_tool_content(result) when is_binary(result) do
+    [%{type: "content", content: %{type: "text", text: result}}]
+  end
+
+  defp format_tool_content(result) do
+    [%{type: "content", content: %{type: "text", text: inspect(result)}}]
+  end
+
   defp route_to_mcp(tool_call, socket) do
     task_id = socket.assigns.task_id
+
+    # Log file operations for debugging path consistency issues
+    if tool_call.tool_name in ["read_file", "write_file"] do
+      Logger.info(
+        "MCP file op: #{tool_call.tool_name} path=#{inspect(tool_call.arguments["path"])}"
+      )
+    end
+
     request_id = System.unique_integer([:positive])
 
-    TelemetryEvents.mcp_tool_start(
-      request_id,
-      tool_call.tool_call_id,
-      tool_call.tool_name,
-      tool_call.agent_id,
-      task_id,
-      tool_call.arguments
-    )
-
     request =
-      MCPProtocol.tools_call_request(%MCPProtocol.ToolCallParams{
+      MCP.tools_call_request(%MCP.ToolCallParams{
         request_id: request_id,
         tool_name: tool_call.tool_name,
         arguments: tool_call.arguments,
@@ -630,6 +560,7 @@ defmodule FrontmanServerWeb.TaskChannel do
     {:noreply, socket}
   end
 
+  # Convert todos to ACP plan entries
   defp todos_to_plan_entries(todos) when is_list(todos) do
     todos
     |> Enum.sort_by(& &1.created_at, DateTime)
@@ -644,88 +575,10 @@ defmodule FrontmanServerWeb.TaskChannel do
     }
   end
 
-  # ===========================================================================
-  # Todo Event Notification Helpers
-  # ===========================================================================
-
-  # Emit todo-specific UX notifications based on tool result
-  defp emit_todo_event_notification(socket, %Interaction.ToolResult{} = tool_result) do
-    task_id = socket.assigns.task_id
-
-    case tool_result.tool_name do
-      "todo_add" ->
-        # For todo_add, emit todo_batch_created with the single entry
-        # The UI will aggregate consecutive todo_add calls
-        emit_todo_batch_created(socket, task_id, tool_result)
-
-      "todo_update" ->
-        # For todo_update, emit started/completed based on new status
-        emit_todo_status_change(socket, task_id, tool_result)
-
-      _ ->
-        # todo_list, todo_remove, etc. - no special notification needed
-        :ok
-    end
-  end
-
-  # Emit todo_batch_created for a single todo_add result
-  # Note: The UI will handle batching consecutive adds visually
-  # The result is the raw todo struct (not wrapped in {:ok, ...})
-  defp emit_todo_batch_created(socket, task_id, tool_result) do
-    todo = tool_result.result
-
-    if is_map(todo) and Map.has_key?(todo, :id) and Map.has_key?(todo, :content) do
-      entry = %{
-        "id" => todo.id,
-        "content" => todo.content,
-        "active_form" => Map.get(todo, :active_form, todo.content),
-        "status" => Atom.to_string(todo.status)
-      }
-
-      notification = ACP.todo_batch_created(task_id, [entry])
-      push(socket, "acp:message", notification)
-    else
-      :ok
-    end
-  end
-
-  # Emit todo_started or todo_completed based on the update result
-  # The result is the raw todo struct (not wrapped in {:ok, ...})
-  defp emit_todo_status_change(socket, task_id, tool_result) do
-    todo = tool_result.result
-
-    if is_map(todo) and Map.has_key?(todo, :status) do
-      # Get the content for display (prefer active_form, fallback to content)
-      content = Map.get(todo, :active_form) || todo.content
-
-      case todo.status do
-        :in_progress ->
-          notification = ACP.todo_started(task_id, todo.id, content)
-          push(socket, "acp:message", notification)
-
-        :completed ->
-          notification = ACP.todo_completed(task_id, todo.id, content)
-          push(socket, "acp:message", notification)
-
-        _ ->
-          # pending or other status - no notification
-          :ok
-      end
-    else
-      :ok
-    end
-  end
-
   @impl true
   def terminate(reason, socket) do
     task_id = socket.assigns[:task_id]
     Logger.info("Client disconnected from task #{task_id}: #{inspect(reason)}")
-
-    # Emit task stop if still processing (client disconnected mid-prompt)
-    if socket.assigns[:pending_prompt_id] do
-      TelemetryEvents.task_stop(task_id)
-    end
-
     :ok
   end
 end

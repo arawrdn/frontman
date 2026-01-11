@@ -66,20 +66,27 @@ let useExtensionState = () => {
             | "GetFigmaNodeResponse" =>
               // Route response to the pending tool request
               // Note: fields are Js.Nullable.t since they come from JS as null, not undefined
+              Console.log2("[App] Received GetFigmaNodeResponse, requestId:", message.requestId)
               message.requestId
               ->Js.Nullable.toOption
               ->Option.forEach(requestId => {
+                Console.log2("[App] Routing response to handler for:", requestId)
                 let result = switch message.error->Js.Nullable.toOption {
-                | Some(error) => Error(error)
+                | Some(error) =>
+                  Console.log2("[App] Response has error:", error)
+                  Error(error)
                 | None =>
                   switch message.node->Js.Nullable.toOption {
                   | Some(node) =>
+                    Console.log("[App] Response has node data")
                     let image = message.image->Js.Nullable.toOption
                     Ok({
                       Client__Tool__GetFigmaNode.node,
                       Client__Tool__GetFigmaNode.image,
                     })
-                  | None => Error("No node data in response")
+                  | None =>
+                    Console.warn("[App] Response has no node data")
+                    Error("No node data in response")
                   }
                 }
                 Client__Tool__GetFigmaNode.handleResponse(requestId, result)
@@ -117,7 +124,13 @@ let make = () => {
   useExtensionState()
 
   // Use Frontman context for ACP connection
-  let {state, isReady, isSessionActive, createSession, sendPrompt} = Client__FrontmanProvider.useFrontman()
+  let {connectionState, createSession, sendPrompt} = Client__FrontmanProvider.useFrontman()
+
+  // Derive session active state from connectionState
+  let isSessionActive = switch connectionState {
+  | SessionActive(_) => true
+  | _ => false
+  }
 
   // Handle ACP session updates (streaming messages from the agent)
   let handleSessionUpdate = React.useCallback((update: ACPTypes.sessionUpdate) => {
@@ -223,19 +236,10 @@ let make = () => {
       }
 
     | Plan({entries}) =>
+      // ACP plan update - replace plan entries completely
       entries->Option.forEach(planEntries => {
         Client__State.Actions.planReceived(~taskId, ~entries=planEntries)
       })
-
-    // Todo UX events
-    | TodoBatchCreated({entries, count}) =>
-      Client__State.Actions.todoBatchCreated(~taskId, ~entries, ~count)
-
-    | TodoStarted({todoId, content}) =>
-      Client__State.Actions.todoStarted(~taskId, ~todoId, ~content)
-
-    | TodoCompleted({todoId, content}) =>
-      Client__State.Actions.todoCompleted(~taskId, ~todoId, ~content)
 
     | Unknown({sessionUpdate}) => Console.log2("[ACP] Unhandled session update:", sessionUpdate)
     }
@@ -246,22 +250,17 @@ let make = () => {
 
   // Auto-create session when ready (both ACP and relay initialized)
   React.useEffect(() => {
-    if isReady && !sessionCreatedRef.current {
-      sessionCreatedRef.current = true
-      Console.log("[App] Provider ready, creating session...")
-      createSession(handleSessionUpdate)
-      ->Promise.thenResolve(result => {
-        switch result {
-        | Ok(_sess) => ()
-        | Error(err) =>
-          sessionCreatedRef.current = false
-          Console.error2("[App] Failed to create session:", err)
-        }
-      })
-      ->ignore
+    switch connectionState {
+    | Connected =>
+      if !sessionCreatedRef.current {
+        sessionCreatedRef.current = true
+        createSession(handleSessionUpdate)
+      }
+    | Error(_) | Disconnected => sessionCreatedRef.current = false
+    | _ => ()
     }
     None
-  }, (isReady, handleSessionUpdate, createSession))
+  }, (connectionState, handleSessionUpdate, createSession))
 
   // Separate effect to update sendPrompt in state when session becomes active
   React.useEffect(() => {
@@ -269,13 +268,13 @@ let make = () => {
       Client__Debug.init()
       Client__State.Actions.connect(~sendPrompt)
     } else {
-      switch state {
+      switch connectionState {
       | Disconnected | Error(_) => Client__State.Actions.disconnect()
       | _ => ()
       }
     }
     None
-  }, (state, isSessionActive, sendPrompt))
+  }, (connectionState, isSessionActive, sendPrompt))
 
   // Get resizable width for chatbox panel
   let (chatboxWidth, isResizing, handleResizeMouseDown) = Client__UseResizableWidth.use()

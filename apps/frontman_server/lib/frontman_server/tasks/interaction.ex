@@ -16,6 +16,8 @@ defmodule FrontmanServer.Tasks.Interaction do
           | __MODULE__.ToolResult.t()
           | __MODULE__.DiscoveredProjectRule.t()
 
+  alias ReqLLM.Message.ContentPart
+
   defmodule FigmaNode do
     @moduledoc """
     Represents a selected Figma node with its associated data.
@@ -32,7 +34,7 @@ defmodule FrontmanServer.Tasks.Interaction do
 
     When `is_dsl` is false:
     - The `node` field contains full JSON node data from get_figma_node
-    - Used by `implement_component`, `finish_component`, etc. for detailed implementation
+    - Used by `implement_component`, `visual_compare_component_to_figma`, etc. for detailed implementation
     """
     use TypedStruct
 
@@ -65,7 +67,9 @@ defmodule FrontmanServer.Tasks.Interaction do
     @type selected_component :: %{
             file: String.t(),
             line: integer(),
-            column: integer()
+            column: integer(),
+            source_snippet: String.t() | nil,
+            source_type: String.t() | nil
           }
 
     typedstruct enforce: true do
@@ -116,7 +120,13 @@ defmodule FrontmanServer.Tasks.Interaction do
           column = Map.get(meta, "column")
 
           if is_binary(file) and is_integer(line) and is_integer(column) do
-            %{file: file, line: line, column: column}
+            %{
+              file: file,
+              line: line,
+              column: column,
+              source_snippet: Map.get(meta, "source_snippet"),
+              source_type: Map.get(meta, "source_type")
+            }
           else
             nil
           end
@@ -236,18 +246,16 @@ defmodule FrontmanServer.Tasks.Interaction do
 
     typedstruct enforce: true do
       field(:id, String.t())
-      field(:agent_id, String.t())
       field(:content, String.t())
       field(:timestamp, DateTime.t())
       field(:metadata, map(), enforce: false)
     end
 
-    def new(agent_id, content, metadata \\ %{}) do
+    def new(content, metadata \\ %{}) do
       alias FrontmanServer.Tasks.Interaction
 
       %__MODULE__{
         id: Interaction.new_id(),
-        agent_id: agent_id,
         content: content,
         timestamp: Interaction.now(),
         metadata: metadata
@@ -261,7 +269,6 @@ defmodule FrontmanServer.Tasks.Interaction do
         %{
           type: "agent_response",
           id: value.id,
-          agent_id: value.agent_id,
           content: value.content,
           timestamp: DateTime.to_iso8601(value.timestamp),
           metadata: value.metadata
@@ -273,24 +280,21 @@ defmodule FrontmanServer.Tasks.Interaction do
 
   defmodule AgentSpawned do
     @moduledoc """
-    Represents the creation of a new agent (including sub-agents).
+    Represents the creation of a new agent run.
     """
     use TypedStruct
 
     typedstruct enforce: true do
       field(:id, String.t())
-      field(:agent_id, String.t())
       field(:config, map(), enforce: false)
-      field(:parent_agent_id, String.t() | nil, enforce: false)
       field(:timestamp, DateTime.t())
     end
 
-    def new(agent_id, config \\ %{}) do
+    def new(config \\ %{}) do
       alias FrontmanServer.Tasks.Interaction
 
       %__MODULE__{
         id: Interaction.new_id(),
-        agent_id: agent_id,
         config: config,
         timestamp: Interaction.now()
       }
@@ -303,9 +307,7 @@ defmodule FrontmanServer.Tasks.Interaction do
         %{
           type: "agent_spawned",
           id: value.id,
-          agent_id: value.agent_id,
           config: value.config,
-          parent_agent_id: value.parent_agent_id,
           timestamp: DateTime.to_iso8601(value.timestamp)
         },
         opts
@@ -321,17 +323,15 @@ defmodule FrontmanServer.Tasks.Interaction do
 
     typedstruct enforce: true do
       field(:id, String.t())
-      field(:agent_id, String.t())
       field(:timestamp, DateTime.t())
       field(:result, term(), enforce: false)
     end
 
-    def new(agent_id, result \\ nil) do
+    def new(result \\ nil) do
       alias FrontmanServer.Tasks.Interaction
 
       %__MODULE__{
         id: Interaction.new_id(),
-        agent_id: agent_id,
         timestamp: Interaction.now(),
         result: result
       }
@@ -344,7 +344,6 @@ defmodule FrontmanServer.Tasks.Interaction do
         %{
           type: "agent_completed",
           id: value.id,
-          agent_id: value.agent_id,
           timestamp: DateTime.to_iso8601(value.timestamp),
           result: value.result
         },
@@ -361,19 +360,17 @@ defmodule FrontmanServer.Tasks.Interaction do
 
     typedstruct enforce: true do
       field(:id, String.t())
-      field(:agent_id, String.t())
       field(:tool_call_id, String.t())
       field(:tool_name, String.t())
       field(:arguments, map())
       field(:timestamp, DateTime.t())
     end
 
-    def new(agent_id, %ReqLLM.ToolCall{} = tc) do
+    def new(%ReqLLM.ToolCall{} = tc) do
       alias FrontmanServer.Tasks.Interaction
 
       %__MODULE__{
         id: Interaction.new_id(),
-        agent_id: agent_id,
         tool_call_id: tc.id,
         tool_name: ReqLLM.ToolCall.name(tc),
         arguments: ReqLLM.ToolCall.args_map(tc) || %{},
@@ -388,7 +385,6 @@ defmodule FrontmanServer.Tasks.Interaction do
         %{
           type: "tool_call",
           id: value.id,
-          agent_id: value.agent_id,
           tool_call_id: value.tool_call_id,
           tool_name: value.tool_name,
           arguments: value.arguments,
@@ -407,7 +403,6 @@ defmodule FrontmanServer.Tasks.Interaction do
 
     typedstruct enforce: true do
       field(:id, String.t())
-      field(:agent_id, String.t())
       field(:tool_call_id, String.t())
       field(:tool_name, String.t())
       field(:result, term())
@@ -415,12 +410,11 @@ defmodule FrontmanServer.Tasks.Interaction do
       field(:timestamp, DateTime.t())
     end
 
-    def new(agent_id, tool_call_data, result, is_error \\ false) do
+    def new(tool_call_data, result, is_error \\ false) do
       alias FrontmanServer.Tasks.Interaction
 
       %__MODULE__{
         id: Interaction.new_id(),
-        agent_id: agent_id,
         tool_call_id: tool_call_data.id,
         tool_name: tool_call_data.name,
         result: result,
@@ -436,7 +430,6 @@ defmodule FrontmanServer.Tasks.Interaction do
         %{
           type: "tool_result",
           id: value.id,
-          agent_id: value.agent_id,
           tool_call_id: value.tool_call_id,
           tool_name: value.tool_name,
           result: value.result,
@@ -520,36 +513,18 @@ defmodule FrontmanServer.Tasks.Interaction do
   @spec to_llm_messages(list(t())) :: list(map())
   def to_llm_messages(interactions) do
     interactions
-    |> Enum.filter(&is_conversation_message/1)
+    |> Enum.filter(&conversation_message?/1)
     |> Enum.map(&to_llm_message/1)
     |> Enum.reject(&is_nil/1)
   end
 
-  @doc """
-  Converts interactions to LLM messages, filtering by agent_id.
-
-  Only includes interactions that belong to the specified agent.
-  UserMessage is always included (it has no agent_id).
-  """
-  @spec to_llm_messages(list(t()), String.t()) :: list(map())
-  def to_llm_messages(interactions, agent_id) when is_binary(agent_id) do
-    interactions
-    |> Enum.filter(&(is_conversation_message(&1) and belongs_to_agent?(&1, agent_id)))
-    |> Enum.map(&to_llm_message/1)
-    |> Enum.reject(&is_nil/1)
-  end
-
-  defp belongs_to_agent?(%UserMessage{}, _agent_id), do: true
-  defp belongs_to_agent?(%{agent_id: id}, agent_id), do: id == agent_id
-  defp belongs_to_agent?(_, _agent_id), do: false
-
-  defp is_conversation_message(%UserMessage{}), do: true
-  defp is_conversation_message(%AgentResponse{}), do: true
+  defp conversation_message?(%UserMessage{}), do: true
+  defp conversation_message?(%AgentResponse{}), do: true
   # ToolCall is skipped - it's embedded in AgentResponse metadata
-  defp is_conversation_message(%ToolResult{}), do: true
+  defp conversation_message?(%ToolResult{}), do: true
   # DiscoveredProjectRule is context, not conversation - injected separately
-  defp is_conversation_message(%DiscoveredProjectRule{}), do: false
-  defp is_conversation_message(_), do: false
+  defp conversation_message?(%DiscoveredProjectRule{}), do: false
+  defp conversation_message?(_), do: false
 
   @doc """
   Extracts markdown file contents from read_file ToolResult interactions
@@ -611,7 +586,7 @@ defmodule FrontmanServer.Tasks.Interaction do
         content = get_field(result, :text) || get_field(result, :content)
 
         if content && is_binary(content) do
-          [ReqLLM.Context.user(content)]
+          [Swarm.Message.user(content)]
         else
           []
         end
@@ -625,7 +600,7 @@ defmodule FrontmanServer.Tasks.Interaction do
 
           _ ->
             # Plain text content - use as is
-            [ReqLLM.Context.user(result)]
+            [Swarm.Message.user(result)]
         end
 
       _ ->
@@ -634,90 +609,24 @@ defmodule FrontmanServer.Tasks.Interaction do
   end
 
   defp to_llm_message(%UserMessage{} = msg) do
-    # Build text content from messages array
-    text_content = Enum.join(msg.messages, "\n\n")
+    text_content =
+      msg.messages
+      |> Enum.join("\n\n")
+      |> append_component_location(msg.selected_component)
 
-    # Build content parts - start with text
     content_parts =
-      if text_content != "" do
-        [ReqLLM.Message.ContentPart.text(text_content)]
-      else
-        []
-      end
+      text_content
+      |> build_text_parts()
+      |> append_screenshot(msg.selected_component_screenshot)
 
-    # Add selected component screenshot if present
-    content_parts =
-      case msg.selected_component_screenshot do
-        nil ->
-          content_parts
-
-        base64_data ->
-          case Base.decode64(base64_data) do
-            {:ok, decoded_data} ->
-              content_parts ++ [ReqLLM.Message.ContentPart.image(decoded_data, "image/png")]
-
-            :error ->
-              content_parts
-          end
-      end
-
-    # Note: selected_figma_node is NOT included here
-    # It is handled separately by backend tools (breakdown_figma_design, etc.)
-
-    case content_parts do
-      [] ->
-        # Empty message - return minimal user message
-        ReqLLM.Context.user("")
-
-      [%{type: :text, text: text}] ->
-        # Single text content - use simple format
-        ReqLLM.Context.user(text)
-
-      parts ->
-        # Multiple parts (text + images) - use Message struct
-        %ReqLLM.Message{role: :user, content: parts}
-    end
+    build_user_message(content_parts)
   end
 
   defp to_llm_message(%AgentResponse{content: content, metadata: metadata}) do
-    tool_calls = Map.get(metadata || %{}, :tool_calls)
-    response_id = Map.get(metadata || %{}, :response_id)
-    # Extract reasoning_details for Gemini models (required for tool call round-trips)
-    # Filter to only keep "reasoning.encrypted" entries - the encrypted signature is what
-    # Gemini needs for tool call continuations, not the plain text reasoning
-    all_reasoning_details = Map.get(metadata || %{}, :reasoning_details)
+    meta = metadata || %{}
+    tool_calls = Map.get(meta, :tool_calls)
 
-    encrypted_reasoning_details =
-      case all_reasoning_details do
-        nil ->
-          nil
-
-        details when is_list(details) ->
-          filtered = Enum.filter(details, &(&1["type"] == "reasoning.encrypted"))
-          if filtered == [], do: nil, else: filtered
-
-        _ ->
-          nil
-      end
-
-    case tool_calls do
-      nil ->
-        ReqLLM.Context.assistant(content)
-
-      [] ->
-        ReqLLM.Context.assistant(content)
-
-      tool_calls ->
-        # Build Message struct with metadata for OpenAI Responses API (previous_response_id)
-        # and reasoning_details for Gemini models (encrypted signatures only)
-        %ReqLLM.Message{
-          role: :assistant,
-          content: [ReqLLM.Message.ContentPart.text(content)],
-          tool_calls: tool_calls,
-          metadata: if(response_id, do: %{response_id: response_id}, else: %{}),
-          reasoning_details: encrypted_reasoning_details
-        }
-    end
+    build_assistant_message(content, tool_calls, meta)
   end
 
   defp to_llm_message(%ToolCall{}) do
@@ -734,6 +643,107 @@ defmodule FrontmanServer.Tasks.Interaction do
       nil ->
         json_result = if is_binary(result), do: result, else: Jason.encode!(result)
         ReqLLM.Context.tool_result_message(name, id, json_result)
+    end
+  end
+
+  # Helper functions for to_llm_message(%UserMessage{})
+
+  defp append_component_location(text, %{file: file, line: line, column: column} = sc) do
+    source_context = build_source_context(sc)
+
+    location_info = """
+
+    [Selected Component Location]
+    File: #{file}
+    Line: #{line}
+    Column: #{column}#{source_context}
+
+    IMPORTANT: The user has selected a specific component at this location.
+    Start by reading this exact file and making changes at or near the specified line.
+    Do NOT explore or search for files - go directly to the selected file.
+    """
+
+    text <> location_info
+  end
+
+  defp append_component_location(text, _), do: text
+
+  defp build_source_context(sc) do
+    case {Map.get(sc, :source_snippet), Map.get(sc, :source_type)} do
+      {nil, nil} ->
+        ""
+
+      {snippet, nil} when is_binary(snippet) ->
+        """
+
+        Source Context:
+        ```
+        #{snippet}
+        ```
+        """
+
+      {nil, source_type} when is_binary(source_type) ->
+        """
+
+        Source Type: #{source_type}
+        """
+
+      {snippet, source_type} when is_binary(snippet) and is_binary(source_type) ->
+        """
+
+        Source Type: #{source_type}
+        Source Context:
+        ```
+        #{snippet}
+        ```
+        """
+
+      _ ->
+        ""
+    end
+  end
+
+  defp build_text_parts(""), do: []
+  defp build_text_parts(text), do: [ContentPart.text(text)]
+
+  defp append_screenshot(parts, nil), do: parts
+
+  defp append_screenshot(parts, base64_data) do
+    case Base.decode64(base64_data) do
+      {:ok, decoded_data} -> parts ++ [ContentPart.image(decoded_data, "image/png")]
+      :error -> parts
+    end
+  end
+
+  defp build_user_message([]), do: ReqLLM.Context.user("")
+  defp build_user_message([%{type: :text, text: text}]), do: ReqLLM.Context.user(text)
+  defp build_user_message(parts), do: %ReqLLM.Message{role: :user, content: parts}
+
+  # Helper functions for to_llm_message(%AgentResponse{})
+
+  defp build_assistant_message(content, nil, _meta), do: ReqLLM.Context.assistant(content)
+  defp build_assistant_message(content, [], _meta), do: ReqLLM.Context.assistant(content)
+
+  defp build_assistant_message(content, tool_calls, meta) do
+    response_id = Map.get(meta, :response_id)
+    encrypted_reasoning = filter_encrypted_reasoning(Map.get(meta, :reasoning_details))
+
+    %ReqLLM.Message{
+      role: :assistant,
+      content: [ContentPart.text(content)],
+      tool_calls: tool_calls,
+      metadata: if(response_id, do: %{response_id: response_id}, else: %{}),
+      reasoning_details: encrypted_reasoning
+    }
+  end
+
+  defp filter_encrypted_reasoning(nil), do: nil
+  defp filter_encrypted_reasoning(details) when not is_list(details), do: nil
+
+  defp filter_encrypted_reasoning(details) do
+    case Enum.filter(details, &(&1["type"] == "reasoning.encrypted")) do
+      [] -> nil
+      filtered -> filtered
     end
   end
 
@@ -760,12 +770,12 @@ defmodule FrontmanServer.Tasks.Interaction do
     content =
       case text_content do
         "" ->
-          [ReqLLM.Message.ContentPart.image(image_binary, mime_type)]
+          [ContentPart.image(image_binary, mime_type)]
 
         text ->
           [
-            ReqLLM.Message.ContentPart.text(text),
-            ReqLLM.Message.ContentPart.image(image_binary, mime_type)
+            ContentPart.text(text),
+            ContentPart.image(image_binary, mime_type)
           ]
       end
 

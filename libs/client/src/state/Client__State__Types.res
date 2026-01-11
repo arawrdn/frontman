@@ -95,48 +95,57 @@ module FigmaNode = {
     | SelectedNode(selectedNodeData)
 }
 
-// Todo batch event - represents "Added X todos" in the chat
-module TodoBatchEvent = {
-  // Re-export the entry type from ACP
-  type entry = FrontmanFrontmanClient.FrontmanClient__ACP__Types.todoBatchEntry
+// Todo - single source of truth for todo state (updated by reducer)
+module Todo = {
+  type status =
+    | Pending
+    | InProgress
+    | Completed
 
   type t = {
     id: string,
-    entries: array<entry>,
-    count: int,
-    createdAt: float,
-  }
-
-  let make = (~entries: array<entry>, ~count: int): t => {
-    {
-      id: WebAPI.Global.crypto->WebAPI.Crypto.randomUUID,
-      entries,
-      count,
-      createdAt: Date.now(),
-    }
-  }
-}
-
-// Todo status event - represents "Starting: X" or "Finished: X" notifications
-module TodoStatusEvent = {
-  type eventType = [#started | #completed]
-
-  type t = {
-    id: string,
-    todoId: string,
     content: string,
-    eventType: eventType,
+    activeForm: string,
+    status: status,
     createdAt: float,
+    updatedAt: float,
   }
 
-  let make = (~todoId: string, ~content: string, ~eventType: eventType): t => {
-    {
-      id: WebAPI.Global.crypto->WebAPI.Crypto.randomUUID,
-      todoId,
-      content,
-      eventType,
-      createdAt: Date.now(),
+  let parseStatus = (statusStr: string): status => {
+    switch String.toLowerCase(statusStr) {
+    | "in_progress" | "in-progress" | "inprogress" => InProgress
+    | "completed" | "complete" | "done" => Completed
+    | _ => Pending
     }
+  }
+
+  // Parse a Todo from JSON tool result
+  let fromResult = (json: JSON.t): t => {
+    let statusSchema = S.string->S.transform(_ => {
+      parser: str => parseStatus(str),
+      serializer: status =>
+        switch status {
+        | Pending => "pending"
+        | InProgress => "in_progress"
+        | Completed => "completed"
+        },
+    })
+
+    let schema = S.object(s => (
+      s.field("id", S.string),
+      s.field("content", S.string),
+      s.field("active_form", S.string),
+      s.field("status", statusSchema),
+    ))
+
+    let (id, content, activeForm, status) = S.parseOrThrow(json, schema)
+    let now = Date.now()
+    {id, content, activeForm, status, createdAt: now, updatedAt: now}
+  }
+
+  // Extract todo ID from a remove result
+  let idFromResult = (json: JSON.t): string => {
+    S.parseOrThrow(json, S.object(s => s.field("id", S.string)))
   }
 }
 
@@ -157,18 +166,14 @@ module Task = {
     webPreviewIsSelecting: bool,
     selectedElement: option<SelectedElement.t>,
     figmaNode: FigmaNode.t,
+    isAgentRunning: bool,
     planEntries: array<FrontmanFrontmanClient.FrontmanClient__ACP__Types.planEntry>,
-    isAgentRunning: bool, // True when waiting for agent response, false when turn is complete
-    // Todo UX events
-    todoBatchEvents: array<TodoBatchEvent.t>,
-    todoStatusEvents: array<TodoStatusEvent.t>,
   }
 
   let make = (~title: string, ~previewUrl: string, ~messages=Dict.make()): t => {
     let newId = WebAPI.Global.crypto->WebAPI.Crypto.randomUUID
     let timestamp = Date.now()
 
-    // Normalize title: trim, truncate, add ellipsis, or default
     let normalizedTitle = switch String.trim(title) {
     | "" => "New Chat"
     | text => {
@@ -186,10 +191,8 @@ module Task = {
       webPreviewIsSelecting: false,
       selectedElement: None,
       figmaNode: FigmaNode.NoSelection,
-      planEntries: [],
       isAgentRunning: false,
-      todoBatchEvents: [],
-      todoStatusEvents: [],
+      planEntries: [],
     }
   }
 }
@@ -200,6 +203,29 @@ module ACPTypes = FrontmanFrontmanClient.FrontmanClient__ACP__Types
 // ============================================================================
 // ContentBlock builders for embedded context (ACP embeddedContext)
 // ============================================================================
+
+// Helper to strip file:// URI prefix and convert to filesystem path
+// Handles both Unix (file:///path) and Windows (file:///C:/path) URIs
+let stripFileUriPrefix = (path: string): string => {
+  if path->String.startsWith("file:///") {
+    // Check if it's a Windows path (file:///C:/...)
+    let afterPrefix = path->String.slice(~start=8, ~end=path->String.length) // Skip "file:///"
+    // Windows paths have a drive letter followed by colon (e.g., "C:/...")
+    if afterPrefix->String.length >= 2 && afterPrefix->String.charAt(1) == ":" {
+      // Windows path - return without the file:/// prefix (keeps drive letter)
+      afterPrefix
+    } else {
+      // Unix path - return with leading slash
+      "/" ++ afterPrefix
+    }
+  } else if path->String.startsWith("file://") {
+    // Malformed URI with only two slashes - strip and add leading slash
+    "/" ++ path->String.slice(~start=7, ~end=path->String.length)
+  } else {
+    // Not a file:// URI, return as-is
+    path
+  }
+}
 
 // Helper to create _meta JSON for selected component
 let makeSelectedComponentMeta: (string, int, int) => JSON.t = %raw(`
@@ -217,16 +243,20 @@ let makeSelectedComponentMeta: (string, int, int) => JSON.t = %raw(`
 // Contains the source location as structured data in _meta for safe extraction
 let selectedElementToContentBlock = (sel: SelectedElement.t): option<ACPTypes.contentBlock> => {
   sel.sourceLocation->Option.map(loc => {
-    let uri = `file://${loc.file}:${loc.line->Int.toString}:${loc.column->Int.toString}`
+    // Strip file:// prefix to get clean filesystem path for the agent
+    let cleanFilePath = stripFileUriPrefix(loc.file)
+
+    // Build URI with the original file path (preserve for display purposes)
+    let uri = `file://${cleanFilePath}:${loc.line->Int.toString}:${loc.column->Int.toString}`
 
     let textResource: ACPTypes.textResourceContents = {
       uri,
       mimeType: Some("text/plain"),
-      text: `Selected component: ${loc.tagName} at ${loc.file}:${loc.line->Int.toString}:${loc.column->Int.toString}`,
+      text: `Selected component: ${loc.tagName} at ${cleanFilePath}:${loc.line->Int.toString}:${loc.column->Int.toString}`,
     }
 
-    // Create _meta with selected_component annotation containing structured data
-    let _meta = makeSelectedComponentMeta(loc.file, loc.line, loc.column)
+    // Create _meta with selected_component annotation containing the clean path
+    let _meta = makeSelectedComponentMeta(cleanFilePath, loc.line, loc.column)
 
     let embeddedResource: ACPTypes.embeddedResource = {
       _meta: Some(_meta),
@@ -392,11 +422,11 @@ let taskToContentBlocks = (task: Task.t): array<ACPTypes.contentBlock> => {
   blocks
 }
 
-// Send prompt function type (from ACP) - now accepts ContentBlocks
 type sendPromptFn = (
   string,
   ~additionalBlocks: array<ACPTypes.contentBlock>,
-) => promise<result<ACPTypes.promptResult, string>>
+  ~onComplete: result<ACPTypes.promptResult, string> => unit,
+) => unit
 
 // Connection state for the Frontman ACP session
 type connectionState =

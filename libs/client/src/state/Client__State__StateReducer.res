@@ -101,20 +101,12 @@ type action =
   // Connection actions
   | Connect({sendPrompt: Client__State__Types.sendPromptFn})
   | Disconnect
-  // Plan actions
-  | PlanReceived({taskId: string, entries: array<Client__State__Types.ACPTypes.planEntry>})
-  // Todo UX events
-  | TodoBatchCreated({
-      taskId: string,
-      entries: array<Client__State__Types.ACPTypes.todoBatchEntry>,
-      count: int,
-    })
-  | TodoStarted({taskId: string, todoId: string, content: string})
-  | TodoCompleted({taskId: string, todoId: string, content: string})
   // Initialization actions
   | ReceivedDiscoveredProjectRule({taskId: string})
   // Turn completion actions
   | TurnCompleted({taskId: string})
+  // Plan actions (ACP compliant)
+  | PlanReceived({taskId: string, entries: array<Client__State__Types.ACPTypes.planEntry>})
 
 // Effects for side effects
 type effect =
@@ -183,12 +175,9 @@ let actionToString = action => {
   | ClearFigmaNodeWaiting => `ClearFigmaNodeWaiting`
   | Connect(_) => `Connect`
   | Disconnect => `Disconnect`
-  | PlanReceived({taskId, _}) => `PlanReceived(${taskId})`
-  | TodoBatchCreated({taskId, count, _}) => `TodoBatchCreated(${taskId}, count=${Int.toString(count)})`
-  | TodoStarted({taskId, todoId, content}) => `TodoStarted(${taskId}, ${todoId}, "${content}")`
-  | TodoCompleted({taskId, todoId, content}) => `TodoCompleted(${taskId}, ${todoId}, "${content}")`
   | ReceivedDiscoveredProjectRule({taskId}) => `ReceivedDiscoveredProjectRule(${taskId})`
   | TurnCompleted({taskId}) => `TurnCompleted(${taskId})`
+  | PlanReceived({taskId, entries}) => `PlanReceived(${taskId}, ${entries->Array.length->Int.toString} entries)`
   }
 }
 
@@ -317,19 +306,9 @@ module Selectors = {
     }
   }
 
-  // Get current task's plan entries
+  // Get current task's plan entries (ACP compliant)
   let currentPlanEntries = (state: state): array<Client__State__Types.ACPTypes.planEntry> => {
     currentTask(state)->Option.mapOr([], task => task.planEntries)
-  }
-
-  // Get current task's todo batch events
-  let currentTodoBatchEvents = (state: state): array<Client__State__Types.TodoBatchEvent.t> => {
-    currentTask(state)->Option.mapOr([], task => task.todoBatchEvents)
-  }
-
-  // Get current task's todo status events
-  let currentTodoStatusEvents = (state: state): array<Client__State__Types.TodoStatusEvent.t> => {
-    currentTask(state)->Option.mapOr([], task => task.todoStatusEvents)
   }
 
   // Check if session has been initialized (project rules loaded)
@@ -346,45 +325,31 @@ module Selectors = {
 let handleEffect = (effect, state: state, dispatch) => {
   switch effect {
   | SendMessageToAPI({message, taskId}) =>
-    // Use ACP sendPrompt via the stored function
     switch state.connectionState {
     | Connected(sendPrompt) =>
-      // Get ContentBlocks from the task (selectedElement, figmaNode)
       let additionalBlocks =
         state.tasks
         ->Dict.get(taskId)
         ->Option.mapOr([], Client__State__Types.taskToContentBlocks)
 
-      // Complete any existing streaming message before sending new prompt
-      // This ensures new chunks go to a new message
       let streamingMessages = Selectors.streamingMessages(state)
       switch streamingMessages[Array.length(streamingMessages) - 1] {
       | Some(Message.Streaming({id, _})) => dispatch(MessageCompleted({taskId, id}))
       | Some(Message.Completed(_)) | None => ()
       }
 
-      // Capture taskId for use in async callbacks
-      let capturedTaskId = taskId
-      let _ =
-        sendPrompt(message, ~additionalBlocks)
-        ->Promise.thenResolve(result => {
+      sendPrompt(
+        message,
+        ~additionalBlocks,
+        ~onComplete=result => {
           switch result {
-          | Ok(_) =>
-            // ACP compliant: session/prompt response with stopReason signals turn end
-            // Mark the turn as complete so input is re-enabled
-            dispatch(TurnCompleted({taskId: capturedTaskId}))
+          | Ok(_) => dispatch(TurnCompleted({taskId: taskId}))
           | Error(error) =>
             Console.error2("[Effect] Failed to send message:", error)
-            // Also mark turn as complete on error so user can retry
-            dispatch(TurnCompleted({taskId: capturedTaskId}))
+            dispatch(TurnCompleted({taskId: taskId}))
           }
-        })
-        ->Promise.catch(error => {
-          Console.error2("[Effect] Failed to send message:", error)
-          // Also mark turn as complete on error so user can retry
-          dispatch(TurnCompleted({taskId: capturedTaskId}))
-          Promise.resolve()
-        })
+        },
+      )
     | Disconnected => Console.error("[Effect] Cannot send message: not connected")
     }
   | FetchElementDetails({element, document}) => {
@@ -446,43 +411,37 @@ let handleEffect = (effect, state: state, dispatch) => {
           }
         })
 
-        dispatch(
-          SetSelectedElement({
-            selectedElement: Some({
-              element,
-              selector,
-              screenshot,
-              sourceLocation: sourceLocationWithTagName,
-            }),
-          }),
-        )
-
-        // Resolve source location via server to get actual file paths
-        switch sourceLocationWithTagName {
+        // Resolve source location via server to get relative file paths
+        // We wait for resolution before dispatching to avoid race conditions
+        // where messages are sent with unresolved absolute paths
+        let resolvedSourceLocationPromise = switch sourceLocationWithTagName {
         | Some(sourceLoc) =>
-          let _ = Client__SourceLocationResolver.resolve(sourceLoc)->Promise.then(result => {
+          Client__SourceLocationResolver.resolve(sourceLoc)->Promise.then(result => {
             switch result {
-            | Ok(resolved) =>
-              // Update the source location with the resolved path
-              dispatch(
-                SetSelectedElement({
-                  selectedElement: Some({
-                    element,
-                    selector,
-                    screenshot,
-                    sourceLocation: Some(resolved),
-                  }),
-                }),
-              )
+            | Ok(resolved) => Promise.resolve(Some(resolved))
             | Error(err) =>
-              Console.warn2("[Effect] Source location resolution failed (non-critical):", err)
+              Console.warn2("[Effect] Source location resolution failed, using original:", err)
+              // Fall back to original source location if resolution fails
+              Promise.resolve(sourceLocationWithTagName)
             }
-            Promise.resolve()
           })
-        | None => ()
+        | None => Promise.resolve(None)
         }
 
-        Promise.resolve()
+        // Dispatch only after resolution completes (or fails with fallback)
+        resolvedSourceLocationPromise->Promise.then(finalSourceLocation => {
+          dispatch(
+            SetSelectedElement({
+              selectedElement: Some({
+                element,
+                selector,
+                screenshot,
+                sourceLocation: finalSourceLocation,
+              }),
+            }),
+          )
+          Promise.resolve()
+        })
       })
     }
   | StartInitializationTimeout({taskId, timeoutMs}) =>
@@ -717,6 +676,8 @@ let next = (state, action) => {
     ->FrontmanReactStatestore.StateReducer.update
 
   | ToolResultReceived({taskId, id, result}) =>
+    // Update the tool call message with its result
+    // Note: Todo tools don't send tool_call_update (they use plan updates instead)
     state
     ->Lens.updateTask(taskId, task =>
       Lens.updateTaskMessage(task, id, msg =>
@@ -910,41 +871,6 @@ let next = (state, action) => {
   | Disconnect =>
     {...state, connectionState: Disconnected}->FrontmanReactStatestore.StateReducer.update
 
-  | PlanReceived({taskId, entries}) =>
-    state
-    ->Lens.updateTask(taskId, task => {...task, planEntries: entries})
-    ->FrontmanReactStatestore.StateReducer.update
-
-  | TodoBatchCreated({taskId, entries, count}) =>
-    // Create a new batch event and append to the task's batch events
-    let batchEvent = Client__State__Types.TodoBatchEvent.make(~entries, ~count)
-    state
-    ->Lens.updateTask(taskId, task => {
-      ...task,
-      todoBatchEvents: task.todoBatchEvents->Array.concat([batchEvent]),
-    })
-    ->FrontmanReactStatestore.StateReducer.update
-
-  | TodoStarted({taskId, todoId, content}) =>
-    // Create a "started" status event
-    let statusEvent = Client__State__Types.TodoStatusEvent.make(~todoId, ~content, ~eventType=#started)
-    state
-    ->Lens.updateTask(taskId, task => {
-      ...task,
-      todoStatusEvents: task.todoStatusEvents->Array.concat([statusEvent]),
-    })
-    ->FrontmanReactStatestore.StateReducer.update
-
-  | TodoCompleted({taskId, todoId, content}) =>
-    // Create a "completed" status event
-    let statusEvent = Client__State__Types.TodoStatusEvent.make(~todoId, ~content, ~eventType=#completed)
-    state
-    ->Lens.updateTask(taskId, task => {
-      ...task,
-      todoStatusEvents: task.todoStatusEvents->Array.concat([statusEvent]),
-    })
-    ->FrontmanReactStatestore.StateReducer.update
-
   | ReceivedDiscoveredProjectRule({taskId: _}) =>
     // Mark initialization complete
     {
@@ -956,6 +882,12 @@ let next = (state, action) => {
     // Mark agent turn as complete
     state
     ->Lens.updateTask(taskId, task => {...task, isAgentRunning: false})
+    ->FrontmanReactStatestore.StateReducer.update
+
+  | PlanReceived({taskId, entries}) =>
+    // Replace plan entries completely (per ACP spec)
+    state
+    ->Lens.updateTask(taskId, task => {...task, planEntries: entries})
     ->FrontmanReactStatestore.StateReducer.update
   }
 }

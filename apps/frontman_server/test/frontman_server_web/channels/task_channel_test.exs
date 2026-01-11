@@ -1,10 +1,9 @@
 defmodule FrontmanServerWeb.TaskChannelTest do
   use FrontmanServerWeb.ChannelCase, async: true
 
-  alias FrontmanServerWeb.UserSocket
-  alias FrontmanServerWeb.{JsonRpc, MCPProtocol}
   alias FrontmanServer.Tasks
   alias FrontmanServer.Tasks.Interaction
+  alias FrontmanServerWeb.UserSocket
 
   describe "join task:<id>" do
     test "succeeds when task exists" do
@@ -52,8 +51,169 @@ defmodule FrontmanServerWeb.TaskChannelTest do
         })
 
       assert_reply ref, :ok, %{"acp:message" => response}
-      assert response["error"]["code"] == -32601
+      assert response["error"]["code"] == -32_601
       assert response["error"]["message"] =~ "Method not found"
+    end
+  end
+
+  describe "PubSub subscription" do
+    @moduledoc """
+    Tests that verify the channel is properly subscribed to PubSub.
+
+    This is critical because tool calls are broadcast via PubSub from the agent,
+    and the channel must receive them to route to MCP. Previous tests used
+    send(socket.channel_pid, ...) which bypassed PubSub entirely.
+    """
+
+    setup do
+      task_id = "sess_pubsub_#{:rand.uniform(1_000_000)}"
+      {:ok, ^task_id} = Tasks.create_task(task_id)
+
+      {:ok, _reply, socket} =
+        UserSocket
+        |> socket("user_id", %{})
+        |> subscribe_and_join("task:#{task_id}", %{})
+
+      complete_mcp_handshake(socket)
+
+      {:ok, socket: socket, task_id: task_id}
+    end
+
+    test "channel receives tool call interactions via PubSub broadcast", %{
+      socket: _socket,
+      task_id: task_id
+    } do
+      # This test verifies the REAL path: PubSub.broadcast -> channel receives
+      # Unlike other tests that use send(socket.channel_pid, ...) directly
+
+      tool_call = %Interaction.ToolCall{
+        id: Interaction.new_id(),
+        tool_call_id: "call_pubsub_#{:rand.uniform(1_000_000)}",
+        tool_name: "testTool",
+        arguments: %{"key" => "value"},
+        timestamp: Interaction.now()
+      }
+
+      # Broadcast via PubSub - this is what Tasks.add_tool_call does in production
+      Phoenix.PubSub.broadcast(
+        FrontmanServer.PubSub,
+        Tasks.topic(task_id),
+        {:interaction, tool_call}
+      )
+
+      # If the channel is subscribed to PubSub, it should route this to MCP
+      assert_push "mcp:message", %{
+        "method" => "tools/call",
+        "params" => %{"name" => "testTool"}
+      }
+    end
+
+    test "channel does NOT receive broadcasts to different topics", %{
+      socket: _socket,
+      task_id: task_id
+    } do
+      # Verify that the channel only receives broadcasts to its specific topic
+      # This proves the subscription is topic-specific, not global
+      different_topic = "task:different_#{:rand.uniform(1_000_000)}"
+
+      tool_call = %Interaction.ToolCall{
+        id: Interaction.new_id(),
+        tool_call_id: "call_different_#{:rand.uniform(1_000_000)}",
+        tool_name: "otherTool",
+        arguments: %{},
+        timestamp: Interaction.now()
+      }
+
+      # Broadcast to a DIFFERENT topic
+      Phoenix.PubSub.broadcast(
+        FrontmanServer.PubSub,
+        different_topic,
+        {:interaction, tool_call}
+      )
+
+      # Channel should NOT receive this since it's subscribed to task_id's topic
+      refute_push "mcp:message", %{"params" => %{"name" => "otherTool"}}
+
+      # But it SHOULD still receive broadcasts to its own topic
+      tool_call2 = %{
+        tool_call
+        | tool_call_id: "call_own_#{:rand.uniform(1_000_000)}",
+          tool_name: "ownTool"
+      }
+
+      Phoenix.PubSub.broadcast(
+        FrontmanServer.PubSub,
+        Tasks.topic(task_id),
+        {:interaction, tool_call2}
+      )
+
+      assert_push "mcp:message", %{
+        "method" => "tools/call",
+        "params" => %{"name" => "ownTool"}
+      }
+    end
+
+    test "channel receives agent stream tokens via PubSub broadcast", %{
+      socket: _socket,
+      task_id: task_id
+    } do
+      # Broadcast a stream token via PubSub
+      Phoenix.PubSub.broadcast(
+        FrontmanServer.PubSub,
+        Tasks.topic(task_id),
+        {:stream_token, "Hello world"}
+      )
+
+      # Channel should forward this as an ACP notification
+      # Note: content is wrapped in a map with type: "text"
+      assert_push "acp:message", %{
+        "method" => "session/update",
+        "params" => %{
+          "update" => %{
+            "sessionUpdate" => "agent_message_chunk",
+            "content" => %{"type" => "text", "text" => "Hello world"}
+          }
+        }
+      }
+    end
+
+    test "channel handles stream_thinking without crashing", %{
+      socket: socket,
+      task_id: task_id
+    } do
+      # Broadcast a thinking token via PubSub
+      # This should be handled gracefully (no-op handler) rather than crashing
+      Phoenix.PubSub.broadcast(
+        FrontmanServer.PubSub,
+        Tasks.topic(task_id),
+        {:stream_thinking, "reasoning about the task..."}
+      )
+
+      # Channel should NOT forward thinking tokens to client (client infers thinking state)
+      refute_push "acp:message", %{
+        "params" => %{"update" => %{"sessionUpdate" => "agent_thinking_chunk"}}
+      }
+
+      # But the channel should still be alive and functional
+      # Verify by sending a stream_token which SHOULD work
+      Phoenix.PubSub.broadcast(
+        FrontmanServer.PubSub,
+        Tasks.topic(task_id),
+        {:stream_token, "after thinking"}
+      )
+
+      assert_push "acp:message", %{
+        "method" => "session/update",
+        "params" => %{
+          "update" => %{
+            "sessionUpdate" => "agent_message_chunk",
+            "content" => %{"type" => "text", "text" => "after thinking"}
+          }
+        }
+      }
+
+      # Verify channel process is still alive
+      assert Process.alive?(socket.channel_pid)
     end
   end
 
@@ -75,7 +235,6 @@ defmodule FrontmanServerWeb.TaskChannelTest do
     test "extracts text content from MCP tool result", %{socket: socket, task_id: task_id} do
       tool_call = %Interaction.ToolCall{
         id: Interaction.new_id(),
-        agent_id: "test_agent",
         tool_call_id: "call_123",
         tool_name: "consoleLog",
         arguments: %{"message" => "hello"},
@@ -122,7 +281,7 @@ defmodule FrontmanServerWeb.TaskChannelTest do
         |> socket("user_id", %{})
         |> subscribe_and_join("task:#{task_id}", %{})
 
-      expected_version = MCPProtocol.protocol_version()
+      expected_version = ModelContextProtocol.protocol_version()
 
       assert_push "mcp:message", %{
         "jsonrpc" => "2.0",
@@ -147,7 +306,7 @@ defmodule FrontmanServerWeb.TaskChannelTest do
       assert_push "mcp:message", %{"id" => request_id}
 
       init_result = %{
-        "protocolVersion" => MCPProtocol.protocol_version(),
+        "protocolVersion" => ModelContextProtocol.protocol_version(),
         "capabilities" => %{"tools" => %{}},
         "serverInfo" => %{"name" => "browser-mcp", "version" => "1.0.0"}
       }
@@ -228,7 +387,7 @@ defmodule FrontmanServerWeb.TaskChannelTest do
             "jsonrpc" => "2.0",
             "id" => 999,
             "result" => %{},
-            "error" => %{"code" => -32601, "message" => "Error"}
+            "error" => %{"code" => -32_601, "message" => "Error"}
           })
 
           assert_push "mcp:message", %{"method" => "error"}
@@ -240,7 +399,6 @@ defmodule FrontmanServerWeb.TaskChannelTest do
     test "accepts valid MCP response", %{socket: socket, task_id: task_id} do
       tool_call = %Interaction.ToolCall{
         id: Interaction.new_id(),
-        agent_id: "test_agent",
         tool_call_id: "call_valid_test",
         tool_name: "testTool",
         arguments: %{},
@@ -264,12 +422,298 @@ defmodule FrontmanServerWeb.TaskChannelTest do
     end
   end
 
+  describe "MCP tool result flows to waiting executor" do
+    @moduletag timeout: 30_000
+
+    setup do
+      task_id = "sess_executor_#{:rand.uniform(1_000_000)}"
+      {:ok, ^task_id} = Tasks.create_task(task_id)
+
+      {:ok, _reply, socket} =
+        UserSocket
+        |> socket("user_id", %{})
+        |> subscribe_and_join("task:#{task_id}", %{})
+
+      complete_mcp_handshake_with_tools(socket)
+
+      {:ok, socket: socket, task_id: task_id}
+    end
+
+    test "delivers tool response to executor regardless of initialization state" do
+      # Tool responses should always be delivered to waiting executors.
+      # This ensures agents can function even if tool calls happen early in the session.
+
+      fresh_task_id = "sess_tool_delivery_#{:rand.uniform(1_000_000)}"
+      {:ok, ^fresh_task_id} = Tasks.create_task(fresh_task_id)
+
+      {:ok, _reply, socket} =
+        UserSocket
+        |> socket("user_id", %{})
+        |> subscribe_and_join("task:#{fresh_task_id}", %{})
+
+      # Drain the initialize request without responding - initialization is incomplete
+      assert_push "mcp:message", %{"id" => _init_request_id, "method" => "initialize"}
+
+      tool_call_id = "call_delivery_#{:rand.uniform(1_000_000)}"
+      test_pid = self()
+
+      # Executor registers and waits for tool result
+      Registry.register(FrontmanServer.AgentRegistry, {:tool_call, tool_call_id}, %{
+        caller_pid: test_pid
+      })
+
+      tool_call = %Interaction.ToolCall{
+        id: Interaction.new_id(),
+        tool_call_id: tool_call_id,
+        tool_name: "list_dir",
+        arguments: %{"path" => "/"},
+        timestamp: Interaction.now()
+      }
+
+      send(socket.channel_pid, {:interaction, tool_call})
+
+      assert_push "mcp:message", %{
+        "method" => "tools/call",
+        "id" => mcp_request_id,
+        "params" => %{"name" => "list_dir"}
+      }
+
+      tool_result = %{
+        "content" => [%{"type" => "text", "text" => "file1.txt\nfile2.txt"}]
+      }
+
+      push(socket, "mcp:message", JsonRpc.success_response(mcp_request_id, tool_result))
+
+      # Executor should receive the result
+      assert_receive {:tool_result, ^tool_call_id, content, false}, 5_000
+
+      assert is_binary(content)
+      assert content =~ "file1.txt"
+
+      Registry.unregister(FrontmanServer.AgentRegistry, {:tool_call, tool_call_id})
+    end
+
+    test "encodes JSON tool result to string for waiting executor", %{socket: socket} do
+      # This test exercises the full flow where:
+      # 1. An executor is waiting for a tool result (registered in AgentRegistry)
+      # 2. MCP tool returns JSON that gets parsed to a map
+      # 3. The result should be encoded to string before sending to executor
+      #
+      # Without the fix, the executor receives a map which later causes
+      # FunctionClauseError in Swarm.Message.ContentPart.text/1
+
+      tool_call_id = "call_json_result_#{:rand.uniform(1_000_000)}"
+      test_pid = self()
+
+      # Simulate what ToolExecutor.execute_mcp_tool does - register and wait
+      Registry.register(FrontmanServer.AgentRegistry, {:tool_call, tool_call_id}, %{
+        caller_pid: test_pid
+      })
+
+      # Simulate a tool call interaction being broadcast
+      tool_call = %Interaction.ToolCall{
+        id: Interaction.new_id(),
+        tool_call_id: tool_call_id,
+        tool_name: "get_logs",
+        arguments: %{"tail" => 10},
+        timestamp: Interaction.now()
+      }
+
+      send(socket.channel_pid, {:interaction, tool_call})
+
+      # Wait for the tool call to be routed to MCP
+      assert_push "mcp:message", %{
+        "method" => "tools/call",
+        "id" => mcp_request_id,
+        "params" => %{"name" => "get_logs"}
+      }
+
+      # Respond with a JSON result that parse_tool_result will convert to a map
+      json_result = %{
+        "content" => [
+          %{
+            "type" => "text",
+            "text" =>
+              Jason.encode!(%{
+                "logs" => [
+                  %{
+                    "timestamp" => "2026-01-05T10:42:21.102Z",
+                    "level" => "console",
+                    "message" => "GET / 200 261.81ms"
+                  }
+                ],
+                "totalMatched" => 1,
+                "bufferSize" => 1,
+                "hasMore" => false
+              })
+          }
+        ]
+      }
+
+      push(socket, "mcp:message", JsonRpc.success_response(mcp_request_id, json_result))
+
+      # The waiting executor should receive a message with the result
+      # The result should be a STRING (encoded JSON), not a map
+      assert_receive {:tool_result, ^tool_call_id, content, false}, 5_000
+
+      # This is the key assertion - content must be a string for Swarm.Message.ContentPart.text/1
+      assert is_binary(content),
+             "Tool result should be encoded to string, got: #{inspect(content)}"
+
+      # Verify it's valid JSON that can be decoded back
+      assert {:ok, decoded} = Jason.decode(content)
+      assert is_map(decoded)
+      assert Map.has_key?(decoded, "logs")
+
+      # Cleanup
+      Registry.unregister(FrontmanServer.AgentRegistry, {:tool_call, tool_call_id})
+    end
+  end
+
+  describe "MCP tools race condition" do
+    test "task gets MCP tools even when prompt arrives before MCP init completes" do
+      # Verifies the fix: MCP tools are stored on task when MCP init completes,
+      # independent of prompt timing. ToolExecutor fetches fresh task, so backend
+      # tools will have access to tools.
+
+      task_id = "sess_race_#{:rand.uniform(1_000_000)}"
+      {:ok, ^task_id} = Tasks.create_task(task_id)
+
+      {:ok, _reply, socket} =
+        UserSocket
+        |> socket("user_id", %{})
+        |> subscribe_and_join("task:#{task_id}", %{})
+
+      # MCP init has started - we receive the initialize request
+      assert_push "mcp:message", %{"id" => init_request_id, "method" => "initialize"}
+
+      # Send prompt BEFORE completing MCP handshake
+      prompt_request = %{
+        "jsonrpc" => "2.0",
+        "id" => 1,
+        "method" => "session/prompt",
+        "params" => %{
+          "prompt" => %{
+            "messages" => [
+              %{
+                "role" => "user",
+                "content" => %{"type" => "text", "text" => "Implement the header"}
+              }
+            ]
+          }
+        }
+      }
+
+      push(socket, "acp:message", prompt_request)
+      :sys.get_state(socket.channel_pid)
+
+      # At this point, task has no MCP tools (prompt arrived before init)
+      {:ok, task_before} = Tasks.get_task(task_id)
+      assert task_before.mcp_tools == []
+
+      # NOW complete MCP init with tools
+      init_result = %{
+        "protocolVersion" => ModelContextProtocol.protocol_version(),
+        "capabilities" => %{"tools" => %{}},
+        "serverInfo" => %{"name" => "test-mcp", "version" => "1.0.0"}
+      }
+
+      push(socket, "mcp:message", JsonRpc.success_response(init_request_id, init_result))
+
+      assert_push "mcp:message", %{"method" => "notifications/initialized"}
+      assert_push "mcp:message", %{"id" => tools_request_id, "method" => "tools/list"}
+
+      tools_result = %{
+        "tools" => [
+          %{
+            "name" => "get_figma_node",
+            "description" => "Fetches Figma node data",
+            "inputSchema" => %{"type" => "object", "properties" => %{}}
+          }
+        ]
+      }
+
+      push(socket, "mcp:message", JsonRpc.success_response(tools_request_id, tools_result))
+
+      # Handle load_agent_instructions
+      assert_push "mcp:message", %{
+        "id" => project_rules_request_id,
+        "method" => "tools/call",
+        "params" => %{"name" => "load_agent_instructions"}
+      }
+
+      push(
+        socket,
+        "mcp:message",
+        JsonRpc.success_response(project_rules_request_id, %{"content" => []})
+      )
+
+      assert_push "acp:message", %{"method" => "project_rules_initialized"}
+
+      # Force synchronization
+      :sys.get_state(socket.channel_pid)
+
+      # THE FIX: Task now has MCP tools even though prompt arrived first
+      {:ok, task_after} = Tasks.get_task(task_id)
+      assert length(task_after.mcp_tools) == 1
+      assert hd(task_after.mcp_tools).name == "get_figma_node"
+    end
+  end
+
+  # Completes the MCP handshake with tools registered
+  defp complete_mcp_handshake_with_tools(socket) do
+    assert_push "mcp:message", %{"id" => init_request_id, "method" => "initialize"}
+
+    init_result = %{
+      "protocolVersion" => ModelContextProtocol.protocol_version(),
+      "capabilities" => %{"tools" => %{}},
+      "serverInfo" => %{"name" => "test-mcp", "version" => "1.0.0"}
+    }
+
+    push(socket, "mcp:message", JsonRpc.success_response(init_request_id, init_result))
+
+    assert_push "mcp:message", %{"method" => "notifications/initialized"}
+    assert_push "mcp:message", %{"id" => tools_request_id, "method" => "tools/list"}
+
+    # Register an MCP tool that returns JSON
+    tools_result = %{
+      "tools" => [
+        %{
+          "name" => "get_logs",
+          "description" => "Retrieves server logs",
+          "inputSchema" => %{
+            "type" => "object",
+            "properties" => %{"tail" => %{"type" => "integer"}}
+          },
+          "visibleToAgent" => true
+        }
+      ]
+    }
+
+    push(socket, "mcp:message", JsonRpc.success_response(tools_request_id, tools_result))
+
+    # Handle load_agent_instructions
+    assert_push "mcp:message", %{
+      "id" => project_rules_request_id,
+      "method" => "tools/call",
+      "params" => %{"name" => "load_agent_instructions"}
+    }
+
+    push(
+      socket,
+      "mcp:message",
+      JsonRpc.success_response(project_rules_request_id, %{"content" => []})
+    )
+
+    assert_push "acp:message", %{"method" => "project_rules_initialized"}
+  end
+
   # Completes the MCP handshake (initialize + tools/list + load_agent_instructions)
   defp complete_mcp_handshake(socket) do
     assert_push "mcp:message", %{"id" => init_request_id, "method" => "initialize"}
 
     init_result = %{
-      "protocolVersion" => MCPProtocol.protocol_version(),
+      "protocolVersion" => ModelContextProtocol.protocol_version(),
       "capabilities" => %{"tools" => %{}},
       "serverInfo" => %{"name" => "test-mcp", "version" => "1.0.0"}
     }

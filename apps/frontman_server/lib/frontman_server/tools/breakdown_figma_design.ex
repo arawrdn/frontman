@@ -1,66 +1,19 @@
 defmodule FrontmanServer.Tools.BreakdownFigmaDesign do
   @moduledoc """
   Spawns a sub-agent to analyze a Figma node and break it down into components.
+
+  Uses FigmaBreakdownAgent with Swarm.run_blocking for execution.
   """
 
   @behaviour FrontmanServer.Tools.Backend
 
   require Logger
 
-  alias FrontmanServer.Agents
+  alias FrontmanServer.Agents.{SpecializedAgent, ToolExecutor}
+  alias FrontmanServer.Tasks.Interaction
   alias FrontmanServer.Tools.Backend.Context
   alias FrontmanServer.Tools.MCP
-  alias FrontmanServer.Tasks.Interaction
-
-  @system_prompt """
-  You are a Figma design breakdown specialist. Your task is to analyze a Figma node
-  and break it down into individual UI components that a developer should build.
-
-  Think like a senior frontend developer planning their work:
-  - Identify logical UI components (headers, cards, buttons, forms, etc.)
-  - Consider reusability - similar elements should be the same component
-  - Break down large sections into manageable pieces
-  - Order by build dependencies (build foundational components first)
-
-  ## Instructions
-
-  1. **Analyze the structure** - Look at the node hierarchy to identify logical groupings
-  2. **Identify components** - Find reusable UI patterns (buttons, cards, forms, etc.)
-  3. **Consider volume** - Break down large sections into smaller, manageable pieces
-  4. **Create the todo list** - List each component with:
-     - A descriptive name (e.g., "Header Navigation", "Hero Section", "Feature Card")
-     - The Figma node ID (from the skeleton, marked with #ID - but output WITHOUT the # prefix)
-     - Estimated complexity (1-10)
-     - Any dependencies on other components
-
-  ## Output Format
-
-  Provide a structured breakdown in this format:
-
-  ```
-  ## Component Breakdown
-
-  ### 1. [Component Name]
-  - **Node ID:** X:XXX (WITHOUT the # prefix)
-  - **Complexity:** X/10
-  - **Description:** Brief description of what this component does
-  - **Dependencies:** List any components this depends on (or "None")
-
-  ### 2. [Next Component]
-  ...
-  ```
-
-  Order components by suggested build order (dependencies first, then complexity).
-
-  IMPORTANT INSTRUCTIONS:
-  - Analyze the provided node skeleton (DSL format) carefully
-  - If an image is provided, use it to understand the visual design
-  - Keep individual component complexity reasonable (respect maxComponentVolume)
-  - Include the Figma node ID for each component so it can be fetched later
-  - Do NOT engage in conversation or ask clarifying questions
-  - Complete your task and return the breakdown
-  - Your response will be used to plan the implementation work
-  """
+  alias Swarm.Message
 
   @impl true
   def name, do: "breakdown_figma_design"
@@ -78,8 +31,9 @@ defmodule FrontmanServer.Tools.BreakdownFigmaDesign do
     components that should be built separately.
 
     The output is a todo list of components with their node IDs, descriptions,
-    and suggested build order. Use these node IDs with `implement_component` and
-    `finish_component` tools, which will fetch full node data via `get_figma_node`.
+    and suggested build order. Use these node IDs with `implement_component`,
+    `fix_files_errors`, `visual_compare_component_to_figma`, and `fix_visual_issues`
+    tools, which will fetch full node data via `get_figma_node`.
     """
   end
 
@@ -108,12 +62,12 @@ defmodule FrontmanServer.Tools.BreakdownFigmaDesign do
   end
 
   @impl true
-  def execute(args, %Context{task: task, agent_id: parent_agent_id}) do
+  def execute(args, %Context{task: task}) do
     node_id = Map.get(args, "nodeId")
     max_volume = Map.get(args, "maxComponentVolume", 5)
     figma_context = Map.get(args, "context")
 
-    mcp_tools = MCP.to_llm_format(task.mcp_tools)
+    mcp_tools = MCP.to_swarm_tools(task.mcp_tools)
 
     Logger.info(
       "BreakdownFigmaDesign: Starting breakdown for node #{node_id} with #{length(mcp_tools)} MCP tools"
@@ -121,17 +75,14 @@ defmodule FrontmanServer.Tools.BreakdownFigmaDesign do
 
     case extract_figma_data(task.interactions) do
       {:ok, figma_image, figma_skeleton} ->
-        system_msg = ReqLLM.Context.system(@system_prompt)
-
         user_msg =
           build_user_message(node_id, max_volume, figma_context, figma_image, figma_skeleton)
 
-        case Agents.execute_sub_agent(task.task_id, [system_msg, user_msg],
-               tools: mcp_tools,
-               role: "figma_breakdown",
-               parent_agent_id: parent_agent_id,
-               spawning_tool_name: name()
-             ) do
+        # Build FigmaBreakdownAgent and executor
+        agent = SpecializedAgent.new(:figma_breakdown, tools: mcp_tools)
+        tool_executor = ToolExecutor.make_executor(task.task_id)
+
+        case Swarm.run_blocking(agent, [user_msg], tool_executor) do
           {:ok, result} ->
             Logger.info("BreakdownFigmaDesign: Completed breakdown for node #{node_id}")
             {:ok, %{"breakdown" => result, "nodeId" => node_id}}
@@ -168,22 +119,22 @@ defmodule FrontmanServer.Tools.BreakdownFigmaDesign do
 
     case figma_image do
       nil ->
-        ReqLLM.Context.user(task_text)
+        Message.user(task_text)
 
       image_data when is_binary(image_data) ->
         case decode_image_data(image_data) do
           {:ok, binary_data, mime_type} ->
-            %ReqLLM.Message{
+            %Message{
               role: :user,
               content: [
-                ReqLLM.Message.ContentPart.text(task_text),
-                ReqLLM.Message.ContentPart.image(binary_data, mime_type)
+                Message.ContentPart.text(task_text),
+                Message.ContentPart.image(binary_data, mime_type)
               ]
             }
 
           :error ->
             Logger.warning("BreakdownFigmaDesign: Failed to decode image, using text-only")
-            ReqLLM.Context.user(task_text)
+            Message.user(task_text)
         end
     end
   end

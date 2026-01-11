@@ -71,36 +71,63 @@ let joinChannel = (channel: Channel.t): promise<result<unit, string>> => {
   })
 }
 
-// Connect and initialize ACP
-let connect = async (config: config): result<connection, string> => {
-  let socket = Socket.make(~endpoint=config.endpoint)
-  let channel = socket->Socket.channel(~topic=Constants.tasksTopic)
-  let state = ref(Client.initialState)
-  let clientConfig: Client.config = {
-    channel,
-    clientInfo: config.clientInfo,
-    clientCapabilities: config.clientCapabilities,
+// Helper to check abort status
+let checkAborted = (signal: option<WebAPI.EventAPI.abortSignal>): result<unit, string> => {
+  switch signal {
+  | Some(s) if s.aborted => Error("Connection aborted")
+  | _ => Ok()
   }
+}
 
-  Protocol.attachMessageHandler(
-    ~channel,
-    ~state,
-    ~onUpdate=None,
-    ~onMessage=config.onMessage,
-    ~onParseError=None,
-  )
+// Connect and initialize ACP
+let connect = async (config: config, ~signal: option<WebAPI.EventAPI.abortSignal>=?): result<
+  connection,
+  string,
+> => {
+  switch checkAborted(signal) {
+  | Error(e) => Error(e)
+  | Ok() =>
+    let socket = Socket.make(~endpoint=config.endpoint)
+    let channel = socket->Socket.channel(~topic=Constants.tasksTopic)
+    let state = ref(Client.initialState)
+    let clientConfig: Client.config = {
+      channel,
+      clientInfo: config.clientInfo,
+      clientCapabilities: config.clientCapabilities,
+    }
 
-  let initResult = await waitForSocket(socket)
-  ->Result.flatMapOkAsync(_ => joinChannel(channel))
-  ->Result.flatMapOkAsync(_ =>
-    Protocol.sendInitialize(~channel, ~state, ~clientConfig, ~onMessage=config.onMessage)
-  )
+    Protocol.attachMessageHandler(
+      ~channel,
+      ~state,
+      ~onUpdate=None,
+      ~onMessage=config.onMessage,
+      ~onParseError=None,
+    )
 
-  initResult->Result.map(result => {
-    state :=
-      state.contents->Client.reduce(Client.ConnectionStateChanged(Client.Initialized(result)))
-    {socket, channel, clientConfig, state, onMessage: config.onMessage}
-  })
+    let initResult = await waitForSocket(socket)
+    ->Result.flatMapOkAsync(async _ => {
+      switch checkAborted(signal) {
+      | Error(e) => Error(e)
+      | Ok() => await joinChannel(channel)
+      }
+    })
+    ->Result.flatMapOkAsync(async _ => {
+      switch checkAborted(signal) {
+      | Error(e) => Error(e)
+      | Ok() =>
+        await Protocol.sendInitialize(~channel, ~state, ~clientConfig, ~onMessage=config.onMessage)
+      }
+    })
+
+    switch (initResult, checkAborted(signal)) {
+    | (_, Error(e)) => Error(e)
+    | (Error(e), _) => Error(e)
+    | (Ok(result), Ok()) =>
+      state :=
+        state.contents->Client.reduce(Client.ConnectionStateChanged(Client.Initialized(result)))
+      Ok({socket, channel, clientConfig, state, onMessage: config.onMessage})
+    }
+  }
 }
 
 // Get current connection state
@@ -113,17 +140,21 @@ let isInitialized = (conn: connection): bool => {
   Client.isInitialized(conn.state.contents)
 }
 
+module MCP = FrontmanClient__MCP
+module MCPTypes = FrontmanClient__MCP__Types
+
 // Join a session channel (internal helper)
-// onBeforeJoin is called after channel creation but before join - use it to attach
-// additional handlers (like MCP) that must be ready before server sends messages
+// mcpServerInterface is used to create MCP handler BEFORE joining to avoid race with server MCP init
 let joinSession = async (
   conn: connection,
   sessionId: string,
   ~onUpdate: Types.sessionUpdate => unit,
-  ~onBeforeJoin: option<Channel.t => unit>=?,
+  ~mcpServerInterface: option<MCPTypes.serverInterface<'server>>=?,
+  ~onMcpMessage: option<(MCP.messageDirection, JSON.t) => unit>=?,
 ): result<session, string> => {
   let sessionChannel = conn.socket->Socket.channel(~topic=Constants.makeTaskTopic(sessionId))
 
+  // Attach ACP handler before joining
   Protocol.attachMessageHandler(
     ~channel=sessionChannel,
     ~state=conn.state,
@@ -132,10 +163,17 @@ let joinSession = async (
     ~onParseError=Some(err => Console.warn(`Session message parse error: ${err}`)),
   )
 
-  // Call onBeforeJoin callback to allow attaching additional handlers (e.g., MCP)
-  // This MUST happen before joinChannel to avoid race conditions where the server
-  // sends messages before handlers are attached
-  onBeforeJoin->Option.forEach(cb => cb(sessionChannel))
+  // Attach MCP handler before joining - server sends mcp:message immediately on join
+  mcpServerInterface->Option.forEach(serverInterface => {
+    let handler: MCP.mcpHandler<'server> = {
+      serverInterface,
+      channel: sessionChannel,
+      onMessage: onMcpMessage,
+    }
+    sessionChannel->Channel.on(~event=#"mcp:message", ~callback=payload => {
+      MCP.handleMessage(handler, payload)->ignore
+    })
+  })
 
   let joinResult = await joinChannel(sessionChannel)
 
@@ -148,12 +186,12 @@ let joinSession = async (
 }
 
 // Create a new ACP session and auto-join the session channel
-// onBeforeJoin is called after channel creation but before join - use it to attach
-// additional handlers (like MCP) that must be ready before server sends messages
+// mcpServerInterface is attached before channel join to handle server's immediate MCP init
 let createSession = async (
   conn: connection,
   ~onUpdate: Types.sessionUpdate => unit,
-  ~onBeforeJoin: option<Channel.t => unit>=?,
+  ~mcpServerInterface: option<MCPTypes.serverInterface<'server>>=?,
+  ~onMcpMessage: option<(MCP.messageDirection, JSON.t) => unit>=?,
 ): result<session, string> => {
   let sessionNewResult = await Protocol.sendSessionNew(
     ~channel=conn.channel,
@@ -162,7 +200,8 @@ let createSession = async (
   )
 
   switch sessionNewResult {
-  | Ok(result) => await joinSession(conn, result.sessionId, ~onUpdate, ~onBeforeJoin?)
+  | Ok(result) =>
+    await joinSession(conn, result.sessionId, ~onUpdate, ~mcpServerInterface?, ~onMcpMessage?)
   | Error(err) => Error(err)
   }
 }

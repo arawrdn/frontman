@@ -133,6 +133,40 @@ jobs:
           skip_covered: false
           only_changed_files: false
 
+  lint-frontman-server:
+    name: Lint frontman-server
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Uses mise.toml as single source of truth for Erlang/Elixir versions
+      - name: Setup Erlang/Elixir via mise
+        uses: jdx/mise-action@v2
+        with:
+          install: true
+          cache: true
+
+      - name: Cache deps
+        uses: actions/cache@v4
+        with:
+          path: apps/frontman_server/deps
+          key: ${{ runner.os }}-mix-${{ hashFiles('apps/frontman_server/mix.lock') }}
+          restore-keys: ${{ runner.os }}-mix-
+
+      - name: Cache _build
+        uses: actions/cache@v4
+        with:
+          path: apps/frontman_server/_build
+          key: ${{ runner.os }}-build-${{ hashFiles('apps/frontman_server/mix.lock') }}
+          restore-keys: ${{ runner.os }}-build-
+
+      - name: Install dependencies
+        run: make -C apps/frontman_server install
+
+      - name: Run lint
+        run: make -C apps/frontman_server lint
+
   test-frontman-server:
     name: Test frontman-server
     runs-on: ubuntu-latest
@@ -158,11 +192,12 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Elixir
-        uses: erlef/setup-beam@v1
+      # Uses mise.toml as single source of truth for Erlang/Elixir versions
+      - name: Setup Erlang/Elixir via mise
+        uses: jdx/mise-action@v2
         with:
-          otp-version: '27.0'
-          elixir-version: '1.19'
+          install: true
+          cache: true
 
       - name: Cache deps
         uses: actions/cache@v4
@@ -177,13 +212,6 @@ jobs:
           path: apps/frontman_server/_build
           key: ${{ runner.os }}-build-${{ hashFiles('apps/frontman_server/mix.lock') }}
           restore-keys: ${{ runner.os }}-build-
-
-      - name: Cache PLT
-        uses: actions/cache@v4
-        with:
-          path: apps/frontman_server/priv/plts
-          key: ${{ runner.os }}-plt-${{ hashFiles('apps/frontman_server/mix.lock') }}
-          restore-keys: ${{ runner.os }}-plt-
 
       - name: Install dependencies
         run: make -C apps/frontman_server install
@@ -202,6 +230,46 @@ jobs:
           show_missing: true
           skip_covered: false
           only_changed_files: false
+
+  dialyzer-frontman-server:
+    name: Dialyzer frontman-server
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Uses mise.toml as single source of truth for Erlang/Elixir versions
+      - name: Setup Erlang/Elixir via mise
+        uses: jdx/mise-action@v2
+        with:
+          install: true
+          cache: true
+
+      - name: Cache deps
+        uses: actions/cache@v4
+        with:
+          path: apps/frontman_server/deps
+          key: ${{ runner.os }}-mix-${{ hashFiles('apps/frontman_server/mix.lock') }}
+          restore-keys: ${{ runner.os }}-mix-
+
+      - name: Cache _build
+        uses: actions/cache@v4
+        with:
+          path: apps/frontman_server/_build
+          key: ${{ runner.os }}-build-${{ hashFiles('apps/frontman_server/mix.lock') }}
+          restore-keys: ${{ runner.os }}-build-
+
+      # PLT cache includes mise.toml hash to invalidate when Erlang/Elixir versions change
+      # v2: bust cache after removing accidentally committed PLT files
+      - name: Cache PLT
+        uses: actions/cache@v4
+        with:
+          path: apps/frontman_server/priv/plts
+          key: ${{ runner.os }}-plt-v2-${{ hashFiles('mise.toml', 'apps/frontman_server/mix.lock') }}
+          restore-keys: ${{ runner.os }}-plt-v2-
+
+      - name: Install dependencies
+        run: make -C apps/frontman_server install
 
       - name: Run Dialyzer
         run: make -C apps/frontman_server dialyzer
