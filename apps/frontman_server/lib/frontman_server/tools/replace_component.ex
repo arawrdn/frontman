@@ -54,12 +54,12 @@ defmodule FrontmanServer.Tools.ReplaceComponent do
         },
         "testPageFilePath" => %{
           "type" => "string",
-          "description" => "The file path to the test page to delete"
+          "description" => "(Optional) The file path to the test page to delete"
         },
         "filesCreated" => %{
           "type" => "array",
           "items" => %{"type" => "string"},
-          "description" => "List of all files created during implementation"
+          "description" => "(Optional) List of all files created during implementation"
         }
       },
       "required" => ["componentName", "sourceFilePath", "targetFilePath"]

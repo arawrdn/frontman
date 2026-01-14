@@ -49,12 +49,12 @@ defmodule FrontmanServer.Tools.BreakdownFigmaDesign do
         "maxComponentVolume" => %{
           "type" => "integer",
           "description" =>
-            "Maximum complexity volume (1-10) for any single component. Components exceeding this will be split further. Default: 5"
+            "(Optional) Maximum complexity volume (1-10) for any single component. Components exceeding this will be split further. Default: 5"
         },
         "context" => %{
           "type" => "string",
           "description" =>
-            "Optional context about what's being built (e.g., 'landing page', 'dashboard'). Helps with component naming."
+            "(Optional) Context about what's being built (e.g., 'landing page', 'dashboard'). Helps with component naming."
         }
       },
       "required" => ["nodeId"]

@@ -64,21 +64,21 @@ defmodule FrontmanServer.Tools.ImplementComponent do
         },
         "complexity" => %{
           "type" => "integer",
-          "description" => "Estimated complexity (1-10) from the breakdown analysis"
+          "description" => "(Optional) Estimated complexity (1-10) from the breakdown analysis"
         },
         "dependencies" => %{
           "type" => "string",
           "description" =>
-            "Components this depends on, or 'None'. Used to understand build order."
+            "(Optional) Components this depends on, or 'None'. Used to understand build order."
         },
         "targetPath" => %{
           "type" => "string",
           "description" =>
-            "Optional target file path where the component should be created (e.g., 'components/Header.tsx')"
+            "(Optional) Target file path where the component should be created (e.g., 'components/Header.tsx')"
         },
         "additionalContext" => %{
           "type" => "string",
-          "description" => "Any additional context or requirements for this specific component"
+          "description" => "(Optional) Any additional context or requirements for this specific component"
         }
       },
       "required" => ["componentName", "nodeId", "description"]

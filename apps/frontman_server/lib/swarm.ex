@@ -513,22 +513,17 @@ defmodule Swarm do
         result =
           case tool_executor.(tc) do
             {:ok, content} ->
-              %ToolResult{id: tc.id, content: content, is_error: false}
+              ToolResult.make(tc.id, tc.name, content, false)
 
             {:error, reason} ->
-              %ToolResult{id: tc.id, content: to_string(reason), is_error: true}
+              ToolResult.make(tc.id, tc.name, to_string(reason), true)
 
             {:spawn, request} ->
               child_result = run_child(loop, tc.id, request, tool_executor)
-
-              %ToolResult{
-                id: tc.id,
-                content: child_result.result || "Child failed: #{inspect(child_result.error)}",
-                is_error: child_result.status == :failed
-              }
+              content = child_result.result || "Child failed: #{inspect(child_result.error)}"
+              ToolResult.make(tc.id, tc.name, content, child_result.status == :failed)
           end
 
-        # Include all keys in stop metadata for telemetry handlers
         stop_meta = %{
           loop_id: loop_id,
           tool_id: tool_id,

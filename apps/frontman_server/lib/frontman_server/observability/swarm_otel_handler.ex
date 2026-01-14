@@ -353,8 +353,10 @@ defmodule FrontmanServer.Observability.SwarmOtelHandler do
     case lookup_span(:frontman_spans_tool, tool_id) do
       {:ok, span_ctx} ->
         if output do
+          text_output = extract_text_content(output)
+
           :otel_span.set_attributes(span_ctx, [
-            {:"tool.output", truncate(to_string(output), 10_000)}
+            {:"tool.output", text_output}
           ])
         end
 

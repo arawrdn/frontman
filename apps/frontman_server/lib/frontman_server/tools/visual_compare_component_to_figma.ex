@@ -56,7 +56,7 @@ defmodule FrontmanServer.Tools.VisualCompareComponentToFigma do
         },
         "componentFilePath" => %{
           "type" => "string",
-          "description" => "The file path to the component"
+          "description" => "(Optional) The file path to the component"
         },
         "dataTestId" => %{
           "type" => "string",

@@ -65,7 +65,7 @@ defmodule FrontmanServer.Tools.TodoAdd do
         "status" => %{
           "type" => "string",
           "enum" => @todo_statuses,
-          "description" => "Initial status (defaults to 'pending')",
+          "description" => "(Optional) Initial status. Default: 'pending'",
           "default" => "pending"
         }
       },

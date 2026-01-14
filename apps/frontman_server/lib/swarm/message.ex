@@ -45,14 +45,14 @@ defmodule Swarm.Message do
     }
   end
 
-  @doc "Creates a tool result message"
-  @spec tool_result(String.t(), String.t(), String.t()) :: t()
-  def tool_result(name, tool_call_id, content) do
+  @doc "Creates a tool result message from content parts"
+  @spec tool_result(String.t(), String.t(), [ContentPart.t()]) :: t()
+  def tool_result(name, tool_call_id, content) when is_list(content) do
     %__MODULE__{
       role: :tool,
       name: name,
       tool_call_id: tool_call_id,
-      content: [ContentPart.text(content)]
+      content: content
     }
   end
 

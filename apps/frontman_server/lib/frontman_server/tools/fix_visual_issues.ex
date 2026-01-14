@@ -48,15 +48,15 @@ defmodule FrontmanServer.Tools.FixVisualIssues do
         },
         "nodeId" => %{
           "type" => "string",
-          "description" => "The Figma node ID"
+          "description" => "(Optional) The Figma node ID"
         },
         "figmaDesignDescription" => %{
           "type" => "string",
-          "description" => "Description of the Figma design from the comparison"
+          "description" => "(Optional) Description of the Figma design from the comparison"
         },
         "implementationDescription" => %{
           "type" => "string",
-          "description" => "Description of the current implementation from the comparison"
+          "description" => "(Optional) Description of the current implementation from the comparison"
         },
         "keyDifferences" => %{
           "type" => "array",
@@ -74,7 +74,7 @@ defmodule FrontmanServer.Tools.FixVisualIssues do
         "filesCreated" => %{
           "type" => "array",
           "items" => %{"type" => "string"},
-          "description" => "List of file paths that may need modification"
+          "description" => "(Optional) List of file paths that may need modification"
         },
         "testPageUrl" => %{
           "type" => "string",
