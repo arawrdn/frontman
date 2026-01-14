@@ -3,6 +3,9 @@
 	"version": "0.1.0",
 	"type": "module",
 	"main": "./src/FrontmanProtocol.res.mjs",
+	"dependencies": {
+		"sury": "11.0.0-alpha.4"
+	},
 	"devDependencies": {
 		"@rescript/webapi": "catalog:",
 		"rescript": "catalog:",
