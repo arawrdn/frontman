@@ -230,4 +230,129 @@ defmodule Swarm.Loop.RunnerTest do
       assert response.reasoning_details == []
     end
   end
+
+  describe "LLM.Response.from_stream/1 streaming tool calls" do
+    alias Swarm.LLM.Chunk
+
+    test "accumulates streaming tool call with argument fragments" do
+      stream = [
+        # Tool call name arrives first (streaming)
+        Chunk.tool_call_start("call_123", "read_file", 0),
+        # Argument fragments arrive separately
+        Chunk.tool_call_args(0, ~s({"path":)),
+        Chunk.tool_call_args(0, ~s("/home/user)),
+        Chunk.tool_call_args(0, ~s(/file.txt"})),
+        Chunk.done(:tool_calls)
+      ]
+
+      response = LLM.Response.from_stream(stream)
+
+      assert length(response.tool_calls) == 1
+      [tool_call] = response.tool_calls
+      assert tool_call.id == "call_123"
+      assert tool_call.name == "read_file"
+      assert tool_call.arguments == ~s({"path":"/home/user/file.txt"})
+    end
+
+    test "handles multiple parallel streaming tool calls" do
+      stream = [
+        # Two tool calls starting
+        Chunk.tool_call_start("call_1", "read_file", 0),
+        Chunk.tool_call_start("call_2", "list_files", 1),
+        # Interleaved argument fragments
+        Chunk.tool_call_args(0, ~s({"path":)),
+        Chunk.tool_call_args(1, ~s({"dir":)),
+        Chunk.tool_call_args(0, ~s("/foo"})),
+        Chunk.tool_call_args(1, ~s("/bar"})),
+        Chunk.done(:tool_calls)
+      ]
+
+      response = LLM.Response.from_stream(stream)
+
+      assert length(response.tool_calls) == 2
+
+      tool_calls_by_id = Map.new(response.tool_calls, &{&1.id, &1})
+
+      assert tool_calls_by_id["call_1"].name == "read_file"
+      assert tool_calls_by_id["call_1"].arguments == ~s({"path":"/foo"})
+
+      assert tool_calls_by_id["call_2"].name == "list_files"
+      assert tool_calls_by_id["call_2"].arguments == ~s({"dir":"/bar"})
+    end
+
+    test "handles non-streaming complete tool calls" do
+      tool_call = %Swarm.ToolCall{
+        id: "call_456",
+        name: "get_weather",
+        arguments: ~s({"location":"NYC"})
+      }
+
+      stream = [
+        Chunk.tool_call_end(tool_call),
+        Chunk.done(:tool_calls)
+      ]
+
+      response = LLM.Response.from_stream(stream)
+
+      assert length(response.tool_calls) == 1
+      assert hd(response.tool_calls) == tool_call
+    end
+
+    test "handles streaming tool call with no argument fragments" do
+      stream = [
+        Chunk.tool_call_start("call_789", "get_time", 0),
+        # No argument fragments - tool takes no parameters
+        Chunk.done(:tool_calls)
+      ]
+
+      response = LLM.Response.from_stream(stream)
+
+      assert length(response.tool_calls) == 1
+      [tool_call] = response.tool_calls
+      assert tool_call.id == "call_789"
+      assert tool_call.name == "get_time"
+      assert tool_call.arguments == "{}"
+    end
+
+    test "raises when argument fragments arrive before tool_call_start" do
+      stream = [
+        # Arguments without a preceding tool_call_start - this is a bug
+        Chunk.tool_call_args(0, ~s({"path":"/foo"})),
+        Chunk.done(:tool_calls)
+      ]
+
+      assert_raise ArgumentError, ~r/no tool_call_start was received/, fn ->
+        LLM.Response.from_stream(stream)
+      end
+    end
+
+    test "mixes streaming and non-streaming tool calls" do
+      complete_tool_call = %Swarm.ToolCall{
+        id: "call_complete",
+        name: "complete_tool",
+        arguments: ~s({"key":"value"})
+      }
+
+      stream = [
+        # One streaming tool call
+        Chunk.tool_call_start("call_streaming", "streaming_tool", 0),
+        Chunk.tool_call_args(0, ~s({"arg":"val"})),
+        # One complete tool call
+        Chunk.tool_call_end(complete_tool_call),
+        Chunk.done(:tool_calls)
+      ]
+
+      response = LLM.Response.from_stream(stream)
+
+      assert length(response.tool_calls) == 2
+
+      tool_calls_by_id = Map.new(response.tool_calls, &{&1.id, &1})
+
+      assert tool_calls_by_id["call_streaming"].name == "streaming_tool"
+      assert tool_calls_by_id["call_streaming"].arguments == ~s({"arg":"val"})
+
+      assert tool_calls_by_id["call_complete"].name == "complete_tool"
+      assert tool_calls_by_id["call_complete"].arguments == ~s({"key":"value"})
+    end
+  end
 end

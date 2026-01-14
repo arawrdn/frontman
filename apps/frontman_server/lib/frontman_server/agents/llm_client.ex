@@ -6,7 +6,7 @@ defmodule FrontmanServer.Agents.LLMClient do
   consumed with callbacks or collected into a Response.
   """
 
-  @default_model "openai/gpt-5.1-codex"
+  @default_model "openrouter:openai/gpt-5.1-codex"
 
   use TypedStruct
 
@@ -21,7 +21,7 @@ defmodule FrontmanServer.Agents.LLMClient do
 
   ## Options
 
-  - `:model` - Model spec string (default: "openrouter:google/gemini-2.5-flash-preview")
+  - `:model` - Model spec string (default: "openrouter:openai/gpt-5.1-codex")
   - `:tools` - List of Swarm.Tool structs
   - `:llm_opts` - Additional options for ReqLLM (e.g., fixture_path for tests)
   """
@@ -122,17 +122,30 @@ defimpl Swarm.LLM, for: FrontmanServer.Agents.LLMClient do
     Chunk.thinking(text)
   end
 
+  # Handle tool call chunks from ReqLLM
+  # In streaming mode, ReqLLM sends tool name first (with empty args),
+  # then argument fragments arrive as separate :meta chunks.
+  # In non-streaming mode, the complete tool call arrives at once.
   defp to_swarm_chunk(%{type: :tool_call, name: name, arguments: args, metadata: meta}) do
     id = Map.get(meta, :id) || "call_#{:erlang.unique_integer([:positive])}"
-    args_json = if is_binary(args), do: args, else: Jason.encode!(args || %{})
-    tool_call = %ToolCall{id: id, name: name, arguments: args_json}
-    Chunk.tool_call_end(tool_call)
+    index = Map.get(meta, :index, 0)
+
+    # Check if this is a complete tool call (non-streaming) or a streaming start
+    # Complete tool calls have non-empty argument maps with actual keys
+    if complete_tool_call_args?(args) do
+      # Non-streaming: emit complete tool call directly
+      args_json = if is_binary(args), do: args, else: Jason.encode!(args)
+      tool_call = %ToolCall{id: id, name: name, arguments: args_json}
+      Chunk.tool_call_end(tool_call)
+    else
+      # Streaming: emit tool_call_start, arguments will follow as fragments
+      Chunk.tool_call_start(id, name, index)
+    end
   end
 
-  defp to_swarm_chunk(%{type: :meta, metadata: %{tool_call_args: %{index: _, fragment: _}}}) do
-    # Argument fragments require an ID to associate with tool_call_start.
-    # ReqLLM sends complete tool_calls, so we skip fragments for now.
-    nil
+  # Handle argument fragment chunks from ReqLLM streaming
+  defp to_swarm_chunk(%{type: :meta, metadata: %{tool_call_args: %{index: index, fragment: fragment}}}) do
+    Chunk.tool_call_args(index, fragment)
   end
 
   defp to_swarm_chunk(%{type: :meta, metadata: %{usage: usage}}) when is_map(usage) do
@@ -149,6 +162,11 @@ defimpl Swarm.LLM, for: FrontmanServer.Agents.LLMClient do
   end
 
   defp to_swarm_chunk(_), do: nil
+
+  # Check if tool call arguments are complete (non-streaming)
+  defp complete_tool_call_args?(args) when is_map(args) and map_size(args) > 0, do: true
+  defp complete_tool_call_args?(args) when is_binary(args) and args not in ["", "{}"], do: true
+  defp complete_tool_call_args?(_), do: false
 
   # --- Swarm.Message -> ReqLLM.Message conversion ---
 

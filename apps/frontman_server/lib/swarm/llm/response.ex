@@ -29,17 +29,38 @@ defmodule Swarm.LLM.Response do
 
   This is the batch-style convenience for when you don't need real-time
   token emission. Consumes the entire stream and returns the collected response.
+
+  Handles streaming tool calls by accumulating argument fragments:
+  - `:tool_call_start` - begins tracking a new tool call
+  - `:tool_call_args` - accumulates argument JSON fragments
+  - `:tool_call_end` - complete tool call (non-streaming case)
   """
   @spec from_stream(Enumerable.t(Chunk.t())) :: t()
   def from_stream(stream) do
-    acc = %{content: [], reasoning_details: [], tool_calls: %{}, usage: nil, finish_reason: :stop}
+    acc = %{
+      content: [],
+      reasoning_details: [],
+      # Complete tool calls (from :tool_call_end chunks)
+      tool_calls: %{},
+      # Pending tool calls being accumulated (from streaming)
+      # Key: index, Value: %{id: string, name: string, args_fragments: [string]}
+      pending_tool_calls: %{},
+      usage: nil,
+      finish_reason: :stop
+    }
 
     result = Enum.reduce(stream, acc, &accumulate_chunk/2)
+
+    # Finalize any pending streaming tool calls
+    finalized_pending = finalize_pending_tool_calls(result.pending_tool_calls)
+
+    # Merge complete tool calls with finalized pending ones
+    all_tool_calls = Map.merge(result.tool_calls, finalized_pending)
 
     %__MODULE__{
       content: IO.iodata_to_binary(result.content),
       reasoning_details: result.reasoning_details,
-      tool_calls: build_tool_calls(result.tool_calls),
+      tool_calls: Map.values(all_tool_calls),
       usage: result.usage,
       finish_reason: result.finish_reason
     }
@@ -54,6 +75,39 @@ defmodule Swarm.LLM.Response do
     %{acc | reasoning_details: acc.reasoning_details ++ [entry]}
   end
 
+  # Streaming: tool call name received, start accumulating
+  defp accumulate_chunk(
+         %Chunk{
+           type: :tool_call_start,
+           tool_call_id: id,
+           tool_call_name: name,
+           tool_call_index: index
+         },
+         acc
+       ) do
+    pending = %{id: id, name: name, args_fragments: []}
+    %{acc | pending_tool_calls: Map.put(acc.pending_tool_calls, index, pending)}
+  end
+
+  # Streaming: argument fragment received, accumulate it
+  defp accumulate_chunk(
+         %Chunk{type: :tool_call_args, tool_call_index: index, tool_call_args_fragment: fragment},
+         acc
+       ) do
+    case Map.get(acc.pending_tool_calls, index) do
+      nil ->
+        # This is a bug - we received arguments before tool_call_start
+        raise ArgumentError,
+              "Received tool_call_args for index #{index} but no tool_call_start was received. " <>
+                "This indicates a bug in the streaming pipeline."
+
+      pending ->
+        updated = %{pending | args_fragments: pending.args_fragments ++ [fragment]}
+        %{acc | pending_tool_calls: Map.put(acc.pending_tool_calls, index, updated)}
+    end
+  end
+
+  # Non-streaming: complete tool call received
   defp accumulate_chunk(%Chunk{type: :tool_call_end, tool_call: tool_call}, acc) do
     %{acc | tool_calls: Map.put(acc.tool_calls, tool_call.id, tool_call)}
   end
@@ -66,8 +120,18 @@ defmodule Swarm.LLM.Response do
     %{acc | finish_reason: reason}
   end
 
-  defp build_tool_calls(tool_calls_map) do
-    Map.values(tool_calls_map)
+  # Catch-all for unknown chunk types
+  defp accumulate_chunk(_chunk, acc), do: acc
+
+  # Finalize pending tool calls by joining accumulated argument fragments
+  defp finalize_pending_tool_calls(pending_map) do
+    Map.new(pending_map, fn {_index, %{id: id, name: name, args_fragments: fragments}} ->
+      args_json = IO.iodata_to_binary(fragments)
+      # Default to empty object if no fragments were received
+      args_json = if args_json == "", do: "{}", else: args_json
+
+      {id, %Swarm.ToolCall{id: id, name: name, arguments: args_json}}
+    end)
   end
 
   defp build_reasoning_entry(text, meta, index) do
