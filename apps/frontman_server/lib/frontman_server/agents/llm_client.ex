@@ -53,16 +53,45 @@ defmodule FrontmanServer.Agents.LLMClient do
 
   @doc """
   Converts Swarm.Tool to ReqLLM.Tool format.
+  Normalizes schemas for OpenAI-compatible providers that require strict mode.
   """
-  @spec to_reqllm_tool(Swarm.Tool.t()) :: ReqLLM.Tool.t()
-  def to_reqllm_tool(%Swarm.Tool{} = tool) do
+  @spec to_reqllm_tool(Swarm.Tool.t(), String.t()) :: ReqLLM.Tool.t()
+  def to_reqllm_tool(%Swarm.Tool{} = tool, model) do
+    strict? = requires_strict_schema?(model)
+
+    schema =
+      if strict? do
+        normalize_schema_for_strict(tool.parameter_schema)
+      else
+        tool.parameter_schema
+      end
+
     ReqLLM.Tool.new!(
       name: tool.name,
       description: tool.description,
-      parameter_schema: tool.parameter_schema,
+      parameter_schema: schema,
+      strict: strict?,
       callback: fn _args -> {:ok, nil} end
     )
   end
+
+  # OpenAI models (via OpenRouter or direct) require all properties in the required array
+  defp requires_strict_schema?(model) when is_binary(model) do
+    String.contains?(model, "openai/") or
+      String.contains?(model, "azure/") or
+      String.starts_with?(model, "openai:")
+  end
+
+  # Same logic as ReqLLM.Providers.OpenAI.AdapterHelpers.ensure_all_properties_required/1
+  defp normalize_schema_for_strict(%{"type" => "object", "properties" => properties} = schema) do
+    all_property_names = Map.keys(properties)
+
+    schema
+    |> Map.put("required", all_property_names)
+    |> Map.put("additionalProperties", false)
+  end
+
+  defp normalize_schema_for_strict(schema), do: schema
 end
 
 defimpl Swarm.LLM, for: FrontmanServer.Agents.LLMClient do
@@ -76,7 +105,7 @@ defimpl Swarm.LLM, for: FrontmanServer.Agents.LLMClient do
   require Logger
 
   def stream(client, messages, _opts) do
-    reqllm_tools = Enum.map(client.tools, &LLMClient.to_reqllm_tool/1)
+    reqllm_tools = Enum.map(client.tools, &LLMClient.to_reqllm_tool(&1, client.model))
     api_key = LLMClient.get_api_key(client.model)
 
     llm_opts =
