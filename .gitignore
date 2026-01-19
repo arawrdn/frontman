@@ -40,3 +40,5 @@ Thumbs.db
 
 # Git worktrees
 .worktrees/
+.chunkhound.json
+.chunkhound
