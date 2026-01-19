@@ -125,8 +125,6 @@ defmodule FrontmanServer.Accounts.WorkOS do
        provider_name: extract_name(user),
        provider_avatar_url: user.profile_picture_url
      }}
-  rescue
-    _ -> {:error, "Failed to extract profile from WorkOS response"}
   end
 
   defp workos_to_provider("GitHubOAuth"), do: "github"

@@ -4,6 +4,10 @@ defmodule FrontmanServerWeb.OAuthController do
   alias FrontmanServer.Accounts
   alias FrontmanServerWeb.UserAuth
 
+  import FrontmanServerWeb.UserAuth, only: [require_sudo_mode: 2]
+
+  plug :require_sudo_mode when action in [:link_request, :link_callback, :unlink]
+
   def request(conn, %{"provider" => provider}) do
     redirect_uri = url(~p"/auth/callback")
     {:ok, url} = Accounts.get_oauth_authorization_url(provider, redirect_uri)
@@ -24,9 +28,9 @@ defmodule FrontmanServerWeb.OAuthController do
     |> redirect(to: ~p"/users/log-in")
   end
 
-  def link_request(%{assigns: %{current_scope: %{user: user}}} = conn, %{"provider" => provider}) do
+  def link_request(%{assigns: %{current_scope: %{user: _user}}} = conn, %{"provider" => provider}) do
     redirect_uri = url(~p"/auth/link/callback")
-    state = generate_state_token(user.id, provider)
+    state = generate_state_token()
     {:ok, url} = Accounts.get_oauth_authorization_url(provider, redirect_uri, state)
 
     conn
@@ -59,9 +63,8 @@ defmodule FrontmanServerWeb.OAuthController do
     |> redirect(to: ~p"/users/settings")
   end
 
-  defp generate_state_token(user_id, provider) do
-    random = :crypto.strong_rand_bytes(16) |> Base.url_encode64(padding: false)
-    "#{user_id}:#{provider}:#{random}"
+  defp generate_state_token do
+    :crypto.strong_rand_bytes(16) |> Base.url_encode64(padding: false)
   end
 
   defp provider_display_name("github"), do: "GitHub"
