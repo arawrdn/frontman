@@ -73,5 +73,6 @@ defmodule FrontmanServerWeb.UserSettingsController do
     conn
     |> assign(:email_changeset, Accounts.change_user_email(user))
     |> assign(:password_changeset, Accounts.change_user_password(user))
+    |> assign(:identities, Accounts.list_user_identities(user))
   end
 end

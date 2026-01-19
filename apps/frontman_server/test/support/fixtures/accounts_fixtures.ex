@@ -93,4 +93,26 @@ defmodule FrontmanServer.AccountsFixtures do
       set: [inserted_at: dt, authenticated_at: dt]
     )
   end
+
+  def unique_provider_id, do: "provider_#{System.unique_integer([:positive])}"
+
+  def valid_identity_attributes(attrs \\ %{}) do
+    Enum.into(attrs, %{
+      provider: "github",
+      provider_id: unique_provider_id(),
+      provider_email: unique_user_email(),
+      provider_name: unique_user_name()
+    })
+  end
+
+  def identity_fixture(user, attrs \\ %{}) do
+    attrs = valid_identity_attributes(attrs) |> Map.put(:user_id, user.id)
+
+    {:ok, identity} =
+      %Accounts.UserIdentity{}
+      |> Accounts.UserIdentity.changeset(attrs)
+      |> FrontmanServer.Repo.insert()
+
+    identity
+  end
 end

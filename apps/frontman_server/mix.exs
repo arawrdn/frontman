@@ -91,6 +91,8 @@ defmodule FrontmanServer.MixProject do
       # Sentry error tracking
       {:sentry, "~> 10.2.0"},
       {:hackney, "~> 1.8"},
+      # WorkOS for OAuth (GitHub, Google)
+      {:workos, "~> 1.1"},
       # ==================DEV/Test=========================
       {:phoenix_live_reload, "~> 1.2", only: :dev},
       {:tailwind, "~> 0.3", runtime: Mix.env() == :dev},

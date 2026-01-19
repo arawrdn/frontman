@@ -18,7 +18,7 @@ defmodule FrontmanServerWeb.Endpoint do
   )
 
   socket("/socket", FrontmanServerWeb.UserSocket,
-    websocket: true,
+    websocket: [connect_info: [session: @session_options]],
     longpoll: false
   )
 

@@ -24,6 +24,11 @@ if config_env() in [:dev, :test] do
     openai_api_key: env!("OPENAI_API_KEY", :string, nil)
 end
 
+# WorkOS configuration for OAuth (GitHub, Google)
+config :workos, WorkOS.Client,
+  api_key: env!("WORKOS_API_KEY", :string, nil),
+  client_id: env!("WORKOS_CLIENT_ID", :string, nil)
+
 # OpenTelemetry configuration
 # Arize export enabled if both ARIZE_API_KEY and ARIZE_SPACE_ID are set
 # Required in prod, optional in dev
