@@ -89,7 +89,7 @@ defmodule FrontmanServer.MixProject do
       {:zoi, "~> 0.14"},
       {:dotenvy, "~> 1.1"},
       # Sentry error tracking
-      {:sentry, "~> 10.2.0"},
+      {:sentry, "~> 11.0"},
       {:hackney, "~> 1.8"},
       # WorkOS for OAuth (GitHub, Google)
       {:workos, "~> 1.1"},
