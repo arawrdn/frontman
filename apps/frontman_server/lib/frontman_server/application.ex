@@ -25,9 +25,6 @@ defmodule FrontmanServer.Application do
       config: %{metadata: [:file, :line]}
     })
 
-    # Create ETS tables
-    :ets.new(:tasks, [:named_table, :public, :set, read_concurrency: true])
-
     :telemetry.attach(
       "finch-logger",
       [:finch, :request, :start],
