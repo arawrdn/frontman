@@ -6,15 +6,18 @@ defmodule FrontmanServer.Accounts.WorkOS do
   - Generate authorization URLs for OAuth providers
   - Authenticate users with OAuth codes
   - Link/unlink OAuth providers to existing accounts
+  - Handle email verification for providers that don't auto-verify
   """
 
   alias FrontmanServer.Accounts.User
   alias FrontmanServer.Accounts.UserIdentity
+  alias FrontmanServer.Accounts.WorkOS.AuthError
   alias FrontmanServer.Repo
 
   import Ecto.Query
 
   @supported_providers ~w(github google)
+  @workos_api_base "https://api.workos.com"
 
   @doc """
   Generates a WorkOS authorization URL for the given provider.
@@ -56,11 +59,49 @@ defmodule FrontmanServer.Accounts.WorkOS do
   5. Creates a new user + identity → logs in
 
   Returns `{:ok, user}` on success or `{:error, reason}` on failure.
+
+  Note: We use a raw HTTP call instead of the SDK to capture the full error
+  response, including `pending_authentication_token` for email verification.
   """
   def authenticate_with_code(code) do
-    with {:ok, auth_response} <- WorkOS.UserManagement.authenticate_with_code(%{code: code}),
+    with {:ok, auth_response} <- authenticate_with_code_raw(code),
          {:ok, profile} <- extract_profile(auth_response) do
       find_or_create_user_from_oauth(profile)
+    end
+  end
+
+  @doc """
+  Completes authentication after email verification.
+
+  Used when the initial OAuth returns `email_verification_required`. The user
+  receives a verification code via email, which is then submitted along with
+  the pending authentication token to complete the flow.
+  """
+  def authenticate_with_email_verification(code, pending_authentication_token) do
+    require Logger
+
+    body = %{
+      client_id: workos_client_id(),
+      client_secret: workos_api_key(),
+      grant_type: "urn:workos:oauth:grant-type:email-verification:code",
+      code: code,
+      pending_authentication_token: pending_authentication_token
+    }
+
+    case Req.post("#{@workos_api_base}/user_management/authenticate", json: body) do
+      {:ok, %Req.Response{status: 200, body: response_body}} ->
+        with {:ok, auth_response} <- parse_auth_response(response_body),
+             {:ok, profile} <- extract_profile(auth_response) do
+          find_or_create_user_from_oauth(profile)
+        end
+
+      {:ok, %Req.Response{status: status, body: error_body}} ->
+        Logger.debug("WorkOS email verify error - status: #{status}, body: #{inspect(error_body)}")
+        {:error, AuthError.from_response(error_body)}
+
+      {:error, reason} ->
+        Logger.error("WorkOS email verify request failed: #{inspect(reason)}")
+        {:error, reason}
     end
   end
 
@@ -70,7 +111,7 @@ defmodule FrontmanServer.Accounts.WorkOS do
   Returns `{:ok, identity}` on success or `{:error, changeset}` on failure.
   """
   def link_provider(user, code) do
-    with {:ok, auth_response} <- WorkOS.UserManagement.authenticate_with_code(%{code: code}),
+    with {:ok, auth_response} <- authenticate_with_code_raw(code),
          {:ok, profile} <- extract_profile(auth_response) do
       create_identity(user, profile)
     end
@@ -112,17 +153,16 @@ defmodule FrontmanServer.Accounts.WorkOS do
 
   # Private functions
 
-  defp extract_profile(auth_response) do
-    user = auth_response.user
-    provider = workos_to_provider(auth_response.authentication_method)
+  defp extract_profile(%{user: user, authentication_method: auth_method}) do
+    provider = workos_to_provider(auth_method)
 
     {:ok,
      %{
        provider: provider,
-       provider_id: user.id,
-       provider_email: user.email,
+       provider_id: user[:id],
+       provider_email: user[:email],
        provider_name: extract_name(user),
-       provider_avatar_url: user.profile_picture_url
+       provider_avatar_url: user[:profile_picture_url]
      }}
   end
 
@@ -130,11 +170,16 @@ defmodule FrontmanServer.Accounts.WorkOS do
   defp workos_to_provider("GoogleOAuth"), do: "google"
 
   defp extract_name(user) do
+    first_name = user[:first_name]
+    last_name = user[:last_name]
+    email = user[:email]
+
     cond do
-      user.first_name && user.last_name -> "#{user.first_name} #{user.last_name}"
-      user.first_name -> user.first_name
-      user.last_name -> user.last_name
-      true -> user.email |> String.split("@") |> List.first()
+      first_name && last_name -> "#{first_name} #{last_name}"
+      first_name -> first_name
+      last_name -> last_name
+      email -> email |> String.split("@") |> List.first()
+      true -> "Unknown"
     end
   end
 
@@ -206,4 +251,59 @@ defmodule FrontmanServer.Accounts.WorkOS do
 
   defp provider_to_workos("github"), do: "GitHubOAuth"
   defp provider_to_workos("google"), do: "GoogleOAuth"
+
+  # Raw HTTP authentication to capture full error responses
+
+  defp authenticate_with_code_raw(code) do
+    require Logger
+
+    body = %{
+      client_id: workos_client_id(),
+      client_secret: workos_api_key(),
+      grant_type: "authorization_code",
+      code: code
+    }
+
+    case Req.post("#{@workos_api_base}/user_management/authenticate", json: body) do
+      {:ok, %Req.Response{status: 200, body: response_body}} ->
+        parse_auth_response(response_body)
+
+      {:ok, %Req.Response{status: status, body: error_body}} ->
+        Logger.debug("WorkOS auth error - status: #{status}, body: #{inspect(error_body)}")
+        {:error, AuthError.from_response(error_body)}
+
+      {:error, reason} ->
+        Logger.error("WorkOS request failed: #{inspect(reason)}")
+        {:error, reason}
+    end
+  end
+
+  defp parse_auth_response(body) do
+    user = %{
+      id: body["user"]["id"],
+      email: body["user"]["email"],
+      email_verified: body["user"]["email_verified"],
+      first_name: body["user"]["first_name"],
+      last_name: body["user"]["last_name"],
+      profile_picture_url: body["user"]["profile_picture_url"],
+      created_at: body["user"]["created_at"],
+      updated_at: body["user"]["updated_at"]
+    }
+
+    {:ok,
+     %{
+       user: user,
+       access_token: body["access_token"],
+       refresh_token: body["refresh_token"],
+       authentication_method: body["authentication_method"]
+     }}
+  end
+
+  defp workos_api_key do
+    Application.get_env(:workos, WorkOS.Client)[:api_key]
+  end
+
+  defp workos_client_id do
+    Application.get_env(:workos, WorkOS.Client)[:client_id]
+  end
 end

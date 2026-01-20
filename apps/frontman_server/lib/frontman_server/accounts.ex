@@ -302,6 +302,10 @@ defmodule FrontmanServer.Accounts do
     as: :get_authorization_url
 
   defdelegate authenticate_with_oauth(code), to: WorkOS, as: :authenticate_with_code
+
+  defdelegate authenticate_with_email_verification(code, pending_authentication_token),
+    to: WorkOS
+
   defdelegate link_oauth_provider(user, code), to: WorkOS, as: :link_provider
   defdelegate unlink_oauth_provider(user, provider), to: WorkOS, as: :unlink_provider
   defdelegate list_user_identities(user), to: WorkOS, as: :list_identities

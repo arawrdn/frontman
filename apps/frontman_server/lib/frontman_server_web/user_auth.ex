@@ -41,7 +41,19 @@ defmodule FrontmanServerWeb.UserAuth do
 
     conn
     |> create_or_extend_session(user, params)
-    |> redirect(to: user_return_to || signed_in_path(conn))
+    |> redirect_to_return_path(user_return_to)
+  end
+
+  defp redirect_to_return_path(conn, nil) do
+    redirect(conn, to: signed_in_path(conn))
+  end
+
+  defp redirect_to_return_path(conn, url) when is_binary(url) do
+    if String.starts_with?(url, "http") do
+      redirect(conn, external: url)
+    else
+      redirect(conn, to: url)
+    end
   end
 
   @doc """

@@ -63,6 +63,8 @@ defmodule FrontmanServerWeb.Router do
     pipe_through [:browser, :redirect_if_user_is_authenticated]
 
     get "/callback", OAuthController, :callback
+    get "/verify-email", OAuthController, :verify_email_form
+    post "/verify-email", OAuthController, :verify_email
     get "/:provider", OAuthController, :request
   end
 
