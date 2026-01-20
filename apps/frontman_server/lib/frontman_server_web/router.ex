@@ -58,6 +58,25 @@ defmodule FrontmanServerWeb.Router do
 
   ## Authentication routes
 
+  # OAuth - unauthenticated (sign in with provider)
+  scope "/auth", FrontmanServerWeb do
+    pipe_through [:browser, :redirect_if_user_is_authenticated]
+
+    get "/callback", OAuthController, :callback
+    get "/verify-email", OAuthController, :verify_email_form
+    post "/verify-email", OAuthController, :verify_email
+    get "/:provider", OAuthController, :request
+  end
+
+  # OAuth - authenticated (link/unlink providers)
+  scope "/auth", FrontmanServerWeb do
+    pipe_through [:browser, :require_authenticated_user]
+
+    get "/link/callback", OAuthController, :link_callback
+    get "/:provider/link", OAuthController, :link_request
+    delete "/:provider/unlink", OAuthController, :unlink
+  end
+
   scope "/", FrontmanServerWeb do
     pipe_through [:browser, :redirect_if_user_is_authenticated]
 

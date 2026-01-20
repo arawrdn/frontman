@@ -9,14 +9,13 @@ defmodule FrontmanServerWeb.UserSocket do
   channel("task:*", FrontmanServerWeb.TaskChannel)
 
   @impl true
-  def connect(_params, socket, _connect_info) do
-    case Accounts.get_user_by_email("dev@frontman.local") do
-      nil ->
-        {:error, :no_dev_user}
-
-      user ->
-        scope = Scope.for_user(user)
-        {:ok, assign(socket, :scope, scope)}
+  def connect(_params, socket, connect_info) do
+    with %{"user_token" => token} <- connect_info[:session],
+         {user, _token_inserted_at} <- Accounts.get_user_by_session_token(token) do
+      scope = Scope.for_user(user)
+      {:ok, assign(socket, :scope, scope)}
+    else
+      _ -> {:error, :unauthorized}
     end
   end
 

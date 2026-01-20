@@ -394,4 +394,42 @@ defmodule FrontmanServer.AccountsTest do
       refute inspect(%User{password: "123456"}) =~ "password: \"123456\""
     end
   end
+
+  describe "list_user_identities/1" do
+    test "returns empty list when user has no identities" do
+      user = user_fixture()
+      assert Accounts.list_user_identities(user) == []
+    end
+
+    test "returns user's identities" do
+      user = user_fixture()
+      identity = identity_fixture(user, provider: "github")
+
+      [returned_identity] = Accounts.list_user_identities(user)
+      assert returned_identity.id == identity.id
+      assert returned_identity.provider == "github"
+    end
+
+    test "returns multiple identities" do
+      user = user_fixture()
+      _github = identity_fixture(user, provider: "github")
+      _google = identity_fixture(user, provider: "google")
+
+      identities = Accounts.list_user_identities(user)
+      assert length(identities) == 2
+      assert Enum.any?(identities, &(&1.provider == "github"))
+      assert Enum.any?(identities, &(&1.provider == "google"))
+    end
+
+    test "does not return other users' identities" do
+      user = user_fixture()
+      other_user = user_fixture()
+      _user_identity = identity_fixture(user, provider: "github")
+      _other_identity = identity_fixture(other_user, provider: "google")
+
+      identities = Accounts.list_user_identities(user)
+      assert length(identities) == 1
+      assert hd(identities).provider == "github"
+    end
+  end
 end

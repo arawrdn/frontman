@@ -18,6 +18,7 @@ defmodule FrontmanServer.Accounts.User do
 
     has_many :memberships, FrontmanServer.Organizations.Membership
     has_many :organizations, through: [:memberships, :organization]
+    has_many :identities, FrontmanServer.Accounts.UserIdentity
 
     timestamps(type: :utc_datetime)
   end
@@ -34,6 +35,27 @@ defmodule FrontmanServer.Accounts.User do
     |> validate_length(:name, min: 1, max: 255)
     |> validate_registration_email(opts)
     |> maybe_hash_password(opts)
+  end
+
+  @doc """
+  A user changeset for OAuth registration.
+
+  Creates a user from OAuth provider data. No password required since
+  authentication happens via the provider. Sets confirmed_at immediately
+  since the provider has already verified the email.
+  """
+  def oauth_registration_changeset(user, attrs) do
+    user
+    |> cast(attrs, [:email, :name])
+    |> validate_required([:email, :name])
+    |> validate_format(:email, ~r/^[^@,;\s]+@[^@,;\s]+$/,
+      message: "must have the @ sign and no spaces"
+    )
+    |> validate_length(:email, max: 160)
+    |> validate_length(:name, min: 1, max: 255)
+    |> unsafe_validate_unique(:email, FrontmanServer.Repo)
+    |> unique_constraint(:email)
+    |> put_change(:confirmed_at, DateTime.utc_now(:second))
   end
 
   defp validate_registration_email(changeset, opts) do

@@ -7,19 +7,7 @@ defmodule FrontmanServer.Tasks do
 
   This context provides the boundary for all task-related operations,
   delegating to the domain layer and infrastructure as appropriate.
-
-  ## Authorization Model
-
-  All operations require a `Scope` as the first parameter to enforce
-  defense in depth - we don't trust callers even if they've already
-  authenticated via channels.
-
-  Authorization validates that `scope.user.id == task.user_id` for
-  every operation. Returns `{:error, :unauthorized}` on mismatch.
   """
-
-  import Ecto.Query, warn: false
-
   alias FrontmanServer.Accounts.Scope
   alias FrontmanServer.Agents
   alias FrontmanServer.Repo

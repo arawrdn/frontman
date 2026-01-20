@@ -27,6 +27,7 @@ defmodule FrontmanServerWeb.CoreComponents do
 
   """
   use Phoenix.Component
+  use FrontmanServerWeb, :verified_routes
   use Gettext, backend: FrontmanServerWeb.Gettext
 
   alias Phoenix.HTML.Form
@@ -469,5 +470,43 @@ defmodule FrontmanServerWeb.CoreComponents do
   """
   def translate_errors(errors, field) when is_list(errors) do
     for {^field, {msg, opts}} <- errors, do: translate_error({msg, opts})
+  end
+
+  @doc """
+  Renders a connected account row with connect/disconnect actions.
+  """
+  attr :provider, :string, required: true
+  attr :label, :string, required: true
+  attr :identities, :list, required: true
+
+  slot :inner_block, required: true, doc: "the icon slot"
+
+  def connected_account(assigns) do
+    identity = Enum.find(assigns.identities, &(&1.provider == assigns.provider))
+    assigns = assign(assigns, :identity, identity)
+
+    ~H"""
+    <div class="flex items-center justify-between p-4 border border-base-300 rounded-lg">
+      <div class="flex items-center gap-3">
+        {render_slot(@inner_block)}
+        <div>
+          <p class="font-medium">{@label}</p>
+          <p :if={@identity} class="text-sm text-base-content/70">{@identity.provider_email}</p>
+          <p :if={!@identity} class="text-sm text-base-content/70">Not connected</p>
+        </div>
+      </div>
+      <.link
+        :if={@identity}
+        href={~p"/auth/#{@provider}/unlink"}
+        method="delete"
+        class="btn btn-outline btn-sm"
+      >
+        Disconnect
+      </.link>
+      <.link :if={!@identity} href={~p"/auth/#{@provider}/link"} class="btn btn-outline btn-sm">
+        Connect
+      </.link>
+    </div>
+    """
   end
 end

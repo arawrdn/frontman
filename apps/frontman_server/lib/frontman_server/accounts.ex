@@ -6,7 +6,7 @@ defmodule FrontmanServer.Accounts do
   import Ecto.Query, warn: false
   alias FrontmanServer.Repo
 
-  alias FrontmanServer.Accounts.{User, UserNotifier, UserToken}
+  alias FrontmanServer.Accounts.{User, UserNotifier, UserToken, WorkOS}
 
   ## Database getters
 
@@ -294,4 +294,19 @@ defmodule FrontmanServer.Accounts do
       end
     end)
   end
+
+  ## OAuth
+
+  defdelegate get_oauth_authorization_url(provider, redirect_uri, state \\ nil),
+    to: WorkOS,
+    as: :get_authorization_url
+
+  defdelegate authenticate_with_oauth(code), to: WorkOS, as: :authenticate_with_code
+
+  defdelegate authenticate_with_email_verification(code, pending_authentication_token),
+    to: WorkOS
+
+  defdelegate link_oauth_provider(user, code), to: WorkOS, as: :link_provider
+  defdelegate unlink_oauth_provider(user, provider), to: WorkOS, as: :unlink_provider
+  defdelegate list_user_identities(user), to: WorkOS, as: :list_identities
 end
