@@ -573,7 +573,9 @@ defmodule FrontmanServerWeb.TaskChannelTest do
   end
 
   describe "MCP tools race condition" do
-    test "queued prompt is processed with MCP tools after initialization completes", %{scope: scope} do
+    test "queued prompt is processed with MCP tools after initialization completes", %{
+      scope: scope
+    } do
       # Verifies the prompt queuing mechanism:
       # 1. Prompt sent before MCP init is queued in socket assigns
       # 2. MCP init completes, storing tools in socket assigns

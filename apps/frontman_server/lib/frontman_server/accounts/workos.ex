@@ -8,9 +8,9 @@ defmodule FrontmanServer.Accounts.WorkOS do
   - Link/unlink OAuth providers to existing accounts
   """
 
-  alias FrontmanServer.Repo
   alias FrontmanServer.Accounts.User
   alias FrontmanServer.Accounts.UserIdentity
+  alias FrontmanServer.Repo
 
   import Ecto.Query
 
@@ -27,23 +27,22 @@ defmodule FrontmanServer.Accounts.WorkOS do
   """
   def get_authorization_url(provider, redirect_uri, state \\ nil)
 
-  def get_authorization_url(provider, redirect_uri, state) when provider in @supported_providers do
+  def get_authorization_url(provider, redirect_uri, state)
+      when provider in @supported_providers do
     opts =
-      [
+      %{
         provider: provider_to_workos(provider),
         redirect_uri: redirect_uri,
         state: state
-      ]
-      |> Enum.reject(fn {_k, v} -> is_nil(v) end)
+      }
+      |> Map.reject(fn {_k, v} -> is_nil(v) end)
 
-    case WorkOS.UserManagement.get_authorization_url(opts) do
-      {:ok, url} -> {:ok, url}
-      {:error, reason} -> {:error, reason}
-    end
+    WorkOS.UserManagement.get_authorization_url(opts)
   end
 
   def get_authorization_url(provider, _redirect_uri, _state) do
-    {:error, "Unsupported provider: #{provider}. Supported: #{Enum.join(@supported_providers, ", ")}"}
+    {:error,
+     "Unsupported provider: #{provider}. Supported: #{Enum.join(@supported_providers, ", ")}"}
   end
 
   @doc """
@@ -140,33 +139,32 @@ defmodule FrontmanServer.Accounts.WorkOS do
   end
 
   defp find_or_create_user_from_oauth(profile) do
+    identity = get_identity_by_provider_id(profile.provider, profile.provider_id)
+    existing_user = get_user_by_email(profile.provider_email)
+
     Repo.transaction(fn ->
-      case get_identity_by_provider_id(profile.provider, profile.provider_id) do
-        %UserIdentity{} = identity ->
-          # Existing identity found - update last_signed_in_at and return user
-          {:ok, _} =
-            identity
-            |> UserIdentity.touch_changeset()
-            |> Repo.update()
-
-          Repo.get!(User, identity.user_id)
-
-        nil ->
-          # No identity found - check if user exists with matching email
-          case get_user_by_email(profile.provider_email) do
-            %User{} = user ->
-              # Link identity to existing user
-              {:ok, _} = create_identity(user, profile)
-              user
-
-            nil ->
-              # Create new user and identity
-              {:ok, user} = create_oauth_user(profile)
-              {:ok, _} = create_identity(user, profile)
-              user
-          end
-      end
+      resolve_oauth_user(identity, existing_user, profile)
     end)
+  end
+
+  defp resolve_oauth_user(%UserIdentity{} = identity, _existing_user, _profile) do
+    {:ok, _} =
+      identity
+      |> UserIdentity.touch_changeset()
+      |> Repo.update()
+
+    Repo.get!(User, identity.user_id)
+  end
+
+  defp resolve_oauth_user(nil, %User{} = user, profile) do
+    {:ok, _} = create_identity(user, profile)
+    user
+  end
+
+  defp resolve_oauth_user(nil, nil, profile) do
+    {:ok, user} = create_oauth_user(profile)
+    {:ok, _} = create_identity(user, profile)
+    user
   end
 
   defp get_identity_by_provider_id(provider, provider_id) do
@@ -175,9 +173,9 @@ defmodule FrontmanServer.Accounts.WorkOS do
     |> Repo.one()
   end
 
-  defp get_user_by_email(nil), do: nil
+  defp get_user_by_email(email) when email in [nil, ""], do: nil
 
-  defp get_user_by_email(email) do
+  defp get_user_by_email(email) when is_binary(email) do
     User
     |> where([u], u.email == ^email)
     |> Repo.one()

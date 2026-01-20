@@ -297,7 +297,10 @@ defmodule FrontmanServer.Accounts do
 
   ## OAuth
 
-  defdelegate get_oauth_authorization_url(provider, redirect_uri, state \\ nil), to: WorkOS, as: :get_authorization_url
+  defdelegate get_oauth_authorization_url(provider, redirect_uri, state \\ nil),
+    to: WorkOS,
+    as: :get_authorization_url
+
   defdelegate authenticate_with_oauth(code), to: WorkOS, as: :authenticate_with_code
   defdelegate link_oauth_provider(user, code), to: WorkOS, as: :link_provider
   defdelegate unlink_oauth_provider(user, provider), to: WorkOS, as: :unlink_provider

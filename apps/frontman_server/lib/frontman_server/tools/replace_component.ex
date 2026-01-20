@@ -66,7 +66,11 @@ defmodule FrontmanServer.Tools.ReplaceComponent do
   end
 
   @impl true
-  def execute(args, %Context{mcp_tools: mcp_tools, tool_executor: tool_executor, llm_opts: llm_opts}) do
+  def execute(args, %Context{
+        mcp_tools: mcp_tools,
+        tool_executor: tool_executor,
+        llm_opts: llm_opts
+      }) do
     component_name = Map.get(args, "componentName")
     source_file_path = Map.get(args, "sourceFilePath")
     target_file_path = Map.get(args, "targetFilePath")

@@ -36,7 +36,9 @@ defmodule FrontmanServerWeb.OAuthControllerTest do
         |> get(~p"/auth/link/callback", %{"error" => "access_denied"})
 
       assert redirected_to(conn) == ~p"/users/log-in"
-      assert Phoenix.Flash.get(conn.assigns.flash, :error) == "You must re-authenticate to access this page."
+
+      assert Phoenix.Flash.get(conn.assigns.flash, :error) ==
+               "You must re-authenticate to access this page."
     end
   end
 
@@ -68,7 +70,9 @@ defmodule FrontmanServerWeb.OAuthControllerTest do
         |> delete(~p"/auth/github/unlink")
 
       assert redirected_to(conn) == ~p"/users/log-in"
-      assert Phoenix.Flash.get(conn.assigns.flash, :error) == "You must re-authenticate to access this page."
+
+      assert Phoenix.Flash.get(conn.assigns.flash, :error) ==
+               "You must re-authenticate to access this page."
     end
   end
 end

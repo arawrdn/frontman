@@ -38,7 +38,10 @@ defmodule FrontmanServerWeb.OAuthController do
     |> redirect(external: url)
   end
 
-  def link_callback(%{assigns: %{current_scope: %{user: user}}} = conn, %{"code" => code, "state" => state}) do
+  def link_callback(%{assigns: %{current_scope: %{user: user}}} = conn, %{
+        "code" => code,
+        "state" => state
+      }) do
     ^state = get_session(conn, :oauth_state)
     {:ok, identity} = Accounts.link_oauth_provider(user, code)
 
