@@ -55,6 +55,8 @@ module Provider = {
   @react.component
   let make = (
     ~endpoint: string,
+    ~tokenUrl: string,
+    ~loginUrl: string,
     ~clientName: string="frontman-client",
     ~clientVersion: string="1.0.0",
     ~children: React.element,
@@ -89,6 +91,8 @@ module Provider = {
 
       let config: Reducer.initConfig = {
         endpoint,
+        tokenUrl,
+        loginUrl,
         clientName,
         clientVersion,
         baseUrl,

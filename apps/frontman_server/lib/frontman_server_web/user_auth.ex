@@ -199,11 +199,16 @@ defmodule FrontmanServerWeb.UserAuth do
 
   @doc """
   Plug for routes that require the user to not be authenticated.
+
+  If a `return_to` query parameter is present and the user is authenticated,
+  redirects to that URL instead of the default signed-in path.
   """
   def redirect_if_user_is_authenticated(conn, _opts) do
     if conn.assigns.current_scope do
+      return_to = conn.params["return_to"]
+
       conn
-      |> redirect(to: signed_in_path(conn))
+      |> redirect_to_return_path(return_to)
       |> halt()
     else
       conn

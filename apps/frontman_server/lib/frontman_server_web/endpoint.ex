@@ -9,7 +9,8 @@ defmodule FrontmanServerWeb.Endpoint do
     store: :cookie,
     key: "_frontman_server_key",
     signing_salt: "4+DQeuxI",
-    same_site: "Lax"
+    same_site: "None",
+    secure: true
   ]
 
   socket("/live", Phoenix.LiveView.Socket,

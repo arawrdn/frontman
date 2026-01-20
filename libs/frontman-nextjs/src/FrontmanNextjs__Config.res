@@ -1,10 +1,13 @@
 module Bindings = FrontmanBindings
 
+let defaultHost = "frontman.local:4000"
+
 type t = {
   isDev: bool,
   basePath: string,
   serverName: string,
   serverVersion: string,
+  host: string,
   clientUrl: string,
   clientCssUrl: option<string>,
   entrypointUrl: option<string>,
@@ -21,6 +24,7 @@ let make = (
   ~basePath=None,
   ~serverName=None,
   ~serverVersion=None,
+  ~host=None,
   ~clientUrl=None,
   ~clientCssUrl=None,
   ~entrypointUrl=None,
@@ -36,6 +40,7 @@ let make = (
   let serverName = serverName->Option.getOr("frontman-nextjs")
   let serverVersion = serverVersion->Option.getOr("1.0.0")
   let isLightTheme = isLightTheme->Option.getOr(false)
+  let host = host->Option.getOr(defaultHost)
 
   let projectRoot =
     projectRoot
@@ -51,8 +56,8 @@ let make = (
 
   let clientUrl = clientUrl->Option.getOr(
     switch isDev {
-    | true => "http://localhost:5173/src/Main.res.mjs?clientName=nextjs"
-    | false => "https://frontman.dev/frontman.es.js?clientName=nextjs"
+    | true => `http://localhost:5173/src/Main.res.mjs?clientName=nextjs&host=${host}`
+    | false => `https://frontman.dev/frontman.es.js?clientName=nextjs&host=${host}`
     },
   )
 
@@ -61,6 +66,7 @@ let make = (
     basePath,
     serverName,
     serverVersion,
+    host,
     clientUrl,
     clientCssUrl,
     entrypointUrl,
@@ -76,6 +82,7 @@ type jsConfigInput = {
   basePath?: string,
   serverName?: string,
   serverVersion?: string,
+  host?: string,
   clientUrl?: string,
   clientCssUrl?: string,
   entrypointUrl?: string,
@@ -84,47 +91,18 @@ type jsConfigInput = {
   sourceRoot?: string,
 }
 
-// JS-friendly function that accepts a config object
-// Use this from JavaScript/TypeScript: makeConfig({ projectRoot: "..." })
-let makeFromObject = (config: jsConfigInput): t => {
-  // Extract values from optional record fields and compute defaults
-  let isDev =
-    config.isDev->Option.getOr(
-      Bindings.Process.env->Dict.get("NODE_ENV")->Option.getOr("production") == "development",
-    )
-  let basePath = config.basePath->Option.getOr("__frontman")
-  let serverName = config.serverName->Option.getOr("frontman-nextjs")
-  let serverVersion = config.serverVersion->Option.getOr("1.0.0")
-  let isLightTheme = config.isLightTheme->Option.getOr(false)
-
-  let projectRoot =
-    config.projectRoot
-    ->Option.orElse(
-      Bindings.Process.env
-      ->Dict.get("PROJECT_ROOT")
-      ->Option.orElse(Bindings.Process.env->Dict.get("PWD")),
-    )
-    ->Option.getOr(".")
-
-  let sourceRoot = config.sourceRoot->Option.getOr(projectRoot)
-
-  let clientUrl = config.clientUrl->Option.getOr(
-    switch isDev {
-    | true => "http://localhost:5173/src/Main.res.mjs?clientName=nextjs"
-    | false => "https://frontman.dev/frontman.es.js?clientName=nextjs"
-    },
+// JS-friendly function that accepts a config object - delegates to make
+let makeFromObject = (config: jsConfigInput): t =>
+  make(
+    ~isDev=config.isDev,
+    ~basePath=config.basePath,
+    ~serverName=config.serverName,
+    ~serverVersion=config.serverVersion,
+    ~host=config.host,
+    ~clientUrl=config.clientUrl,
+    ~clientCssUrl=config.clientCssUrl,
+    ~entrypointUrl=config.entrypointUrl,
+    ~isLightTheme=config.isLightTheme,
+    ~projectRoot=config.projectRoot,
+    ~sourceRoot=config.sourceRoot,
   )
-
-  {
-    isDev,
-    basePath,
-    serverName,
-    serverVersion,
-    clientUrl,
-    clientCssUrl: config.clientCssUrl,
-    entrypointUrl: config.entrypointUrl,
-    isLightTheme,
-    projectRoot,
-    sourceRoot,
-  }
-}

@@ -59,8 +59,9 @@ let handleUI = (config: config): WebAPI.FetchAPI.response => {
   WebAPI.Response.fromString(html, ~init={headers: headers})
 }
 
-// Create middleware from a config object
-let createMiddleware = (config: Config.t) => {
+// Create middleware from a config input object (applies defaults)
+let createMiddleware = (configInput: Config.jsConfigInput) => {
+  let config = Config.makeFromObject(configInput)
   let server = Server.make(
     ~projectRoot=config.projectRoot,
     ~sourceRoot=config.sourceRoot,

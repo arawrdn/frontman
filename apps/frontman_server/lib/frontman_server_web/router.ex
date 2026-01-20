@@ -21,6 +21,10 @@ defmodule FrontmanServerWeb.Router do
     plug FrontmanServerWeb.Plugs.FetchOrganization
   end
 
+  pipeline :cors do
+    plug FrontmanServerWeb.Plugs.CORS
+  end
+
   scope "/", FrontmanServerWeb do
     pipe_through :browser
 
@@ -93,11 +97,23 @@ defmodule FrontmanServerWeb.Router do
   end
 
   scope "/", FrontmanServerWeb do
-    pipe_through [:browser]
+    pipe_through [:browser, :redirect_if_user_is_authenticated]
 
     get "/users/log-in", UserSessionController, :new
     get "/users/log-in/:token", UserSessionController, :confirm
     post "/users/log-in", UserSessionController, :create
+  end
+
+  scope "/", FrontmanServerWeb do
+    pipe_through [:browser]
+
     delete "/users/log-out", UserSessionController, :delete
+  end
+
+  # API endpoint for socket token (uses browser pipeline for session cookie + CORS)
+  scope "/api", FrontmanServerWeb do
+    pipe_through [:browser, :cors]
+
+    get "/socket-token", SocketTokenController, :show
   end
 end

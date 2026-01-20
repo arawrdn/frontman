@@ -14,6 +14,8 @@ let receive = Protocol.Receive
 
 type config = {
   endpoint: string,
+  tokenUrl: string,
+  loginUrl: string,
   clientInfo: Types.implementation,
   clientCapabilities: Types.clientCapabilities,
   onMessage: option<(messageDirection, JSON.t) => unit>,
@@ -21,11 +23,15 @@ type config = {
 
 let makeConfig = (
   ~endpoint: string,
+  ~tokenUrl: string,
+  ~loginUrl: string,
   ~name: string,
   ~version: string,
   ~onMessage: option<(messageDirection, JSON.t) => unit>=?,
 ): config => {
   endpoint,
+  tokenUrl,
+  loginUrl,
   clientInfo: {
     name,
     version,
@@ -97,15 +103,53 @@ type connectError =
   | AuthRequired({loginUrl: string})
   | ConnectionFailed(string)
 
+type tokenError =
+  | FetchFailed(string)
+  | NotAuthenticated
+  | InvalidResponse
+
+// Fetch socket auth token from the server (for cross-origin auth)
+let fetchSocketToken = async (tokenUrl: string): result<string, tokenError> => {
+  try {
+    let response = await WebAPI.Global.fetch(
+      tokenUrl,
+      ~init={credentials: Include},
+    )
+    if response.ok {
+      let json = await response->WebAPI.Response.json
+      switch json->JSON.Decode.object->Option.flatMap(obj => obj->Dict.get("token"))->Option.flatMap(JSON.Decode.string) {
+      | Some(token) => Ok(token)
+      | None => Error(InvalidResponse)
+      }
+    } else if response.status == 401 {
+      Error(NotAuthenticated)
+    } else {
+      Error(FetchFailed(`HTTP ${response.status->Int.toString}`))
+    }
+  } catch {
+  | Exn.Error(e) => Error(FetchFailed(Exn.message(e)->Option.getOr("Unknown error")))
+  }
+}
+
 // Connect and initialize ACP
 let connect = async (config: config, ~signal: option<WebAPI.EventAPI.abortSignal>=?): result<
   connection,
   connectError,
 > => {
-  switch checkAborted(signal) {
-  | Error(e) => Error(ConnectionFailed(e))
-  | Ok() =>
-    let socket = Socket.make(~endpoint=config.endpoint)
+  // Fetch socket token
+  let tokenResult = switch await fetchSocketToken(config.tokenUrl) {
+  | Ok(token) => Ok(token)
+  | Error(NotAuthenticated) => Error(AuthRequired({loginUrl: config.loginUrl}))
+  | Error(FetchFailed(msg)) => Error(ConnectionFailed(`Token fetch failed: ${msg}`))
+  | Error(InvalidResponse) => Error(ConnectionFailed("Invalid token response"))
+  }
+
+  switch (tokenResult, checkAborted(signal)) {
+  | (_, Error(_)) => Error(ConnectionFailed("Connection aborted"))
+  | (Error(e), _) => Error(e)
+  | (Ok(token), Ok()) =>
+    let socketOpts: Socket.socketOptions = {params: Dict.fromArray([("token", token)])}
+    let socket = Socket.make(~endpoint=config.endpoint, ~opts=socketOpts)
     let channel = socket->Socket.channel(~topic=Constants.tasksTopic)
     let state = ref(Client.initialState)
     let clientConfig: Client.config = {
@@ -122,38 +166,29 @@ let connect = async (config: config, ~signal: option<WebAPI.EventAPI.abortSignal
       ~onParseError=None,
     )
 
-    // Socket connect
     let socketResult = await waitForSocket(socket)
 
-    // Join channel (may return auth error)
     let joinResult = switch (socketResult, checkAborted(signal)) {
-    | (Error(e), _) => Error(JoinFailed(e))
-    | (_, Error(e)) => Error(JoinFailed(e))
-    | (Ok(), Ok()) => await joinChannel(channel)
-    }
-
-    // Initialize protocol
-    let initResult = switch (joinResult, checkAborted(signal)) {
-    | (Error(e), _) => Error(e)
-    | (_, Error(e)) => Error(JoinFailed(e))
+    | (_, Error(_)) => Error(ConnectionFailed("Connection aborted"))
+    | (Error(e), _) => Error(ConnectionFailed(e))
     | (Ok(), Ok()) =>
-      let r = await Protocol.sendInitialize(
-        ~channel,
-        ~state,
-        ~clientConfig,
-        ~onMessage=config.onMessage,
-      )
-      r->Result.mapError(e => JoinFailed(e))
+      switch await joinChannel(channel) {
+      | Error(AuthRequired({loginUrl})) => Error(AuthRequired({loginUrl: loginUrl}))
+      | Error(JoinFailed(e)) => Error(ConnectionFailed(e))
+      | Ok() => Ok()
+      }
     }
 
-    switch (initResult, checkAborted(signal)) {
-    | (_, Error(e)) => Error(ConnectionFailed(e))
-    | (Error(AuthRequired({loginUrl})), _) => Error(AuthRequired({loginUrl: loginUrl}))
-    | (Error(JoinFailed(e)), _) => Error(ConnectionFailed(e))
-    | (Ok(result), Ok()) =>
-      state :=
-        state.contents->Client.reduce(Client.ConnectionStateChanged(Client.Initialized(result)))
-      Ok({socket, channel, clientConfig, state, onMessage: config.onMessage})
+    switch (joinResult, checkAborted(signal)) {
+    | (_, Error(_)) => Error(ConnectionFailed("Connection aborted"))
+    | (Error(e), _) => Error(e)
+    | (Ok(), Ok()) =>
+      switch await Protocol.sendInitialize(~channel, ~state, ~clientConfig, ~onMessage=config.onMessage) {
+      | Error(e) => Error(ConnectionFailed(e))
+      | Ok(result) =>
+        state := state.contents->Client.reduce(Client.ConnectionStateChanged(Client.Initialized(result)))
+        Ok({socket, channel, clientConfig, state, onMessage: config.onMessage})
+      }
     }
   }
 }

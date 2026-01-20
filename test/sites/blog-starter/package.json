@@ -2,6 +2,7 @@
 	"private": true,
 	"scripts": {
 		"dev": "next dev --turbopack",
+		"dev:ssl": "next dev --turbopack --experimental-https --experimental-https-key ../../../.certs/frontman.local-key.pem --experimental-https-cert ../../../.certs/frontman.local.pem -p 3001 -H frontman.local",
 		"debug": "NODE_OPTIONS='--inspect' next dev --turbopack",
 		"build": "next build",
 		"start": "next start"

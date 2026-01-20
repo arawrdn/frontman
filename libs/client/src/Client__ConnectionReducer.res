@@ -11,6 +11,8 @@ module MCPServer = FrontmanFrontmanClient.FrontmanClient__MCP__Server
 // Configuration for initialization
 type initConfig = {
   endpoint: string,
+  tokenUrl: string,
+  loginUrl: string,
   clientName: string,
   clientVersion: string,
   baseUrl: string,
@@ -207,6 +209,8 @@ let reduce = (state: state, action: action): (state, array<effect>) => {
   | ({acp: ACPDisconnected, relay: RelayDisconnected}, Initialize({config, relay, mcpServer})) =>
     let acpConfig = ACP.makeConfig(
       ~endpoint=config.endpoint,
+      ~tokenUrl=config.tokenUrl,
+      ~loginUrl=config.loginUrl,
       ~name=config.clientName,
       ~version=config.clientVersion,
       ~onMessage=config.onACPMessage,

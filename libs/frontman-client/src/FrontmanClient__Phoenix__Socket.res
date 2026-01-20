@@ -8,6 +8,7 @@ type socketOptions = {
   timeout?: int,
   heartbeatIntervalMs?: int,
   reconnectAfterMs?: int => int,
+  params?: Dict.t<string>,
 }
 
 @module("phoenix") @new

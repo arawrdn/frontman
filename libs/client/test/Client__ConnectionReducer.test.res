@@ -72,6 +72,8 @@ describe("Connection Reducer", () => {
       let mockServer = Obj.magic({"tools": []})
       let mockConfig: Reducer.initConfig = {
         endpoint: "ws://test",
+        tokenUrl: "http://test/api/socket-token",
+        loginUrl: "http://test/users/log-in",
         clientName: "test",
         clientVersion: "1.0.0",
         baseUrl: "http://test",
@@ -95,6 +97,8 @@ describe("Connection Reducer", () => {
       let mockServer = Obj.magic({"tools": []})
       let mockConfig: Reducer.initConfig = {
         endpoint: "ws://test",
+        tokenUrl: "http://test/api/socket-token",
+        loginUrl: "http://test/users/log-in",
         clientName: "test",
         clientVersion: "1.0.0",
         baseUrl: "http://test",

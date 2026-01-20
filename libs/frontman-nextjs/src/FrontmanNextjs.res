@@ -13,8 +13,7 @@ module OpenTelemetry = FrontmanNextjs__OpenTelemetry
 module Instrumentation = FrontmanNextjs__Instrumentation
 
 // Re-export for convenience
-// createMiddleware takes a config object (use makeConfig to create one)
 let createMiddleware = Middleware.createMiddleware
-// makeConfig accepts an object with optional fields - JS-friendly API
 let makeConfig = Config.makeFromObject
 type config = Config.t
+type configInput = Config.jsConfigInput

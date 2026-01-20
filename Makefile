@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help install build clean dev test lint dev-client dev-nextjs pull-webapi infra-install infra-preview-marketing infra-up-marketing worktree-create worktree-create-from worktree-list worktree-remove worktree-clean worktree-status
+.PHONY: help install build clean dev test lint dev-client dev-nextjs pull-webapi infra-install infra-preview-marketing infra-up-marketing ssl-setup worktree-create worktree-create-from worktree-list worktree-remove worktree-clean worktree-status
 
 help: ## Display available commands
 	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z_-]+:.*##/ { printf "  %-15s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
@@ -45,6 +45,14 @@ dev-dogfooding: ## Start development server for dogfooding app
 
 dev-marketing: ## Start development server for marketing site
 	cd apps/marketing && $(MAKE) dev
+
+ssl-setup: ## Setup local SSL certificates using mkcert
+	@mkdir -p .certs
+	mkcert -install
+	cd .certs && mkcert frontman.local localhost 127.0.0.1 ::1
+	mv .certs/frontman.local+3.pem .certs/frontman.local.pem
+	mv .certs/frontman.local+3-key.pem .certs/frontman.local-key.pem
+	sudo sh -c 'grep -q frontman.local /etc/hosts || echo "127.0.0.1 frontman.local" >> /etc/hosts'
 
 open-dogfooding: ## Open dogfooding app in browser
 	open -n -a "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --args --user-data-dir="/tmp/chrome_dev_test" --disable-web-security http://localhost:6123

@@ -42,3 +42,6 @@ Thumbs.db
 .worktrees/
 .chunkhound.json
 .chunkhound
+
+# Local SSL certificates
+.certs/

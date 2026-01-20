@@ -1,18 +1,33 @@
 %%raw("import '@radix-ui/themes/styles.css'")
 %%raw("import './index.css'")
 
-let defaultEndpoint = "ws://localhost:4000/socket"
-
-// Get the script's own URL (not the page URL)
 @val external importMetaUrl: string = "import.meta.url"
 
-let getClientName = () => {
+type clientConfig = {
+  clientName: string,
+  endpoint: string,
+  tokenUrl: string,
+  loginUrl: string,
+}
+
+let getConfig = (): clientConfig => {
   let url = WebAPI.URL.make(~url=importMetaUrl)
   let params = url.searchParams
-  if params->WebAPI.URLSearchParams.has(~name="clientName") {
-    params->WebAPI.URLSearchParams.get("clientName")
-  } else {
-    "unknown"
+  let get = name =>
+    if params->WebAPI.URLSearchParams.has(~name) {
+      Some(params->WebAPI.URLSearchParams.get(name))
+    } else {
+      None
+    }
+  let host = switch get("host") {
+  | Some(h) => h
+  | None => JsError.throwWithMessage("host param is required")
+  }
+  {
+    clientName: get("clientName")->Option.getOr("unknown"),
+    endpoint: `wss://${host}/socket`,
+    tokenUrl: `https://${host}/api/socket-token`,
+    loginUrl: `https://${host}/users/log-in`,
   }
 }
 
@@ -23,10 +38,14 @@ WebAPI.Global.document->WebAPI.Document.addEventListener(Custom("DOMContentLoade
   switch rootElement->Null.toOption {
   | Some(rootElement) =>
     let root = ReactDOM.Client.createRoot(rootElement->WebAPI.Element.asRescriptElement)
-    let clientName = getClientName()
+    let config = getConfig()
     root->ReactDOM.Client.Root.render(
       <React.StrictMode>
-        <Client__FrontmanProvider.Provider clientName endpoint={defaultEndpoint}>
+        <Client__FrontmanProvider.Provider
+          clientName={config.clientName}
+          endpoint={config.endpoint}
+          tokenUrl={config.tokenUrl}
+          loginUrl={config.loginUrl}>
           <Client__App />
         </Client__FrontmanProvider.Provider>
       </React.StrictMode>,
