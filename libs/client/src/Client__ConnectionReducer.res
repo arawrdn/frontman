@@ -413,9 +413,19 @@ let handleEffect = (effect: effect, _state: state, dispatch: action => unit) => 
       | Error(err) =>
         // Don't dispatch error for aborted connections - component is unmounting
         if signal.aborted {
-          Console.log(`[FrontmanProvider] ACP connection aborted (cleanup): ${err}`)
+          Console.log("[FrontmanProvider] ACP connection aborted (cleanup)")
         } else {
-          dispatch(ACPConnectError(err))
+          switch err {
+          | ACP.AuthRequired({loginUrl}) =>
+            // Redirect to login with return_to param
+            let currentUrl =
+              WebAPI.Global.window->WebAPI.Window.location->WebAPI.Location.href
+            let encodeURIComponent: string => string = %raw(`encodeURIComponent`)
+            let returnTo = encodeURIComponent(currentUrl)
+            let fullUrl = `${loginUrl}?return_to=${returnTo}`
+            WebAPI.Global.window->WebAPI.Window.location->WebAPI.Location.assign(fullUrl)
+          | ACP.ConnectionFailed(msg) => dispatch(ACPConnectError(msg))
+          }
         }
       }
     }

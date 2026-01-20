@@ -7,6 +7,7 @@ defmodule FrontmanServerWeb.TasksChannel do
   channels after creating a session.
   """
   use FrontmanServerWeb, :channel
+  use FrontmanServerWeb, :verified_routes
   require Logger
 
   alias AgentClientProtocol, as: ACP
@@ -16,9 +17,14 @@ defmodule FrontmanServerWeb.TasksChannel do
 
   @impl true
   def join("tasks", _params, socket) do
-    Logger.info("Client joining tasks channel")
-    socket = assign(socket, :acp_initialized, false)
-    {:ok, %{status: "connected"}, socket}
+    if Map.has_key?(socket.assigns, :scope) do
+      Logger.info("Client joining tasks channel (authenticated)")
+      socket = assign(socket, :acp_initialized, false)
+      {:ok, %{status: "connected"}, socket}
+    else
+      Logger.info("Client joining tasks channel (unauthenticated)")
+      {:error, %{reason: "unauthorized", login_url: url(~p"/users/log-in")}}
+    end
   end
 
   @impl true

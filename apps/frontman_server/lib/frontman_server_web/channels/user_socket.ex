@@ -10,12 +10,19 @@ defmodule FrontmanServerWeb.UserSocket do
 
   @impl true
   def connect(_params, socket, connect_info) do
+    # Always allow socket connection - auth checked on channel join
+    case get_authenticated_scope(connect_info) do
+      {:ok, scope} -> {:ok, assign(socket, :scope, scope)}
+      :error -> {:ok, socket}
+    end
+  end
+
+  defp get_authenticated_scope(connect_info) do
     with %{"user_token" => token} <- connect_info[:session],
-         {user, _token_inserted_at} <- Accounts.get_user_by_session_token(token) do
-      scope = Scope.for_user(user)
-      {:ok, assign(socket, :scope, scope)}
+         {user, _} <- Accounts.get_user_by_session_token(token) do
+      {:ok, Scope.for_user(user)}
     else
-      _ -> {:error, :unauthorized}
+      _ -> :error
     end
   end
 

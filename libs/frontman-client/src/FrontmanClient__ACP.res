@@ -61,13 +61,27 @@ let waitForSocket = (socket: Socket.t): promise<result<unit, string>> => {
   })
 }
 
-let joinChannel = (channel: Channel.t): promise<result<unit, string>> => {
+type joinError =
+  | AuthRequired({loginUrl: string})
+  | JoinFailed(string)
+
+let joinChannel = (channel: Channel.t): promise<result<unit, joinError>> => {
   Promise.make((resolve, _) => {
     Channel.join(channel).receive(~status="ok", ~callback=_ =>
       resolve(Ok())
-    ).receive(~status="error", ~callback=err =>
-      resolve(Error(`Join failed: ${JSON.stringify(err)}`))
-    )->ignore
+    ).receive(~status="error", ~callback=err => {
+      // Parse error to check for auth failure
+      let parsed = err->JSON.Decode.object
+      let reason =
+        parsed->Option.flatMap(o => o->Dict.get("reason")->Option.flatMap(JSON.Decode.string))
+      let loginUrl =
+        parsed->Option.flatMap(o => o->Dict.get("login_url")->Option.flatMap(JSON.Decode.string))
+
+      switch (reason, loginUrl) {
+      | (Some("unauthorized"), Some(url)) => resolve(Error(AuthRequired({loginUrl: url})))
+      | _ => resolve(Error(JoinFailed(JSON.stringify(err))))
+      }
+    })->ignore
   })
 }
 
@@ -79,13 +93,17 @@ let checkAborted = (signal: option<WebAPI.EventAPI.abortSignal>): result<unit, s
   }
 }
 
+type connectError =
+  | AuthRequired({loginUrl: string})
+  | ConnectionFailed(string)
+
 // Connect and initialize ACP
 let connect = async (config: config, ~signal: option<WebAPI.EventAPI.abortSignal>=?): result<
   connection,
-  string,
+  connectError,
 > => {
   switch checkAborted(signal) {
-  | Error(e) => Error(e)
+  | Error(e) => Error(ConnectionFailed(e))
   | Ok() =>
     let socket = Socket.make(~endpoint=config.endpoint)
     let channel = socket->Socket.channel(~topic=Constants.tasksTopic)
@@ -104,24 +122,34 @@ let connect = async (config: config, ~signal: option<WebAPI.EventAPI.abortSignal
       ~onParseError=None,
     )
 
-    let initResult = await waitForSocket(socket)
-    ->Result.flatMapOkAsync(async _ => {
-      switch checkAborted(signal) {
-      | Error(e) => Error(e)
-      | Ok() => await joinChannel(channel)
-      }
-    })
-    ->Result.flatMapOkAsync(async _ => {
-      switch checkAborted(signal) {
-      | Error(e) => Error(e)
-      | Ok() =>
-        await Protocol.sendInitialize(~channel, ~state, ~clientConfig, ~onMessage=config.onMessage)
-      }
-    })
+    // Socket connect
+    let socketResult = await waitForSocket(socket)
+
+    // Join channel (may return auth error)
+    let joinResult = switch (socketResult, checkAborted(signal)) {
+    | (Error(e), _) => Error(JoinFailed(e))
+    | (_, Error(e)) => Error(JoinFailed(e))
+    | (Ok(), Ok()) => await joinChannel(channel)
+    }
+
+    // Initialize protocol
+    let initResult = switch (joinResult, checkAborted(signal)) {
+    | (Error(e), _) => Error(e)
+    | (_, Error(e)) => Error(JoinFailed(e))
+    | (Ok(), Ok()) =>
+      let r = await Protocol.sendInitialize(
+        ~channel,
+        ~state,
+        ~clientConfig,
+        ~onMessage=config.onMessage,
+      )
+      r->Result.mapError(e => JoinFailed(e))
+    }
 
     switch (initResult, checkAborted(signal)) {
-    | (_, Error(e)) => Error(e)
-    | (Error(e), _) => Error(e)
+    | (_, Error(e)) => Error(ConnectionFailed(e))
+    | (Error(AuthRequired({loginUrl})), _) => Error(AuthRequired({loginUrl: loginUrl}))
+    | (Error(JoinFailed(e)), _) => Error(ConnectionFailed(e))
     | (Ok(result), Ok()) =>
       state :=
         state.contents->Client.reduce(Client.ConnectionStateChanged(Client.Initialized(result)))
@@ -177,7 +205,14 @@ let joinSession = async (
 
   let joinResult = await joinChannel(sessionChannel)
 
-  joinResult->Result.map(_ => {
+  joinResult
+  ->Result.mapError(err =>
+    switch err {
+    | AuthRequired({loginUrl}) => `Auth required: ${loginUrl}`
+    | JoinFailed(msg) => msg
+    }
+  )
+  ->Result.map(_ => {
     sessionId,
     channel: sessionChannel,
     connection: conn,
