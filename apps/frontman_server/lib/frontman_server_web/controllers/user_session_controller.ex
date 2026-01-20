@@ -4,9 +4,16 @@ defmodule FrontmanServerWeb.UserSessionController do
   alias FrontmanServer.Accounts
   alias FrontmanServerWeb.UserAuth
 
-  def new(conn, _params) do
+  def new(conn, params) do
     email = get_in(conn.assigns, [:current_scope, Access.key(:user), Access.key(:email)])
     form = Phoenix.Component.to_form(%{"email" => email}, as: "user")
+
+    # Store return_to from query param (for cross-origin redirects like /__frontman)
+    conn =
+      case params["return_to"] do
+        nil -> conn
+        return_to -> put_session(conn, :user_return_to, return_to)
+      end
 
     render(conn, :new, form: form)
   end
