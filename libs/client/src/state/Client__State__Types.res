@@ -1,4 +1,5 @@
 // State type definitions - extracted to avoid circular dependencies
+S.enableJson()
 
 // Content part types for messages (simplified from Vercel AI SDK)
 module UserContentPart = {
@@ -435,6 +436,7 @@ type connectionState =
   | Connected(sendPromptFn)
 
 // Usage info from API
+@schema
 type usageInfo = {
   limit: option<int>,
   remaining: option<int>,
@@ -462,28 +464,33 @@ type apiKeySettings = {
 }
 
 // Model configuration types
+@schema
 type modelConfig = {
   displayName: string,
   value: string,
 }
 
+@schema
 type providerConfig = {
   id: string,
   name: string,
   models: array<modelConfig>,
 }
 
+@schema
 type modelsConfigDefaultModel = {
   provider: string,
   value: string,
 }
 
+@schema
 type modelsConfig = {
   providers: array<providerConfig>,
   defaultModel: modelsConfigDefaultModel,
 }
 
 // Selected model - what gets sent to the server
+@schema
 type selectedModel = {
   provider: string,
   value: string,

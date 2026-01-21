@@ -194,18 +194,11 @@ let loadSelectedModelFromStorage = (): option<Client__State__Types.selectedModel
   try {
     getStorageItem(selectedModelStorageKey)
     ->Nullable.toOption
-    ->Option.flatMap(json => {
-      let parsed = JSON.parseOrThrow(json)
-      switch parsed->JSON.Decode.object {
-      | Some(dict) =>
-        switch (
-          dict->Dict.get("provider")->Option.flatMap(JSON.Decode.string),
-          dict->Dict.get("value")->Option.flatMap(JSON.Decode.string),
-        ) {
-        | (Some(provider), Some(value)) => Some({provider, value}: Client__State__Types.selectedModel)
-        | _ => None
-        }
-      | None => None
+    ->Option.flatMap(jsonString => {
+      try {
+        Some(S.parseJsonStringOrThrow(jsonString, Client__State__Types.selectedModelSchema))
+      } catch {
+      | _ => None
       }
     })
   } catch {
@@ -216,8 +209,8 @@ let loadSelectedModelFromStorage = (): option<Client__State__Types.selectedModel
 // Save selected model to localStorage
 let saveSelectedModelToStorage = (model: Client__State__Types.selectedModel): unit => {
   try {
-    let json = `{"provider":"${model.provider}","value":"${model.value}"}`
-    setStorageItem(selectedModelStorageKey, json)
+    let jsonString = S.reverseConvertToJsonStringOrThrow(model, Client__State__Types.selectedModelSchema)
+    setStorageItem(selectedModelStorageKey, jsonString)
   } catch {
   | _ => ()
   }
@@ -530,23 +523,8 @@ let handleEffect = (effect, state: state, dispatch) => {
         let response = await WebAPI.Global.fetch(url, ~init={credentials: Include})
         if response.ok {
           let json = await response->WebAPI.Response.json
-
-          // Parse the JSON to extract usage info
-          let getInt = (dict, key) =>
-            dict->Dict.get(key)->Option.flatMap(JSON.Decode.float)->Option.map(Float.toInt)
-          let getBool = (dict, key) => dict->Dict.get(key)->Option.flatMap(JSON.Decode.bool)
-
-          switch json->JSON.Decode.object {
-          | Some(dict) =>
-            let usageInfo: Client__State__Types.usageInfo = {
-              limit: getInt(dict, "limit"),
-              remaining: getInt(dict, "remaining"),
-              hasUserKey: getBool(dict, "hasUserKey"),
-              hasServerKey: getBool(dict, "hasServerKey"),
-            }
-            dispatch(UsageInfoReceived({usageInfo: usageInfo}))
-          | None => ()
-          }
+          let usageInfo = S.parseJsonOrThrow(json, Client__State__Types.usageInfoSchema)
+          dispatch(UsageInfoReceived({usageInfo: usageInfo}))
         }
       } catch {
       | _ => ()
@@ -660,29 +638,23 @@ let handleEffect = (effect, state: state, dispatch) => {
         let response = await WebAPI.Global.fetch(url, ~init={credentials: Include})
         if response.ok {
           let json = await response->WebAPI.Response.json
+          let usageInfo = S.parseJsonOrThrow(json, Client__State__Types.usageInfoSchema)
+          let hasUserKey = usageInfo.hasUserKey->Option.getOr(false)
 
-          let getBool = (dict, key) => dict->Dict.get(key)->Option.flatMap(JSON.Decode.bool)
+          // Check if the Next.js project has OPENROUTER_API_KEY from runtime config
+          // This is set by the framework middleware (e.g., FrontmanNextjs__Middleware)
+          let runtimeConfig = Client__RuntimeConfig.read()
+          let hasEnvKey = Client__RuntimeConfig.hasOpenrouterKey(runtimeConfig)
 
-          switch json->JSON.Decode.object {
-          | Some(dict) =>
-            let hasUserKey = getBool(dict, "hasUserKey")->Option.getOr(false)
-
-            // Check if the Next.js project has OPENROUTER_API_KEY from runtime config
-            // This is set by the framework middleware (e.g., FrontmanNextjs__Middleware)
-            let runtimeConfig = Client__RuntimeConfig.read()
-            let hasEnvKey = Client__RuntimeConfig.hasOpenrouterKey(runtimeConfig)
-
-            // Determine the source: user key takes precedence, then env key, else none
-            let source: Client__State__Types.apiKeySource = if hasUserKey {
-              UserOverride
-            } else if hasEnvKey {
-              FromEnv
-            } else {
-              None
-            }
-            dispatch(ApiKeySettingsReceived({source: source}))
-          | None => ()
+          // Determine the source: user key takes precedence, then env key, else none
+          let source: Client__State__Types.apiKeySource = if hasUserKey {
+            UserOverride
+          } else if hasEnvKey {
+            FromEnv
+          } else {
+            None
           }
+          dispatch(ApiKeySettingsReceived({source: source}))
         }
       } catch {
       | _ => ()
@@ -736,67 +708,8 @@ let handleEffect = (effect, state: state, dispatch) => {
         let response = await WebAPI.Global.fetch(url, ~init={credentials: Include})
         if response.ok {
           let json = await response->WebAPI.Response.json
-
-          // Parse the JSON to extract models config
-          let getString = (dict, key) =>
-            dict->Dict.get(key)->Option.flatMap(JSON.Decode.string)
-
-          let parseModel = (json): option<Client__State__Types.modelConfig> => {
-            switch json->JSON.Decode.object {
-            | Some(dict) =>
-              switch (getString(dict, "displayName"), getString(dict, "value")) {
-              | (Some(displayName), Some(value)) => Some({displayName, value})
-              | _ => None
-              }
-            | None => None
-            }
-          }
-
-          let parseProvider = (json): option<Client__State__Types.providerConfig> => {
-            switch json->JSON.Decode.object {
-            | Some(dict) =>
-              switch (
-                getString(dict, "id"),
-                getString(dict, "name"),
-                dict->Dict.get("models")->Option.flatMap(JSON.Decode.array),
-              ) {
-              | (Some(id), Some(name), Some(modelsJson)) =>
-                let models = modelsJson->Array.filterMap(parseModel)
-                Some({id, name, models})
-              | _ => None
-              }
-            | None => None
-            }
-          }
-
-          let parseDefaultModel = (json): option<Client__State__Types.modelsConfigDefaultModel> => {
-            switch json->JSON.Decode.object {
-            | Some(dict) =>
-              switch (getString(dict, "provider"), getString(dict, "value")) {
-              | (Some(provider), Some(value)) => Some({provider, value})
-              | _ => None
-              }
-            | None => None
-            }
-          }
-
-          switch json->JSON.Decode.object {
-          | Some(dict) =>
-            switch (
-              dict->Dict.get("providers")->Option.flatMap(JSON.Decode.array),
-              dict->Dict.get("defaultModel")->Option.flatMap(parseDefaultModel),
-            ) {
-            | (Some(providersJson), Some(defaultModel)) =>
-              let providers = providersJson->Array.filterMap(parseProvider)
-              let config: Client__State__Types.modelsConfig = {
-                providers,
-                defaultModel,
-              }
-              dispatch(ModelsConfigReceived({config: config}))
-            | _ => ()
-            }
-          | None => ()
-          }
+          let config = S.parseJsonOrThrow(json, Client__State__Types.modelsConfigSchema)
+          dispatch(ModelsConfigReceived({config: config}))
         }
       } catch {
       | _ => ()

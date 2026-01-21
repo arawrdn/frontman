@@ -35,6 +35,57 @@ cd .worktrees/feature/my-feature
 - Test files: `*.test.res.mjs`
 - Story files: `*.story.res` (co-located with components)
 
+## JSON Parsing with Sury
+
+**Always use Sury schemas for JSON parsing/serialization** instead of manual `JSON.Decode.*` / `Dict.get` patterns.
+
+### Using @schema annotation (preferred)
+Add `@schema` annotation to type definitions for automatic schema derivation:
+```rescript
+@schema
+type userConfig = {
+  name: string,
+  age: int,
+  email: option<string>,
+}
+
+// Sury automatically generates `userConfigSchema`
+// Use it for parsing (wrap in try/catch for error handling):
+try {
+  let config = S.parseJsonOrThrow(json, userConfigSchema)
+  // use config
+} catch {
+| _ => // handle error
+}
+
+// And serialization:
+try {
+  let jsonString = S.reverseConvertToJsonStringOrThrow(config, userConfigSchema)
+  // use jsonString
+} catch {
+| _ => // handle error
+}
+```
+
+### Field annotations
+Use `@s.describe` for field documentation:
+```rescript
+@schema
+type input = {
+  @s.describe("The user's full name")
+  name: string,
+  @s.describe("Age in years")
+  age: int,
+}
+```
+
+### Why Sury over manual parsing?
+- **Type-safe**: Compile-time guarantees for JSON structure
+- **Less boilerplate**: No manual `Dict.get` + `Option.flatMap` chains
+- **Automatic**: Schema derived from type definition
+- **Bidirectional**: Same schema for parsing and serialization
+- **Better errors**: Structured error messages on parse failure
+
 ## State Management in Client (libs/client)
 
 **All API calls and side effects MUST go through the StateReducer** unless explicitly instructed otherwise.
