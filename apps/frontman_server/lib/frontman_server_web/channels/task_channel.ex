@@ -294,6 +294,9 @@ defmodule FrontmanServerWeb.TaskChannel do
     # Extract env API key from prompt metadata (sent with each prompt request)
     env_api_key = extract_env_api_key_from_params(params)
 
+    # Extract model selection from prompt metadata
+    model = extract_model_from_params(params)
+
     # Parse ACP prompt (protocol layer)
     prompt = ACP.parse_prompt_params(params)
 
@@ -304,14 +307,18 @@ defmodule FrontmanServerWeb.TaskChannel do
       Logger.info("Prompt includes embedded context")
     end
 
+    if model do
+      Logger.info("Using model: #{model.provider}:#{model.value}")
+    end
+
     # Prepare tools (domain service)
     all_tools = mcp_tools |> Tools.prepare_for_task(task_id)
 
     # Track request ID (channel state)
     socket = assign(socket, :pending_prompt_id, id)
 
-    # Pass env_api_key to the agent through opts
-    opts = [env_api_key: env_api_key]
+    # Pass env_api_key and model to the agent through opts
+    opts = [env_api_key: env_api_key, model: model]
 
     case Tasks.add_user_message(scope, task_id, prompt.content, all_tools, opts) do
       {:ok, _interaction} ->
@@ -334,6 +341,21 @@ defmodule FrontmanServerWeb.TaskChannel do
   end
 
   defp extract_env_api_key_from_params(_), do: %{}
+
+  # Extract model selection from prompt params metadata
+  # Expected format: %{"provider" => "openrouter", "value" => "google/gemini-3-flash-preview"}
+  defp extract_model_from_params(params) when is_map(params) do
+    case get_in(params, ["metadata", "model"]) do
+      %{"provider" => provider, "value" => value}
+      when is_binary(provider) and is_binary(value) and provider != "" and value != "" ->
+        %{provider: provider, value: value}
+
+      _ ->
+        nil
+    end
+  end
+
+  defp extract_model_from_params(_), do: nil
 
   @impl true
   def handle_info({:stream_token, text}, socket) do

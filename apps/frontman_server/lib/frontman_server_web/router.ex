@@ -39,6 +39,7 @@ defmodule FrontmanServerWeb.Router do
 
     post("/user/api-keys", UserApiKeyController, :create)
     get("/user/api-key-usage", UserApiKeyController, :usage)
+    get("/models", ModelsController, :index)
   end
 
   # Organization-scoped routes

@@ -461,6 +461,34 @@ type apiKeySettings = {
   saveStatus: apiKeySaveStatus,
 }
 
+// Model configuration types
+type modelConfig = {
+  displayName: string,
+  value: string,
+}
+
+type providerConfig = {
+  id: string,
+  name: string,
+  models: array<modelConfig>,
+}
+
+type modelsConfigDefaultModel = {
+  provider: string,
+  value: string,
+}
+
+type modelsConfig = {
+  providers: array<providerConfig>,
+  defaultModel: modelsConfigDefaultModel,
+}
+
+// Selected model - what gets sent to the server
+type selectedModel = {
+  provider: string,
+  value: string,
+}
+
 type state = {
   tasks: Dict.t<Task.t>,
   currentTaskId: option<string>,
@@ -469,4 +497,6 @@ type state = {
   usageInfo: option<usageInfo>,
   apiBaseUrl: option<string>,
   openrouterKeySettings: apiKeySettings,
+  modelsConfig: option<modelsConfig>,
+  selectedModel: option<selectedModel>,
 }

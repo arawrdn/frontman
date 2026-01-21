@@ -100,15 +100,9 @@ let groupMessages = (messages: array<Message.t>): array<displayItem> => {
   result
 }
 
-let models: array<PromptInput.model> = [
-  {name: "GPT 4o", value: "openai/gpt-4o"},
-  {name: "Deepseek R1", value: "deepseek/deepseek-r1"},
-]
-
 @react.component
 let make = () => {
   let (input, setInput) = React.useState(() => "")
-  let (model, setModel) = React.useState(() => Array.getUnsafe(models, 0).value)
 
   // Get messages from our state store
   let messages = Client__State.useSelector(Client__State.Selectors.messages)
@@ -118,8 +112,13 @@ let make = () => {
   let sessionInitialized = Client__State.useSelector(Client__State.Selectors.sessionInitialized)
   let planEntries = Client__State.useSelector(Client__State.Selectors.currentPlanEntries)
   let usageInfo = Client__State.useSelector(Client__State.Selectors.usageInfo)
+  let modelsConfig = Client__State.useSelector(Client__State.Selectors.modelsConfig)
+  let selectedModel = Client__State.useSelector(Client__State.Selectors.selectedModel)
   let runtimeConfig = RuntimeConfig.read()
   let hasEnvKey = RuntimeConfig.hasOpenrouterKey(runtimeConfig)
+
+  // Get providers from modelsConfig
+  let providers = modelsConfig->Option.mapOr([], config => config.providers)
 
   // Check if free requests are exhausted (no user key, no env key, using server key with 0 remaining)
   let isUsageExhausted = switch usageInfo {
@@ -324,9 +323,10 @@ let make = () => {
         value={input}
         onChange={v => setInput(_ => v)}
         onSubmit={handleSubmit}
-        models
-        selectedModel={model}
-        onModelChange={v => setModel(_ => v)}
+        providers
+        selectedModel
+        onModelChange={(~provider, ~value) =>
+          Client__State.Actions.setSelectedModel(~provider, ~value)}
         isAgentRunning
         isConnected
         disabled={isUsageExhausted}

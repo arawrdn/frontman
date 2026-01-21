@@ -139,6 +139,10 @@ type action =
   | OpenRouterKeySaved
   | OpenRouterKeySaveError({error: string})
   | ResetOpenRouterKeySaveStatus
+  // Model selection actions
+  | FetchModelsConfig
+  | ModelsConfigReceived({config: Client__State__Types.modelsConfig})
+  | SetSelectedModel({model: Client__State__Types.selectedModel})
 
 // Effects for side effects
 type effect =
@@ -148,6 +152,7 @@ type effect =
   | FetchUsageInfo({apiBaseUrl: string})
   | FetchApiKeySettingsEffect({apiBaseUrl: string})
   | SaveOpenRouterKeyEffect({apiBaseUrl: string, key: string})
+  | FetchModelsConfigEffect({apiBaseUrl: string})
 
 let getInitialUrl = () => {
   let entrypointUrl =
@@ -174,6 +179,50 @@ let normalizeUrl = (url: string): string => {
     : url
 }
 
+// localStorage key for persisting selected model
+let selectedModelStorageKey = "frontman:selectedModel"
+
+// localStorage bindings
+@val @scope("localStorage")
+external getStorageItem: string => Nullable.t<string> = "getItem"
+
+@val @scope("localStorage")
+external setStorageItem: (string, string) => unit = "setItem"
+
+// Load selected model from localStorage
+let loadSelectedModelFromStorage = (): option<Client__State__Types.selectedModel> => {
+  try {
+    getStorageItem(selectedModelStorageKey)
+    ->Nullable.toOption
+    ->Option.flatMap(json => {
+      let parsed = JSON.parseOrThrow(json)
+      switch parsed->JSON.Decode.object {
+      | Some(dict) =>
+        switch (
+          dict->Dict.get("provider")->Option.flatMap(JSON.Decode.string),
+          dict->Dict.get("value")->Option.flatMap(JSON.Decode.string),
+        ) {
+        | (Some(provider), Some(value)) => Some({provider, value}: Client__State__Types.selectedModel)
+        | _ => None
+        }
+      | None => None
+      }
+    })
+  } catch {
+  | _ => None
+  }
+}
+
+// Save selected model to localStorage
+let saveSelectedModelToStorage = (model: Client__State__Types.selectedModel): unit => {
+  try {
+    let json = `{"provider":"${model.provider}","value":"${model.value}"}`
+    setStorageItem(selectedModelStorageKey, json)
+  } catch {
+  | _ => ()
+  }
+}
+
 let defaultState: state = {
   tasks: Dict.make(),
   currentTaskId: None,
@@ -185,6 +234,8 @@ let defaultState: state = {
     source: Client__State__Types.None,
     saveStatus: Client__State__Types.Idle,
   },
+  modelsConfig: None,
+  selectedModel: loadSelectedModelFromStorage(), // Load from localStorage on init
 }
 
 let actionToString = action => {
@@ -234,6 +285,9 @@ let actionToString = action => {
   | OpenRouterKeySaved => `OpenRouterKeySaved`
   | OpenRouterKeySaveError({error}) => `OpenRouterKeySaveError(${error})`
   | ResetOpenRouterKeySaveStatus => `ResetOpenRouterKeySaveStatus`
+  | FetchModelsConfig => `FetchModelsConfig`
+  | ModelsConfigReceived(_) => `ModelsConfigReceived`
+  | SetSelectedModel({model}) => `SetSelectedModel(${model.provider}:${model.value})`
   }
 }
 
@@ -386,6 +440,28 @@ module Selectors = {
   let openrouterKeySettings = (state: state): Client__State__Types.apiKeySettings => {
     state.openrouterKeySettings
   }
+
+  // Get models config
+  let modelsConfig = (state: state): option<Client__State__Types.modelsConfig> => {
+    state.modelsConfig
+  }
+
+  // Get selected model
+  let selectedModel = (state: state): option<Client__State__Types.selectedModel> => {
+    state.selectedModel
+  }
+
+  // Get display name for currently selected model
+  let selectedModelDisplayName = (state: state): option<string> => {
+    switch (state.selectedModel, state.modelsConfig) {
+    | (Some(selected), Some(config)) =>
+      config.providers
+      ->Array.flatMap(provider => provider.models)
+      ->Array.find(model => model.value == selected.value)
+      ->Option.map(model => model.displayName)
+    | _ => None
+    }
+  }
 }
 
 let handleEffect = (effect, state: state, dispatch) => {
@@ -406,7 +482,30 @@ let handleEffect = (effect, state: state, dispatch) => {
 
       // Include runtime config metadata (e.g., openrouterKeyValue) with each prompt
       let runtimeConfig = Client__RuntimeConfig.read()
-      let metadata = Client__RuntimeConfig.toMetadata(runtimeConfig)
+      let baseMetadata = Client__RuntimeConfig.toMetadata(runtimeConfig)
+
+      // Add selected model to metadata if present
+      let metadata = switch state.selectedModel {
+      | Some(model) =>
+        let modelJson: JSON.t = %raw(`(function(provider, value) {
+          return { provider: provider, value: value };
+        })`)(model.provider, model.value)
+        switch baseMetadata {
+        | Some(meta) =>
+          switch meta->JSON.Decode.object {
+          | Some(dict) =>
+            let newDict = dict->Dict.copy
+            newDict->Dict.set("model", modelJson)
+            Some(newDict->Obj.magic)
+          | None => baseMetadata
+          }
+        | None =>
+          let dict = Dict.make()
+          dict->Dict.set("model", modelJson)
+          Some(dict->Obj.magic)
+        }
+      | None => baseMetadata
+      }
 
       sendPrompt(
         message,
@@ -629,6 +728,81 @@ let handleEffect = (effect, state: state, dispatch) => {
       }
     }
     save()->ignore
+  | FetchModelsConfigEffect({apiBaseUrl}) =>
+    let fetch = async () => {
+      let url = `${apiBaseUrl}/api/models`
+
+      try {
+        let response = await WebAPI.Global.fetch(url, ~init={credentials: Include})
+        if response.ok {
+          let json = await response->WebAPI.Response.json
+
+          // Parse the JSON to extract models config
+          let getString = (dict, key) =>
+            dict->Dict.get(key)->Option.flatMap(JSON.Decode.string)
+
+          let parseModel = (json): option<Client__State__Types.modelConfig> => {
+            switch json->JSON.Decode.object {
+            | Some(dict) =>
+              switch (getString(dict, "displayName"), getString(dict, "value")) {
+              | (Some(displayName), Some(value)) => Some({displayName, value})
+              | _ => None
+              }
+            | None => None
+            }
+          }
+
+          let parseProvider = (json): option<Client__State__Types.providerConfig> => {
+            switch json->JSON.Decode.object {
+            | Some(dict) =>
+              switch (
+                getString(dict, "id"),
+                getString(dict, "name"),
+                dict->Dict.get("models")->Option.flatMap(JSON.Decode.array),
+              ) {
+              | (Some(id), Some(name), Some(modelsJson)) =>
+                let models = modelsJson->Array.filterMap(parseModel)
+                Some({id, name, models})
+              | _ => None
+              }
+            | None => None
+            }
+          }
+
+          let parseDefaultModel = (json): option<Client__State__Types.modelsConfigDefaultModel> => {
+            switch json->JSON.Decode.object {
+            | Some(dict) =>
+              switch (getString(dict, "provider"), getString(dict, "value")) {
+              | (Some(provider), Some(value)) => Some({provider, value})
+              | _ => None
+              }
+            | None => None
+            }
+          }
+
+          switch json->JSON.Decode.object {
+          | Some(dict) =>
+            switch (
+              dict->Dict.get("providers")->Option.flatMap(JSON.Decode.array),
+              dict->Dict.get("defaultModel")->Option.flatMap(parseDefaultModel),
+            ) {
+            | (Some(providersJson), Some(defaultModel)) =>
+              let providers = providersJson->Array.filterMap(parseProvider)
+              let config: Client__State__Types.modelsConfig = {
+                providers,
+                defaultModel,
+              }
+              dispatch(ModelsConfigReceived({config: config}))
+            | _ => ()
+            }
+          | None => ()
+          }
+        }
+      } catch {
+      | _ => ()
+      }
+    }
+    fetch()->ignore
   }
 }
 
@@ -1034,7 +1208,10 @@ let next = (state, action) => {
         state.currentTaskId
         ->Option.map(taskId => [StartInitializationTimeout({taskId, timeoutMs: 3000})])
         ->Option.getOr([]),
-        [FetchUsageInfo({apiBaseUrl: apiBaseUrl})],
+        [
+          FetchUsageInfo({apiBaseUrl: apiBaseUrl}),
+          FetchModelsConfigEffect({apiBaseUrl: apiBaseUrl}),
+        ],
       ),
     )
 
@@ -1143,5 +1320,37 @@ let next = (state, action) => {
         saveStatus: Idle,
       },
     }->FrontmanReactStatestore.StateReducer.update
+
+  // Model selection actions
+  | FetchModelsConfig =>
+    switch state.apiBaseUrl {
+    | Some(apiBaseUrl) =>
+      state->FrontmanReactStatestore.StateReducer.update(
+        ~sideEffects=[FetchModelsConfigEffect({apiBaseUrl: apiBaseUrl})],
+      )
+    | None => state->FrontmanReactStatestore.StateReducer.update
+    }
+
+  | ModelsConfigReceived({config}) =>
+    // Set models config and initialize selected model if not already set
+    let selectedModel = switch state.selectedModel {
+    | Some(model) => Some(model)
+    | None =>
+      // Use default model from config
+      Some({
+        provider: config.defaultModel.provider,
+        value: config.defaultModel.value,
+      }: Client__State__Types.selectedModel)
+    }
+    {
+      ...state,
+      modelsConfig: Some(config),
+      selectedModel,
+    }->FrontmanReactStatestore.StateReducer.update
+
+  | SetSelectedModel({model}) =>
+    // Save to localStorage for persistence
+    saveSelectedModelToStorage(model)
+    {...state, selectedModel: Some(model)}->FrontmanReactStatestore.StateReducer.update
   }
 }

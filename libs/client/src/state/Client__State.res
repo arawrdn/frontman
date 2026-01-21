@@ -121,4 +121,10 @@ module Actions = {
 
   let resetOpenRouterKeySaveStatus = () =>
     Client__State__Store.dispatch(ResetOpenRouterKeySaveStatus)
+
+  // Model selection action creators
+  let fetchModelsConfig = () => Client__State__Store.dispatch(FetchModelsConfig)
+
+  let setSelectedModel = (~provider, ~value) =>
+    Client__State__Store.dispatch(SetSelectedModel({model: {provider, value}}))
 }

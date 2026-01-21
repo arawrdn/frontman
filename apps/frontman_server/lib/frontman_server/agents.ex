@@ -64,8 +64,12 @@ defmodule FrontmanServer.Agents do
           {:ok, pid()} | {:error, :no_api_key | :usage_limit_exceeded | term()}
   def start_agent(%Scope{} = scope, task_id, opts \\ []) do
     tools = Keyword.get(opts, :tools, [])
-    model = Keyword.get(opts, :model)
+    model_config = Keyword.get(opts, :model)
     env_api_key = Keyword.get(opts, :env_api_key, %{})
+
+    # Build model string from config: "provider:model_value"
+    # e.g., %{provider: "openrouter", value: "google/gemini-3-flash-preview"} -> "openrouter:google/gemini-3-flash-preview"
+    model = build_model_string(model_config)
 
     # Resolve API key at the domain layer (earliest point)
     case Providers.prepare_api_key(scope, model, env_api_key) do
@@ -200,6 +204,15 @@ defmodule FrontmanServer.Agents do
 
   defp error_message(reason),
     do: inspect(reason)
+
+  # Build model string from config map: "provider:model_value"
+  # e.g., %{provider: "openrouter", value: "google/gemini-3-flash-preview"} -> "openrouter:google/gemini-3-flash-preview"
+  defp build_model_string(%{provider: provider, value: value})
+       when is_binary(provider) and is_binary(value) do
+    "#{provider}:#{value}"
+  end
+
+  defp build_model_string(_), do: nil
 
   # Private Functions
 

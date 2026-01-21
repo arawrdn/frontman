@@ -154,6 +154,8 @@ let snapshotToState = (snapshot: Snapshot.t): StateTypes.state => {
       source: Client__State__Types.None,
       saveStatus: Client__State__Types.Idle,
     },
+    modelsConfig: None,
+    selectedModel: None,
   }
 }
 
