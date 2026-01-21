@@ -19,7 +19,7 @@ defmodule FrontmanServer.Providers do
   alias FrontmanServer.Repo
 
   alias FrontmanServer.Accounts.{Scope, User}
-  alias FrontmanServer.Providers.{ApiKey, ResolvedKey, UserKeyUsage}
+  alias FrontmanServer.Providers.{AnthropicOAuth, ApiKey, OAuthToken, ResolvedKey, UserKeyUsage}
 
   @default_model "openrouter:openai/gpt-5.1-codex"
 
@@ -54,21 +54,33 @@ defmodule FrontmanServer.Providers do
     provider = provider_from_model(model)
 
     case resolve_api_key(scope, provider, env_api_key) do
+      {:oauth_token, access_token, oauth_opts} ->
+        {:ok, ResolvedKey.new(provider, access_token, :oauth_token, model, oauth_opts)}
+
       {:user_key, key} ->
         {:ok, ResolvedKey.new(provider, key, :user_key, model)}
 
       {:env_key, key} ->
         {:ok, ResolvedKey.new(provider, key, :env_key, model)}
 
-      {:server_key, key} when is_binary(key) and key != "" ->
-        if scope == nil or has_remaining_usage?(scope, provider) do
-          {:ok, ResolvedKey.new(provider, key, :server_key, model)}
-        else
-          {:error, :usage_limit_exceeded}
-        end
+      {:server_key, key} ->
+        prepare_server_key(scope, provider, key, model)
+    end
+  end
 
-      {:server_key, _} ->
-        {:error, :no_api_key}
+  defp prepare_server_key(_scope, _provider, key, _model) when not is_binary(key) or key == "" do
+    {:error, :no_api_key}
+  end
+
+  defp prepare_server_key(nil, provider, key, model) do
+    {:ok, ResolvedKey.new(provider, key, :server_key, model)}
+  end
+
+  defp prepare_server_key(scope, provider, key, model) do
+    if has_remaining_usage?(scope, provider) do
+      {:ok, ResolvedKey.new(provider, key, :server_key, model)}
+    else
+      {:error, :usage_limit_exceeded}
     end
   end
 
@@ -84,6 +96,7 @@ defmodule FrontmanServer.Providers do
   def record_usage(nil, %ResolvedKey{}), do: :ok
   def record_usage(_scope, %ResolvedKey{key_source: :user_key}), do: :ok
   def record_usage(_scope, %ResolvedKey{key_source: :env_key}), do: :ok
+  def record_usage(_scope, %ResolvedKey{key_source: :oauth_token}), do: :ok
 
   def record_usage(%Scope{} = scope, %ResolvedKey{key_source: :server_key, provider: provider}) do
     case increment_usage(scope, provider) do
@@ -243,14 +256,21 @@ defmodule FrontmanServer.Providers do
 
   def resolve_api_key(%Scope{} = scope, provider, env_api_key)
       when is_binary(provider) and is_map(env_api_key) do
-    # First check user's saved key
-    case get_api_key_value(scope, provider) do
-      key when is_binary(key) and key != "" ->
-        {:user_key, key}
+    # For Anthropic, check OAuth token first (highest priority)
+    case maybe_resolve_oauth_token(scope, provider) do
+      {:oauth_token, _, _} = result ->
+        result
 
-      _ ->
-        # Then check env key (from project environment)
-        resolve_env_or_server_key(provider, env_api_key)
+      :no_oauth_token ->
+        # Then check user's saved API key
+        case get_api_key_value(scope, provider) do
+          key when is_binary(key) and key != "" ->
+            {:user_key, key}
+
+          _ ->
+            # Then check env key (from project environment)
+            resolve_env_or_server_key(provider, env_api_key)
+        end
     end
   end
 
@@ -258,6 +278,24 @@ defmodule FrontmanServer.Providers do
       when is_binary(provider) and is_map(env_api_key) do
     resolve_env_or_server_key(provider, env_api_key)
   end
+
+  # Claude Code identity for Anthropic OAuth
+  @claude_code_identity "You are Claude Code, Anthropic's official CLI for Claude."
+
+  # Check for OAuth token (currently only Anthropic supports this)
+  # Returns OAuth-specific transformation options for Claude Code
+  defp maybe_resolve_oauth_token(scope, "anthropic") do
+    case get_valid_oauth_token(scope, "anthropic") do
+      {:ok, access_token} ->
+        {:oauth_token, access_token,
+         requires_mcp_prefix: true, identity_override: @claude_code_identity, oauth_mode: true}
+
+      {:error, _} ->
+        :no_oauth_token
+    end
+  end
+
+  defp maybe_resolve_oauth_token(_scope, _provider), do: :no_oauth_token
 
   # Check env key first, then fall back to server env key
   defp resolve_env_or_server_key(provider, env_api_key) when is_map(env_api_key) do
@@ -279,6 +317,114 @@ defmodule FrontmanServer.Providers do
       "google" -> Application.get_env(:frontman_server, :google_api_key)
       "openai" -> Application.get_env(:frontman_server, :openai_api_key)
       _ -> nil
+    end
+  end
+
+  ## OAuth Token Management
+
+  @doc """
+  Stores or updates an OAuth token for a provider.
+  """
+  def upsert_oauth_token(
+        %Scope{user: %User{} = user},
+        provider,
+        access_token,
+        refresh_token,
+        expires_at
+      ) do
+    provider = String.downcase(provider)
+    # Build struct with user_id set explicitly (not via changeset for security)
+    oauth_token = %OAuthToken{user_id: user.id}
+
+    changeset =
+      OAuthToken.changeset(oauth_token, %{
+        provider: provider,
+        access_token: access_token,
+        refresh_token: refresh_token,
+        expires_at: expires_at
+      })
+
+    Repo.insert(
+      changeset,
+      on_conflict: {:replace, [:access_token, :refresh_token, :expires_at, :updated_at]},
+      conflict_target: [:user_id, :provider]
+    )
+  end
+
+  @doc """
+  Fetches an OAuth token for a provider (may be expired).
+  """
+  def get_oauth_token(%Scope{user: %User{} = user}, provider) do
+    OAuthToken
+    |> OAuthToken.for_user_and_provider(user.id, provider)
+    |> Repo.one()
+  end
+
+  @doc """
+  Returns true if the user has an OAuth token stored for the provider.
+  """
+  @spec has_oauth_token?(Scope.t(), String.t()) :: boolean()
+  def has_oauth_token?(%Scope{} = scope, provider) do
+    case get_oauth_token(scope, provider) do
+      %OAuthToken{} -> true
+      nil -> false
+    end
+  end
+
+  @doc """
+  Returns a valid (non-expired) OAuth access token, refreshing if needed.
+
+  Returns `{:ok, access_token}` or `{:error, reason}`.
+  """
+  def get_valid_oauth_token(%Scope{} = scope, provider) do
+    case get_oauth_token(scope, provider) do
+      nil ->
+        {:error, :no_oauth_token}
+
+      %OAuthToken{} = token ->
+        if OAuthToken.expired?(token) do
+          refresh_oauth_token(scope, token)
+        else
+          {:ok, token.access_token}
+        end
+    end
+  end
+
+  @doc """
+  Refreshes an OAuth token and updates the stored values.
+
+  Returns `{:ok, new_access_token}` or `{:error, reason}`.
+  """
+  def refresh_oauth_token(%Scope{} = scope, %OAuthToken{} = token) do
+    case AnthropicOAuth.refresh_token(token.refresh_token) do
+      {:ok, new_tokens} ->
+        expires_at = AnthropicOAuth.calculate_expires_at(new_tokens.expires_in)
+
+        case upsert_oauth_token(
+               scope,
+               token.provider,
+               new_tokens.access_token,
+               new_tokens.refresh_token,
+               expires_at
+             ) do
+          {:ok, _} -> {:ok, new_tokens.access_token}
+          {:error, reason} -> {:error, {:failed_to_store_refreshed_token, reason}}
+        end
+
+      {:error, reason} ->
+        {:error, {:refresh_failed, reason}}
+    end
+  end
+
+  @doc """
+  Deletes an OAuth token for a provider.
+  """
+  def delete_oauth_token(%Scope{user: %User{} = user}, provider) do
+    query = OAuthToken.for_user_and_provider(OAuthToken, user.id, provider)
+
+    case Repo.delete_all(query) do
+      {0, _} -> {:error, :not_found}
+      {_, _} -> :ok
     end
   end
 end

@@ -68,7 +68,8 @@ defmodule FrontmanServer.Agents do
     env_api_key = Keyword.get(opts, :env_api_key, %{})
 
     # Build model string from config: "provider:model_value"
-    # e.g., %{provider: "openrouter", value: "google/gemini-3-flash-preview"} -> "openrouter:google/gemini-3-flash-preview"
+    # e.g., %{provider: "openrouter", value: "google/gemini-3-flash-preview"}
+    #    -> "openrouter:google/gemini-3-flash-preview"
     model = build_model_string(model_config)
 
     # Resolve API key at the domain layer (earliest point)
@@ -127,6 +128,23 @@ defmodule FrontmanServer.Agents do
         figma_node_id = Tasks.get_figma_node_id(scope, task_id)
         framework = get_framework(scope, task_id)
 
+        # Fetch discovered project rules (AGENTS.md, etc.)
+        project_rules =
+          case Tasks.get_discovered_project_rules(scope, task_id) do
+            {:ok, rules} -> rules
+            {:error, _} -> []
+          end
+
+        # Build llm_opts with resolved key info
+        # LLM transformation flags (requires_mcp_prefix, identity_override) come from ResolvedKey
+        # oauth_mode tells ReqLLM to use Bearer token auth instead of x-api-key
+        llm_opts = [
+          api_key: resolved_key.api_key,
+          requires_mcp_prefix: resolved_key.requires_mcp_prefix,
+          identity_override: resolved_key.identity_override,
+          oauth_mode: resolved_key.oauth_mode
+        ]
+
         # Create RootAgent with context
         # API key is passed via llm_opts - no scope/env_api_key needed
         RootAgent.new(
@@ -136,7 +154,8 @@ defmodule FrontmanServer.Agents do
           figma_node_id: figma_node_id,
           framework: framework,
           model: resolved_key.model,
-          llm_opts: [api_key: resolved_key.api_key]
+          llm_opts: llm_opts,
+          project_rules: project_rules
         )
 
       custom_agent ->
@@ -206,7 +225,8 @@ defmodule FrontmanServer.Agents do
     do: inspect(reason)
 
   # Build model string from config map: "provider:model_value"
-  # e.g., %{provider: "openrouter", value: "google/gemini-3-flash-preview"} -> "openrouter:google/gemini-3-flash-preview"
+  # e.g., %{provider: "openrouter", value: "google/gemini-3-flash-preview"}
+  #    -> "openrouter:google/gemini-3-flash-preview"
   defp build_model_string(%{provider: provider, value: value})
        when is_binary(provider) and is_binary(value) do
     "#{provider}:#{value}"

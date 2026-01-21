@@ -12,16 +12,23 @@ let make = (~open_: bool, ~onOpenChange: bool => unit) => {
   let framework = runtimeConfig.framework->Option.getOr("Unknown")
   let (activeTab, setActiveTab) = React.useState(() => "general")
   let (openrouterKey, setOpenrouterKey) = React.useState(() => "")
+  let (oauthCode, setOauthCode) = React.useState(() => "")
 
   // Get API key settings from state
   let keySettings = State.useSelector(State.Selectors.openrouterKeySettings)
+
+  // Get Anthropic OAuth status from state
+  let anthropicOAuthStatus = State.useSelector(State.Selectors.anthropicOAuthStatus)
 
   // Fetch API key settings when modal opens
   React.useEffect(() => {
     if open_ {
       State.Actions.fetchApiKeySettings()
+      State.Actions.fetchAnthropicOAuthStatus()
       State.Actions.resetOpenRouterKeySaveStatus()
+      State.Actions.resetAnthropicOAuthError()
       setOpenrouterKey(_ => "")
+      setOauthCode(_ => "")
     }
     None
   }, [open_])
@@ -113,6 +120,141 @@ let make = (~open_: bool, ~onOpenChange: bool => unit) => {
                 </div>
               </div>
             : <div className="space-y-6">
+                // Anthropic OAuth Section
+                <div className="text-sm text-zinc-400"> {React.string("Connect your account")} </div>
+                <div className="rounded-lg border border-zinc-800 bg-zinc-900/40 px-4 py-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-semibold text-zinc-100">
+                        {React.string("Anthropic Claude Pro/Max")}
+                      </span>
+                      {switch anthropicOAuthStatus {
+                      | Types.Connected(_) =>
+                        <span
+                          className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[11px] font-semibold text-emerald-200">
+                          {React.string("Connected")}
+                        </span>
+                      | Types.FetchingStatus | Types.Authorizing(_) | Types.Exchanging =>
+                        <span
+                          className="rounded-full bg-amber-500/20 px-2 py-0.5 text-[11px] font-semibold text-amber-200">
+                          {React.string("Connecting...")}
+                        </span>
+                      | Types.Error(_) =>
+                        <span
+                          className="rounded-full bg-red-500/20 px-2 py-0.5 text-[11px] font-semibold text-red-200">
+                          {React.string("Error")}
+                        </span>
+                      | Types.NotConnected =>
+                        <span
+                          className="rounded-full bg-zinc-700/50 px-2 py-0.5 text-[11px] font-semibold text-zinc-400">
+                          {React.string("Not connected")}
+                        </span>
+                      }}
+                    </div>
+                    <a
+                      href="https://console.anthropic.com/settings/oauth"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-xs text-zinc-400 hover:text-zinc-200">
+                      {React.string("Manage connections")}
+                    </a>
+                  </div>
+
+                  <div className="mt-2 text-xs text-zinc-500">
+                    {React.string("Use your Claude Pro or Max subscription to power Frontman.")}
+                  </div>
+
+                  <div className="mt-3">
+                    {switch anthropicOAuthStatus {
+                    | Types.NotConnected =>
+                      <Button.Button
+                        variant=#secondary
+                        onClick={_ => State.Actions.initiateAnthropicOAuth()}>
+                        {React.string("Connect with Anthropic")}
+                      </Button.Button>
+                    | Types.FetchingStatus =>
+                      <Button.Button variant=#secondary disabled={true}>
+                        {React.string("Checking status...")}
+                      </Button.Button>
+                    | Types.Authorizing({authorizeUrl, verifier}) =>
+                      <div className="space-y-3">
+                        <div className="text-xs text-zinc-400">
+                          {React.string("1. Click the button below to authorize with Anthropic")}
+                        </div>
+                        <a
+                          href={authorizeUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-2 rounded-md bg-amber-600 px-3 py-2 text-sm font-medium text-white hover:bg-amber-500">
+                          {React.string("Open Anthropic Authorization")}
+                          <Icons.OpenInNewWindowIcon className="size-4" />
+                        </a>
+                        <div className="text-xs text-zinc-400">
+                          {React.string("2. After authorizing, copy the code and paste it below")}
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <Input.Input
+                            type_=#text
+                            placeholder="Paste authorization code here"
+                            value={oauthCode}
+                            onChange={e => {
+                              let target = ReactEvent.Form.target(e)
+                              setOauthCode(_ => target["value"])
+                            }}
+                            className="flex-1 min-w-0 font-mono text-xs"
+                          />
+                          <Button.Button
+                            variant=#secondary
+                            disabled={String.trim(oauthCode) == ""}
+                            onClick={_ => {
+                              State.Actions.exchangeAnthropicOAuthCode(
+                                ~code=String.trim(oauthCode),
+                                ~verifier,
+                              )
+                              setOauthCode(_ => "")
+                            }}>
+                            {React.string("Submit")}
+                          </Button.Button>
+                        </div>
+                      </div>
+                    | Types.Exchanging =>
+                      <div className="flex items-center gap-2 text-sm text-zinc-400">
+                        <span
+                          className="inline-block size-4 animate-spin rounded-full border-2 border-zinc-600 border-t-zinc-300"
+                        />
+                        {React.string("Connecting...")}
+                      </div>
+                    | Types.Connected({expiresAt}) => {
+                        let expiryDate = Date.fromTime(expiresAt)
+                        let expiryStr = Intl.DateTimeFormat.make()->Intl.DateTimeFormat.format(expiryDate)
+                        <div className="space-y-2">
+                          <div className="text-xs text-zinc-500">
+                            {React.string(`Token expires: ${expiryStr}`)}
+                          </div>
+                          <Button.Button
+                            variant=#secondary
+                            onClick={_ => State.Actions.disconnectAnthropicOAuth()}>
+                            {React.string("Disconnect")}
+                          </Button.Button>
+                        </div>
+                      }
+                    | Types.Error(msg) =>
+                      <div className="space-y-2">
+                        <div className="text-xs text-red-400"> {React.string(msg)} </div>
+                        <Button.Button
+                          variant=#secondary
+                          onClick={_ => {
+                            State.Actions.resetAnthropicOAuthError()
+                            State.Actions.initiateAnthropicOAuth()
+                          }}>
+                          {React.string("Try again")}
+                        </Button.Button>
+                      </div>
+                    }}
+                  </div>
+                </div>
+
+                // OpenRouter API Key Section
                 <div className="text-sm text-zinc-400"> {React.string("Bring your own key")} </div>
                 <div className="rounded-lg border border-zinc-800 bg-zinc-900/40 px-4 py-4">
                   <div className="flex items-center justify-between">

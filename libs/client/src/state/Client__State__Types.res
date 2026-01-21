@@ -496,6 +496,15 @@ type selectedModel = {
   value: string,
 }
 
+// Anthropic OAuth connection status
+type anthropicOAuthStatus =
+  | NotConnected
+  | FetchingStatus
+  | Authorizing({authorizeUrl: string, verifier: string})
+  | Exchanging
+  | Connected({expiresAt: float})
+  | Error(string)
+
 type state = {
   tasks: Dict.t<Task.t>,
   currentTaskId: option<string>,
@@ -504,6 +513,7 @@ type state = {
   usageInfo: option<usageInfo>,
   apiBaseUrl: option<string>,
   openrouterKeySettings: apiKeySettings,
+  anthropicOAuthStatus: anthropicOAuthStatus,
   modelsConfig: option<modelsConfig>,
   selectedModel: option<selectedModel>,
 }

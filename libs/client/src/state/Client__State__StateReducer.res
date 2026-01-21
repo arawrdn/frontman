@@ -143,6 +143,17 @@ type action =
   | FetchModelsConfig
   | ModelsConfigReceived({config: Client__State__Types.modelsConfig})
   | SetSelectedModel({model: Client__State__Types.selectedModel})
+  // Anthropic OAuth actions
+  | FetchAnthropicOAuthStatus
+  | AnthropicOAuthStatusReceived({connected: bool, expiresAt: option<string>})
+  | InitiateAnthropicOAuth
+  | AnthropicOAuthUrlReceived({authorizeUrl: string, verifier: string})
+  | ExchangeAnthropicOAuthCode({code: string, verifier: string})
+  | AnthropicOAuthConnected({expiresAt: string})
+  | AnthropicOAuthError({error: string})
+  | DisconnectAnthropicOAuth
+  | AnthropicOAuthDisconnected
+  | ResetAnthropicOAuthError
 
 // Effects for side effects
 type effect =
@@ -153,6 +164,11 @@ type effect =
   | FetchApiKeySettingsEffect({apiBaseUrl: string})
   | SaveOpenRouterKeyEffect({apiBaseUrl: string, key: string})
   | FetchModelsConfigEffect({apiBaseUrl: string})
+  // Anthropic OAuth effects
+  | FetchAnthropicOAuthStatusEffect({apiBaseUrl: string})
+  | GetAnthropicOAuthUrlEffect({apiBaseUrl: string})
+  | ExchangeAnthropicOAuthCodeEffect({apiBaseUrl: string, code: string, verifier: string})
+  | DisconnectAnthropicOAuthEffect({apiBaseUrl: string})
 
 let getInitialUrl = () => {
   let entrypointUrl =
@@ -227,6 +243,7 @@ let defaultState: state = {
     source: Client__State__Types.None,
     saveStatus: Client__State__Types.Idle,
   },
+  anthropicOAuthStatus: Client__State__Types.NotConnected,
   modelsConfig: None,
   selectedModel: loadSelectedModelFromStorage(), // Load from localStorage on init
 }
@@ -281,6 +298,17 @@ let actionToString = action => {
   | FetchModelsConfig => `FetchModelsConfig`
   | ModelsConfigReceived(_) => `ModelsConfigReceived`
   | SetSelectedModel({model}) => `SetSelectedModel(${model.provider}:${model.value})`
+  | FetchAnthropicOAuthStatus => `FetchAnthropicOAuthStatus`
+  | AnthropicOAuthStatusReceived({connected}) =>
+    `AnthropicOAuthStatusReceived(connected=${connected->string_of_bool})`
+  | InitiateAnthropicOAuth => `InitiateAnthropicOAuth`
+  | AnthropicOAuthUrlReceived(_) => `AnthropicOAuthUrlReceived`
+  | ExchangeAnthropicOAuthCode(_) => `ExchangeAnthropicOAuthCode`
+  | AnthropicOAuthConnected({expiresAt}) => `AnthropicOAuthConnected(${expiresAt})`
+  | AnthropicOAuthError({error}) => `AnthropicOAuthError(${error})`
+  | DisconnectAnthropicOAuth => `DisconnectAnthropicOAuth`
+  | AnthropicOAuthDisconnected => `AnthropicOAuthDisconnected`
+  | ResetAnthropicOAuthError => `ResetAnthropicOAuthError`
   }
 }
 
@@ -454,6 +482,11 @@ module Selectors = {
       ->Option.map(model => model.displayName)
     | _ => None
     }
+  }
+
+  // Get Anthropic OAuth status
+  let anthropicOAuthStatus = (state: state): Client__State__Types.anthropicOAuthStatus => {
+    state.anthropicOAuthStatus
   }
 }
 
@@ -716,6 +749,117 @@ let handleEffect = (effect, state: state, dispatch) => {
       }
     }
     fetch()->ignore
+
+  | FetchAnthropicOAuthStatusEffect({apiBaseUrl}) =>
+    let fetch = async () => {
+      let url = `${apiBaseUrl}/api/oauth/anthropic/status`
+
+      try {
+        let response = await WebAPI.Global.fetch(url, ~init={credentials: Include})
+        if response.ok {
+          let json = await response->WebAPI.Response.json
+          let connected = json->JSON.Decode.object->Option.flatMap(obj =>
+            obj->Dict.get("connected")->Option.flatMap(JSON.Decode.bool)
+          )->Option.getOr(false)
+          let expiresAt = json->JSON.Decode.object->Option.flatMap(obj =>
+            obj->Dict.get("expires_at")->Option.flatMap(JSON.Decode.string)
+          )
+          dispatch(AnthropicOAuthStatusReceived({connected, expiresAt}))
+        }
+      } catch {
+      | _ => dispatch(AnthropicOAuthError({error: "Failed to fetch OAuth status"}))
+      }
+    }
+    fetch()->ignore
+
+  | GetAnthropicOAuthUrlEffect({apiBaseUrl}) =>
+    let fetch = async () => {
+      let url = `${apiBaseUrl}/api/oauth/anthropic/authorize-url`
+
+      try {
+        let response = await WebAPI.Global.fetch(url, ~init={credentials: Include})
+        if response.ok {
+          let json = await response->WebAPI.Response.json
+          let authorizeUrl = json->JSON.Decode.object->Option.flatMap(obj =>
+            obj->Dict.get("authorize_url")->Option.flatMap(JSON.Decode.string)
+          )
+          let verifier = json->JSON.Decode.object->Option.flatMap(obj =>
+            obj->Dict.get("verifier")->Option.flatMap(JSON.Decode.string)
+          )
+          switch (authorizeUrl, verifier) {
+          | (Some(authorizeUrl), Some(verifier)) =>
+            dispatch(AnthropicOAuthUrlReceived({authorizeUrl, verifier}))
+          | _ => dispatch(AnthropicOAuthError({error: "Invalid response from server"}))
+          }
+        } else {
+          dispatch(AnthropicOAuthError({error: "Failed to get authorization URL"}))
+        }
+      } catch {
+      | _ => dispatch(AnthropicOAuthError({error: "Failed to get authorization URL"}))
+      }
+    }
+    fetch()->ignore
+
+  | ExchangeAnthropicOAuthCodeEffect({apiBaseUrl, code, verifier}) =>
+    let exchange = async () => {
+      let url = `${apiBaseUrl}/api/oauth/anthropic/exchange`
+
+      try {
+        let body = JSON.Encode.object(
+          Dict.fromArray([
+            ("code", JSON.Encode.string(code)),
+            ("verifier", JSON.Encode.string(verifier)),
+          ])
+        )
+        let response = await WebAPI.Global.fetch(url, ~init={
+          method: "POST",
+          credentials: Include,
+          headers: WebAPI.HeadersInit.fromDict(
+            Dict.fromArray([("Content-Type", "application/json")]),
+          ),
+          body: WebAPI.BodyInit.fromString(JSON.stringify(body)),
+        })
+        if response.ok {
+          let json = await response->WebAPI.Response.json
+          let expiresAt = json->JSON.Decode.object->Option.flatMap(obj =>
+            obj->Dict.get("expires_at")->Option.flatMap(JSON.Decode.string)
+          )
+          switch expiresAt {
+          | Some(expiresAt) => dispatch(AnthropicOAuthConnected({expiresAt: expiresAt}))
+          | None => dispatch(AnthropicOAuthError({error: "Invalid response from server"}))
+          }
+        } else {
+          let json = await response->WebAPI.Response.json
+          let error = json->JSON.Decode.object->Option.flatMap(obj =>
+            obj->Dict.get("error")->Option.flatMap(JSON.Decode.string)
+          )->Option.getOr("Failed to exchange code")
+          dispatch(AnthropicOAuthError({error: error}))
+        }
+      } catch {
+      | _ => dispatch(AnthropicOAuthError({error: "Failed to exchange authorization code"}))
+      }
+    }
+    exchange()->ignore
+
+  | DisconnectAnthropicOAuthEffect({apiBaseUrl}) =>
+    let disconnect = async () => {
+      let url = `${apiBaseUrl}/api/oauth/anthropic/disconnect`
+
+      try {
+        let response = await WebAPI.Global.fetch(url, ~init={
+          method: "DELETE",
+          credentials: Include,
+        })
+        if response.ok {
+          dispatch(AnthropicOAuthDisconnected)
+        } else {
+          dispatch(AnthropicOAuthError({error: "Failed to disconnect"}))
+        }
+      } catch {
+      | _ => dispatch(AnthropicOAuthError({error: "Failed to disconnect"}))
+      }
+    }
+    disconnect()->ignore
   }
 }
 
@@ -1265,5 +1409,95 @@ let next = (state, action) => {
     // Save to localStorage for persistence
     saveSelectedModelToStorage(model)
     {...state, selectedModel: Some(model)}->FrontmanReactStatestore.StateReducer.update
+
+  // Anthropic OAuth actions
+  | FetchAnthropicOAuthStatus =>
+    switch state.apiBaseUrl {
+    | Some(apiBaseUrl) =>
+      {
+        ...state,
+        anthropicOAuthStatus: Client__State__Types.FetchingStatus,
+      }->FrontmanReactStatestore.StateReducer.update(
+        ~sideEffects=[FetchAnthropicOAuthStatusEffect({apiBaseUrl: apiBaseUrl})],
+      )
+    | None => state->FrontmanReactStatestore.StateReducer.update
+    }
+
+  | AnthropicOAuthStatusReceived({connected, expiresAt}) =>
+    let status = if connected {
+      switch expiresAt {
+      | Some(expiresAtStr) =>
+        // Parse ISO8601 date string to timestamp
+        let expiresAtMs = Date.fromString(expiresAtStr)->Date.getTime
+        Client__State__Types.Connected({expiresAt: expiresAtMs})
+      | None => Client__State__Types.Connected({expiresAt: 0.0})
+      }
+    } else {
+      Client__State__Types.NotConnected
+    }
+    {...state, anthropicOAuthStatus: status}->FrontmanReactStatestore.StateReducer.update
+
+  | InitiateAnthropicOAuth =>
+    switch state.apiBaseUrl {
+    | Some(apiBaseUrl) =>
+      state->FrontmanReactStatestore.StateReducer.update(
+        ~sideEffects=[GetAnthropicOAuthUrlEffect({apiBaseUrl: apiBaseUrl})],
+      )
+    | None => state->FrontmanReactStatestore.StateReducer.update
+    }
+
+  | AnthropicOAuthUrlReceived({authorizeUrl, verifier}) =>
+    {
+      ...state,
+      anthropicOAuthStatus: Client__State__Types.Authorizing({authorizeUrl, verifier}),
+    }->FrontmanReactStatestore.StateReducer.update
+
+  | ExchangeAnthropicOAuthCode({code, verifier}) =>
+    switch state.apiBaseUrl {
+    | Some(apiBaseUrl) =>
+      {
+        ...state,
+        anthropicOAuthStatus: Client__State__Types.Exchanging,
+      }->FrontmanReactStatestore.StateReducer.update(
+        ~sideEffects=[ExchangeAnthropicOAuthCodeEffect({apiBaseUrl, code, verifier})],
+      )
+    | None => state->FrontmanReactStatestore.StateReducer.update
+    }
+
+  | AnthropicOAuthConnected({expiresAt}) =>
+    let expiresAtMs = Date.fromString(expiresAt)->Date.getTime
+    {
+      ...state,
+      anthropicOAuthStatus: Client__State__Types.Connected({expiresAt: expiresAtMs}),
+    }->FrontmanReactStatestore.StateReducer.update
+
+  | AnthropicOAuthError({error}) =>
+    {
+      ...state,
+      anthropicOAuthStatus: Client__State__Types.Error(error),
+    }->FrontmanReactStatestore.StateReducer.update
+
+  | DisconnectAnthropicOAuth =>
+    switch state.apiBaseUrl {
+    | Some(apiBaseUrl) =>
+      state->FrontmanReactStatestore.StateReducer.update(
+        ~sideEffects=[DisconnectAnthropicOAuthEffect({apiBaseUrl: apiBaseUrl})],
+      )
+    | None => state->FrontmanReactStatestore.StateReducer.update
+    }
+
+  | AnthropicOAuthDisconnected =>
+    {
+      ...state,
+      anthropicOAuthStatus: Client__State__Types.NotConnected,
+    }->FrontmanReactStatestore.StateReducer.update
+
+  | ResetAnthropicOAuthError =>
+    // Reset error state back to NotConnected
+    switch state.anthropicOAuthStatus {
+    | Client__State__Types.Error(_) =>
+      {...state, anthropicOAuthStatus: Client__State__Types.NotConnected}->FrontmanReactStatestore.StateReducer.update
+    | _ => state->FrontmanReactStatestore.StateReducer.update
+    }
   }
 }

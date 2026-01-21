@@ -17,6 +17,7 @@ defmodule FrontmanServer.Accounts.User do
     field(:authenticated_at, :utc_datetime, virtual: true)
 
     has_many(:api_keys, FrontmanServer.Providers.ApiKey)
+    has_many(:oauth_tokens, FrontmanServer.Providers.OAuthToken)
     has_many(:key_usages, FrontmanServer.Providers.UserKeyUsage)
     has_many(:memberships, FrontmanServer.Organizations.Membership)
     has_many(:organizations, through: [:memberships, :organization])

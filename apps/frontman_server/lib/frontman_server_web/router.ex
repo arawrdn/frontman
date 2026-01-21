@@ -40,6 +40,12 @@ defmodule FrontmanServerWeb.Router do
     post("/user/api-keys", UserApiKeyController, :create)
     get("/user/api-key-usage", UserApiKeyController, :usage)
     get("/models", ModelsController, :index)
+
+    # Anthropic OAuth routes
+    get("/oauth/anthropic/authorize-url", AnthropicOAuthController, :authorize_url)
+    post("/oauth/anthropic/exchange", AnthropicOAuthController, :exchange)
+    delete("/oauth/anthropic/disconnect", AnthropicOAuthController, :disconnect)
+    get("/oauth/anthropic/status", AnthropicOAuthController, :status)
   end
 
   # Organization-scoped routes

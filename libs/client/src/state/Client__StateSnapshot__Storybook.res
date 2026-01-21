@@ -154,6 +154,7 @@ let snapshotToState = (snapshot: Snapshot.t): StateTypes.state => {
       source: Client__State__Types.None,
       saveStatus: Client__State__Types.Idle,
     },
+    anthropicOAuthStatus: Client__State__Types.NotConnected,
     modelsConfig: None,
     selectedModel: None,
   }

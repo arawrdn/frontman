@@ -44,6 +44,7 @@ module TestHelpers = {
           source: Client__State__Types.None,
           saveStatus: Client__State__Types.Idle,
         },
+        anthropicOAuthStatus: Client__State__Types.NotConnected,
         modelsConfig: None,
         selectedModel: None,
       }: Client__State__Types.state
@@ -767,6 +768,7 @@ describe("Client State Reducer - Task Management Actions", () => {
         source: Client__State__Types.None,
         saveStatus: Client__State__Types.Idle,
       },
+      anthropicOAuthStatus: Client__State__Types.NotConnected,
       modelsConfig: None,
       selectedModel: None,
     }
@@ -813,6 +815,7 @@ describe("Client State Reducer - Task Management Actions", () => {
         source: Client__State__Types.None,
         saveStatus: Client__State__Types.Idle,
       },
+      anthropicOAuthStatus: Client__State__Types.NotConnected,
       modelsConfig: None,
       selectedModel: None,
     }
@@ -844,6 +847,7 @@ describe("Client State Reducer - Task Management Actions", () => {
         source: Client__State__Types.None,
         saveStatus: Client__State__Types.Idle,
       },
+      anthropicOAuthStatus: Client__State__Types.NotConnected,
       modelsConfig: None,
       selectedModel: None,
     }
@@ -871,6 +875,7 @@ describe("Client State Reducer - Task Management Actions", () => {
         source: Client__State__Types.None,
         saveStatus: Client__State__Types.Idle,
       },
+      anthropicOAuthStatus: Client__State__Types.NotConnected,
       modelsConfig: None,
       selectedModel: None,
     }

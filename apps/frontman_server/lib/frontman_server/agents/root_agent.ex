@@ -26,8 +26,11 @@ defmodule FrontmanServer.Agents.RootAgent do
     field(:figma_node_id, String.t() | nil, default: nil)
     field(:framework, String.t() | nil, default: nil)
     # llm_opts must include :api_key (resolved at domain layer)
+    # May also include :requires_mcp_prefix and :identity_override for OAuth
     field(:llm_opts, keyword(), default: [])
     field(:model, String.t() | nil, default: nil)
+    # Discovered project rules (AGENTS.md, etc.) to append to system prompt
+    field(:project_rules, list(), default: [])
   end
 
   @doc """
@@ -40,8 +43,10 @@ defmodule FrontmanServer.Agents.RootAgent do
   - `:has_selected_component` - Whether a component is selected in the codebase
   - `:figma_node_id` - The Figma node ID for breakdown_figma_design
   - `:framework` - Framework name (e.g., "nextjs") for framework-specific guidance
-  - `:llm_opts` - LLM options, must include `:api_key`
+  - `:llm_opts` - LLM options, must include `:api_key`. May include `:requires_mcp_prefix`
+    and `:identity_override` for OAuth transformations (handled by LLMClient).
   - `:model` - LLM model spec (defaults to LLMClient default)
+  - `:project_rules` - List of discovered project rules (AGENTS.md, etc.)
   """
   @spec new(keyword()) :: t()
   def new(opts \\ []) do
@@ -52,7 +57,8 @@ defmodule FrontmanServer.Agents.RootAgent do
       figma_node_id: Keyword.get(opts, :figma_node_id),
       framework: Keyword.get(opts, :framework),
       llm_opts: Keyword.get(opts, :llm_opts, []),
-      model: Keyword.get(opts, :model)
+      model: Keyword.get(opts, :model),
+      project_rules: Keyword.get(opts, :project_rules, [])
     }
   end
 end
@@ -61,11 +67,14 @@ defimpl Swarm.Agent, for: FrontmanServer.Agents.RootAgent do
   alias FrontmanServer.Agents.{LLMClient, Prompts, RootAgent}
 
   def system_prompt(%RootAgent{} = agent) do
+    # Build system prompt - always returns a string
+    # OAuth transformations (identity prepend, content splitting) are handled by LLMClient
     Prompts.build(
       has_figma_context: agent.has_figma_context,
       has_selected_component: agent.has_selected_component,
       figma_node_id: agent.figma_node_id,
-      framework: agent.framework
+      framework: agent.framework,
+      project_rules: agent.project_rules
     )
   end
 
