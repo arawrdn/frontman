@@ -7,6 +7,7 @@ module Protocol = FrontmanClient__ACP__Protocol
 module Channel = FrontmanClient__Phoenix__Channel
 module Socket = FrontmanClient__Phoenix__Socket
 module Constants = FrontmanClient__Transport__Constants
+module Sentry = FrontmanClient__Sentry
 
 type messageDirection = Protocol.messageDirection
 let send = Protocol.Send
@@ -113,13 +114,13 @@ type tokenError =
 // Fetch socket auth token from the server (for cross-origin auth)
 let fetchSocketToken = async (tokenUrl: string): result<string, tokenError> => {
   try {
-    let response = await WebAPI.Global.fetch(
-      tokenUrl,
-      ~init={credentials: Include},
-    )
+    let response = await WebAPI.Global.fetch(tokenUrl, ~init={credentials: Include})
     if response.ok {
       let json = await response->WebAPI.Response.json
-      switch json->JSON.Decode.object->Option.flatMap(obj => obj->Dict.get("token"))->Option.flatMap(JSON.Decode.string) {
+      switch json
+      ->JSON.Decode.object
+      ->Option.flatMap(obj => obj->Dict.get("token"))
+      ->Option.flatMap(JSON.Decode.string) {
       | Some(token) => Ok(token)
       | None => Error(InvalidResponse)
       }
@@ -138,12 +139,20 @@ let connect = async (config: config, ~signal: option<WebAPI.EventAPI.abortSignal
   connection,
   connectError,
 > => {
+  // Initialize Sentry on first connection
+  Sentry.initialize()
+  Sentry.addBreadcrumb(~category=#acp, ~message="Starting ACP connection")
+
   // Fetch socket token
   let tokenResult = switch await fetchSocketToken(config.tokenUrl) {
   | Ok(token) => Ok(token)
   | Error(NotAuthenticated) => Error(AuthRequired({loginUrl: config.loginUrl}))
-  | Error(FetchFailed(msg)) => Error(ConnectionFailed(`Token fetch failed: ${msg}`))
-  | Error(InvalidResponse) => Error(ConnectionFailed("Invalid token response"))
+  | Error(FetchFailed(msg)) =>
+    Sentry.captureConnectionError(`Token fetch failed: ${msg}`, ~endpoint=config.tokenUrl)
+    Error(ConnectionFailed(`Token fetch failed: ${msg}`))
+  | Error(InvalidResponse) =>
+    Sentry.captureConnectionError("Invalid token response", ~endpoint=config.tokenUrl)
+    Error(ConnectionFailed("Invalid token response"))
   }
 
   switch (tokenResult, checkAborted(signal)) {
@@ -172,11 +181,20 @@ let connect = async (config: config, ~signal: option<WebAPI.EventAPI.abortSignal
 
     let joinResult = switch (socketResult, checkAborted(signal)) {
     | (_, Error(_)) => Error(ConnectionFailed("Connection aborted"))
-    | (Error(e), _) => Error(ConnectionFailed(e))
+    | (Error(e), _) =>
+      Sentry.captureConnectionError(`Socket connection failed: ${e}`, ~endpoint=config.endpoint)
+      Error(ConnectionFailed(e))
     | (Ok(), Ok()) =>
+      Sentry.addBreadcrumb(~category=#acp, ~message="Socket connected, joining channel")
       switch await joinChannel(channel) {
       | Error(AuthRequired({loginUrl})) => Error(AuthRequired({loginUrl: loginUrl}))
-      | Error(JoinFailed(e)) => Error(ConnectionFailed(e))
+      | Error(JoinFailed(e)) =>
+        Sentry.captureProtocolError(
+          `Channel join failed: ${e}`,
+          ~protocol=#ACP,
+          ~operation="joinChannel",
+        )
+        Error(ConnectionFailed(e))
       | Ok() => Ok()
       }
     }
@@ -185,10 +203,24 @@ let connect = async (config: config, ~signal: option<WebAPI.EventAPI.abortSignal
     | (_, Error(_)) => Error(ConnectionFailed("Connection aborted"))
     | (Error(e), _) => Error(e)
     | (Ok(), Ok()) =>
-      switch await Protocol.sendInitialize(~channel, ~state, ~clientConfig, ~onMessage=config.onMessage) {
-      | Error(e) => Error(ConnectionFailed(e))
+      Sentry.addBreadcrumb(~category=#acp, ~message="Channel joined, sending initialize")
+      switch await Protocol.sendInitialize(
+        ~channel,
+        ~state,
+        ~clientConfig,
+        ~onMessage=config.onMessage,
+      ) {
+      | Error(e) =>
+        Sentry.captureProtocolError(
+          `ACP initialize failed: ${e}`,
+          ~protocol=#ACP,
+          ~operation="initialize",
+        )
+        Error(ConnectionFailed(e))
       | Ok(result) =>
-        state := state.contents->Client.reduce(Client.ConnectionStateChanged(Client.Initialized(result)))
+        Sentry.addBreadcrumb(~category=#acp, ~message="ACP initialized successfully")
+        state :=
+          state.contents->Client.reduce(Client.ConnectionStateChanged(Client.Initialized(result)))
         Ok({socket, channel, clientConfig, state, onMessage: config.onMessage})
       }
     }
@@ -243,17 +275,26 @@ let joinSession = async (
   let joinResult = await joinChannel(sessionChannel)
 
   joinResult
-  ->Result.mapError(err =>
-    switch err {
+  ->Result.mapError(err => {
+    let errMsg = switch err {
     | AuthRequired({loginUrl}) => `Auth required: ${loginUrl}`
     | JoinFailed(msg) => msg
     }
-  )
+    Sentry.captureProtocolError(
+      `Session join failed: ${errMsg}`,
+      ~protocol=#ACP,
+      ~operation="joinSession",
+    )
+    errMsg
+  })
   ->Result.map(_ => {
-    sessionId,
-    channel: sessionChannel,
-    connection: conn,
-    onUpdate,
+    Sentry.addBreadcrumb(~category=#session, ~message=`Joined session ${sessionId}`)
+    {
+      sessionId,
+      channel: sessionChannel,
+      connection: conn,
+      onUpdate,
+    }
   })
 }
 
@@ -265,6 +306,8 @@ let createSession = async (
   ~mcpServerInterface: option<MCPTypes.serverInterface<'server>>=?,
   ~onMcpMessage: option<(MCP.messageDirection, JSON.t) => unit>=?,
 ): result<session, string> => {
+  Sentry.addBreadcrumb(~category=#session, ~message="Creating new session")
+
   let sessionNewResult = await Protocol.sendSessionNew(
     ~channel=conn.channel,
     ~state=conn.state,
@@ -274,7 +317,13 @@ let createSession = async (
   switch sessionNewResult {
   | Ok(result) =>
     await joinSession(conn, result.sessionId, ~onUpdate, ~mcpServerInterface?, ~onMcpMessage?)
-  | Error(err) => Error(err)
+  | Error(err) =>
+    Sentry.captureProtocolError(
+      `Session creation failed: ${err}`,
+      ~protocol=#ACP,
+      ~operation="createSession",
+    )
+    Error(err)
   }
 }
 
