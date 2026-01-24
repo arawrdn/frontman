@@ -34,6 +34,22 @@ defmodule FrontmanServer.Tasks do
   # --- Public API ---
 
   @doc """
+  Lists all tasks for a user (lightweight, no interactions loaded).
+
+  Returns task schemas ordered by most recently updated.
+  """
+  @spec list_tasks(Scope.t()) :: {:ok, [TaskSchema.t()]}
+  def list_tasks(%Scope{user: %{id: user_id}}) do
+    tasks =
+      TaskSchema
+      |> TaskSchema.for_user(user_id)
+      |> TaskSchema.ordered_by_updated()
+      |> Repo.all()
+
+    {:ok, tasks}
+  end
+
+  @doc """
   Checks if a task exists for the given scope.
   """
   @spec task_exists?(Scope.t(), String.t()) :: boolean()
@@ -56,6 +72,21 @@ defmodule FrontmanServer.Tasks do
     with {:ok, schema} <- fetch_task_schema(task_id),
          :ok <- authorize_task_access(scope, schema) do
       {:ok, schema_to_task(schema)}
+    end
+  end
+
+  @doc """
+  Deletes a task and all its interactions.
+
+  Requires authorization - scope.user.id must match task.user_id.
+  Cascade deletes configured in migration handle interaction cleanup.
+  """
+  @spec delete_task(Scope.t(), String.t()) :: :ok | {:error, authorization_error()}
+  def delete_task(%Scope{} = scope, task_id) do
+    with {:ok, schema} <- fetch_task_schema(task_id),
+         :ok <- authorize_task_access(scope, schema),
+         {:ok, _} <- Repo.delete(schema) do
+      :ok
     end
   end
 

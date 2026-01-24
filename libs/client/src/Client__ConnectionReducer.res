@@ -7,6 +7,7 @@
 module ACP = FrontmanFrontmanClient.FrontmanClient__ACP
 module Relay = FrontmanFrontmanClient.FrontmanClient__Relay
 module MCPServer = FrontmanFrontmanClient.FrontmanClient__MCP__Server
+module Channel = FrontmanFrontmanClient.FrontmanClient__Phoenix__Channel
 
 // Configuration for initialization
 type initConfig = {
@@ -75,8 +76,9 @@ type action =
   | SessionCreateSuccess(ACP.session)
   | SessionCreateError(string)
   | CreateSession({
-      onUpdate: FrontmanFrontmanClient.FrontmanClient__ACP__Types.sessionUpdate => unit,
+      onUpdate: (string, FrontmanFrontmanClient.FrontmanClient__ACP__Types.sessionUpdate) => unit,
       onMcpMessage: (FrontmanFrontmanClient.FrontmanClient__MCP.messageDirection, JSON.t) => unit,
+      onComplete: result<string, string> => unit,
     })
   | SendPrompt({
       text: string,
@@ -85,6 +87,14 @@ type action =
       metadata: option<JSON.t>,
     })
   | PromptSent
+  | LoadTask({
+      taskId: string,
+      onUpdate: (string, FrontmanFrontmanClient.FrontmanClient__ACP__Types.sessionUpdate) => unit,
+      onMcpMessage: (FrontmanFrontmanClient.FrontmanClient__MCP.messageDirection, JSON.t) => unit,
+      onComplete: result<unit, string> => unit,
+    })
+  | DeleteSession({taskId: string, onComplete: result<unit, string> => unit})
+  | ClearSession
   | Cleanup
 
 // Effects - side effects the reducer wants to trigger
@@ -99,8 +109,9 @@ type effect =
   | CreateSessionEffect({
       connection: ACP.connection,
       mcpServer: MCPServer.t,
-      onUpdate: FrontmanFrontmanClient.FrontmanClient__ACP__Types.sessionUpdate => unit,
+      onUpdate: (string, FrontmanFrontmanClient.FrontmanClient__ACP__Types.sessionUpdate) => unit,
       onMcpMessage: (FrontmanFrontmanClient.FrontmanClient__MCP.messageDirection, JSON.t) => unit,
+      onComplete: result<string, string> => unit,
     })
   | SendPromptEffect({
       session: ACP.session,
@@ -109,6 +120,17 @@ type effect =
       onComplete: result<FrontmanFrontmanClient.FrontmanClient__ACP__Types.promptResult, string> => unit,
       metadata: option<JSON.t>,
     })
+  | FetchSessionsEffect(ACP.connection)
+  | LoadTaskEffect({
+      connection: ACP.connection,
+      mcpServer: MCPServer.t,
+      taskId: string,
+      onUpdate: (string, FrontmanFrontmanClient.FrontmanClient__ACP__Types.sessionUpdate) => unit,
+      onMcpMessage: (FrontmanFrontmanClient.FrontmanClient__MCP.messageDirection, JSON.t) => unit,
+      onComplete: result<unit, string> => unit,
+    })
+  | DeleteSessionEffect({connection: ACP.connection, taskId: string, onComplete: result<unit, string> => unit})
+  | CleanupSessionEffect({session: ACP.session})
 
 let initialState: state = {
   acp: ACPDisconnected,
@@ -244,7 +266,7 @@ let reduce = (state: state, action: action): (state, array<effect>) => {
 
   | ({acp: ACPConnecting}, ACPConnectSuccess(conn)) => (
       {...state, acp: ACPConnected(conn)},
-      [LogInfo("ACP connected")],
+      [LogInfo("ACP connected"), FetchSessionsEffect(conn)],
     )
 
   | ({acp: ACPConnecting}, ACPConnectError(msg)) => (
@@ -309,10 +331,10 @@ let reduce = (state: state, action: action): (state, array<effect>) => {
 
   | (
       {acp: ACPConnected(conn), relay: RelayConnected, mcpServer: Some(mcpServer), session: NoSession},
-      CreateSession({onUpdate, onMcpMessage}),
+      CreateSession({onUpdate, onMcpMessage, onComplete}),
     ) => (
       {...state, session: SessionCreating},
-      [CreateSessionEffect({connection: conn, mcpServer, onUpdate, onMcpMessage})],
+      [CreateSessionEffect({connection: conn, mcpServer, onUpdate, onMcpMessage, onComplete})],
     )
 
   | ({session: SessionActive(session), isSendingPrompt: false}, SendPrompt({text, additionalBlocks, onComplete, metadata})) => (
@@ -334,6 +356,35 @@ let reduce = (state: state, action: action): (state, array<effect>) => {
       state,
       [LogError("Cannot send prompt: no active session")],
     )
+
+  // Load a persisted task (calls ACP.loadSession)
+  | ({acp: ACPConnected(conn), mcpServer: Some(mcpServer)}, LoadTask({taskId, onUpdate, onMcpMessage, onComplete})) => (
+      state,
+      [LoadTaskEffect({connection: conn, mcpServer, taskId, onUpdate, onMcpMessage, onComplete})],
+    )
+
+  | (_, LoadTask(_)) => (
+      state,
+      [LogError("Cannot load task: not connected")],
+    )
+
+  // Delete a persisted session (calls ACP.deleteSession)
+  | ({acp: ACPConnected(conn)}, DeleteSession({taskId, onComplete})) => (
+      state,
+      [DeleteSessionEffect({connection: conn, taskId, onComplete})],
+    )
+
+  | (_, DeleteSession({onComplete, _})) => {
+      onComplete(Error("Not connected"))
+      (state, [])
+    }
+
+  // === Clear Session (for starting new task) ===
+  | ({session: SessionActive(oldSession)}, ClearSession) => (
+      {...state, session: NoSession},
+      [CleanupSessionEffect({session: oldSession})],
+    )
+  | (_, ClearSession) => ({...state, session: NoSession}, [])
 
   | (_, CreateSession(_)) => (
       state,
@@ -403,9 +454,17 @@ let name = "ConnectionReducer"
 // Alias for StateReducer compatibility
 let next = reduce
 
+// Helper to clean up a session's channel handlers
+let cleanupSession = (session: ACP.session): unit => {
+  session.channel->Channel.off(~event=#"acp:message")
+  session.channel->Channel.off(~event=#"mcp:message")
+  Channel.leave(session.channel)->ignore
+  Console.log2("[ConnectionReducer] Cleaned up session channel:", session.sessionId)
+}
+
 // Effect handler - executed in useEffect, not during dispatch
 // This receives current state and dispatch, so async callbacks can safely dispatch
-let handleEffect = (effect: effect, _state: state, dispatch: action => unit) => {
+let handleEffect = (effect: effect, state: state, dispatch: action => unit) => {
   switch effect {
   | LogError(msg) => Console.error(`[FrontmanProvider] ${msg}`)
   | LogInfo(msg) => Console.log(`[FrontmanProvider] ${msg}`)
@@ -460,7 +519,7 @@ let handleEffect = (effect: effect, _state: state, dispatch: action => unit) => 
       }
     }
     connect()->ignore
-  | CreateSessionEffect({connection, mcpServer, onUpdate, onMcpMessage}) =>
+  | CreateSessionEffect({connection, mcpServer, onUpdate, onMcpMessage, onComplete}) =>
     let create = async () => {
       let mcpServerInterface = MCPServer.toInterface(mcpServer)
       let result = await ACP.createSession(
@@ -473,9 +532,11 @@ let handleEffect = (effect: effect, _state: state, dispatch: action => unit) => 
       | Ok(sess) =>
         dispatch(SessionCreateSuccess(sess))
         Console.log2("[ConnectionReducer] Session created:", sess.sessionId)
+        onComplete(Ok(sess.sessionId))
       | Error(err) =>
         dispatch(SessionCreateError(err))
         Console.error2("[ConnectionReducer] Session creation failed:", err)
+        onComplete(Error(err))
       }
     }
     create()->ignore
@@ -486,5 +547,61 @@ let handleEffect = (effect: effect, _state: state, dispatch: action => unit) => 
       onComplete(result)
     }
     send()->ignore
+  | FetchSessionsEffect(conn) =>
+    Client__State.Actions.sessionsLoadStarted()
+    let fetch = async () => {
+      switch await ACP.listSessions(conn) {
+      | Ok(sessions) => Client__State.Actions.sessionsLoadSuccess(~sessions)
+      | Error(err) =>
+        Console.error2("[ConnectionReducer] Failed to fetch sessions:", err)
+        Client__State.Actions.sessionsLoadError(~error=err)
+      }
+    }
+    fetch()->ignore
+
+  | LoadTaskEffect({connection, mcpServer, taskId, onUpdate, onMcpMessage, onComplete}) =>
+    let loadNewSession = () => {
+      let load = async () => {
+        let mcpServerInterface = MCPServer.toInterface(mcpServer)
+        let result = await ACP.loadSession(
+          connection,
+          taskId, // taskId maps to sessionId at protocol level
+          ~onUpdate,
+          ~mcpServerInterface,
+          ~onMcpMessage,
+        )
+        switch result {
+        | Ok(session) =>
+          dispatch(SessionCreateSuccess(session))
+          Console.log2("[ConnectionReducer] Task loaded:", taskId)
+          onComplete(Ok())
+        | Error(err) =>
+          Console.error2("[ConnectionReducer] Failed to load task:", err)
+          onComplete(Error(err))
+        }
+      }
+      load()->ignore
+    }
+
+    switch state.session {
+    | SessionActive({sessionId}) when sessionId == taskId => onComplete(Ok())
+    | SessionActive(oldSession) =>
+      cleanupSession(oldSession)
+      loadNewSession()
+    | NoSession | SessionCreating | SessionError(_) => loadNewSession()
+    }
+
+  | DeleteSessionEffect({connection, taskId, onComplete}) =>
+    let delete = async () => {
+      let result = await ACP.deleteSession(connection, taskId)
+      switch result {
+      | Ok() => Console.log2("[ConnectionReducer] Session deleted:", taskId)
+      | Error(err) => Console.error2("[ConnectionReducer] Failed to delete session:", err)
+      }
+      onComplete(result)
+    }
+    delete()->ignore
+
+  | CleanupSessionEffect({session}) => cleanupSession(session)
   }
 }

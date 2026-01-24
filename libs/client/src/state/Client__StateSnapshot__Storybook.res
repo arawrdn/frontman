@@ -119,19 +119,22 @@ let convertTask = (task: Snapshot.Task.t): StateTypes.Task.t => {
   {
     id: task.id,
     title: task.title,
-    messages: messagesDict,
     createdAt: task.createdAt,
-    lastMessageAt: task.lastMessageAt,
+    updatedAt: task.createdAt, // Snapshots don't have updatedAt, use createdAt
     previewFrame: {
       url: task.previewUrl,
       contentDocument: None,
       contentWindow: None,
     },
-    webPreviewIsSelecting: task.webPreviewIsSelecting,
-    selectedElement: None, // Cannot restore DOM element from snapshot
-    figmaNode: convertFigmaNode(task.figmaNode),
-    isAgentRunning: false, // Default to not running when restoring from snapshot
-    planEntries: [], // Plan entries not stored in snapshots yet
+    loadState: StateTypes.Task.Loaded({
+      messages: messagesDict,
+      lastMessageAt: task.lastMessageAt,
+      webPreviewIsSelecting: task.webPreviewIsSelecting,
+      selectedElement: None, // Cannot restore DOM element from snapshot
+      figmaNode: convertFigmaNode(task.figmaNode),
+      isAgentRunning: false, // Default to not running when restoring from snapshot
+      planEntries: [], // Plan entries not stored in snapshots yet
+    }),
   }
 }
 
@@ -157,6 +160,7 @@ let snapshotToState = (snapshot: Snapshot.t): StateTypes.state => {
     anthropicOAuthStatus: Client__State__Types.NotConnected,
     modelsConfig: None,
     selectedModel: None,
+    sessionsLoadState: Client__State__Types.SessionsNotLoaded, // Cannot restore load state from snapshot
   }
 }
 

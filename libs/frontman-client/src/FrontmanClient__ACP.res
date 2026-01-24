@@ -59,7 +59,7 @@ type session = {
   sessionId: string,
   channel: Channel.t,
   connection: connection,
-  onUpdate: Types.sessionUpdate => unit,
+  onUpdate: (string, Types.sessionUpdate) => unit,
 }
 
 let waitForSocket = (socket: Socket.t): promise<result<unit, string>> => {
@@ -130,7 +130,12 @@ let fetchSocketToken = async (tokenUrl: string): result<string, tokenError> => {
       Error(FetchFailed(`HTTP ${response.status->Int.toString}`))
     }
   } catch {
-  | Exn.Error(e) => Error(FetchFailed(Exn.message(e)->Option.getOr("Unknown error")))
+  | exn =>
+    Error(
+      FetchFailed(
+        exn->JsExn.fromException->Option.flatMap(JsExn.message)->Option.getOr("Unknown error"),
+      ),
+    )
   }
 }
 
@@ -242,10 +247,11 @@ module MCPTypes = FrontmanClient__MCP__Types
 
 // Join a session channel (internal helper)
 // mcpServerInterface is used to create MCP handler BEFORE joining to avoid race with server MCP init
+// onUpdate receives (sessionId, update) per ACP session/update notification params
 let joinSession = async (
   conn: connection,
   sessionId: string,
-  ~onUpdate: Types.sessionUpdate => unit,
+  ~onUpdate: (string, Types.sessionUpdate) => unit,
   ~mcpServerInterface: option<MCPTypes.serverInterface<'server>>=?,
   ~onMcpMessage: option<(MCP.messageDirection, JSON.t) => unit>=?,
 ): result<session, string> => {
@@ -300,9 +306,10 @@ let joinSession = async (
 
 // Create a new ACP session and auto-join the session channel
 // mcpServerInterface is attached before channel join to handle server's immediate MCP init
+// onUpdate receives (sessionId, update) per ACP session/update notification params
 let createSession = async (
   conn: connection,
-  ~onUpdate: Types.sessionUpdate => unit,
+  ~onUpdate: (string, Types.sessionUpdate) => unit,
   ~mcpServerInterface: option<MCPTypes.serverInterface<'server>>=?,
   ~onMcpMessage: option<(MCP.messageDirection, JSON.t) => unit>=?,
 ): result<session, string> => {
@@ -357,4 +364,77 @@ let sendPrompt = async (
     ~metadata,
     ~onMessage=session.connection.onMessage,
   )
+}
+
+module Decoders = FrontmanClient__Decoders
+
+// List user's sessions (non-ACP channel message)
+let listSessions = (conn: connection): promise<result<array<Types.sessionSummary>, string>> => {
+  Promise.make((resolve, _) => {
+    let pushRef = conn.channel->Channel.push(~event=#list_sessions, ~payload=JSON.Encode.object(Dict.make()))
+    pushRef
+    .receive(~status="ok", ~callback=response => {
+      switch response->Decoders.parseSchema(Types.listSessionsResultSchema) {
+      | Ok({sessions}) => resolve(Ok(sessions))
+      | Error(e) => resolve(Error(e))
+      }
+    })
+    .receive(~status="error", ~callback=err => {
+      resolve(Error(JSON.stringify(err)))
+    })
+    ->ignore
+  })
+}
+
+// Delete a session (non-ACP channel event)
+let deleteSession = (conn: connection, sessionId: string): promise<result<unit, string>> => {
+  Promise.make((resolve, _) => {
+    let params: Types.deleteSessionParams = {sessionId: sessionId}
+    let payload = params->S.reverseConvertToJsonOrThrow(Types.deleteSessionParamsSchema)
+    let pushRef = conn.channel->Channel.push(~event=#delete_session, ~payload)
+    pushRef
+    .receive(~status="ok", ~callback=_ => resolve(Ok()))
+    .receive(~status="error", ~callback=err => resolve(Error(JSON.stringify(err))))
+    ->ignore
+  })
+}
+
+// Load an existing session (ACP compliant)
+// History is streamed via session/update notifications to onUpdate callback
+// onUpdate receives (sessionId, update) per ACP session/update notification params
+let loadSession = async (
+  conn: connection,
+  sessionId: string,
+  ~onUpdate: (string, Types.sessionUpdate) => unit,
+  ~mcpServerInterface: option<MCPTypes.serverInterface<'server>>=?,
+  ~onMcpMessage: option<(MCP.messageDirection, JSON.t) => unit>=?,
+): result<session, string> => {
+  // First join the session channel to receive history updates
+  let joinResult = await joinSession(conn, sessionId, ~onUpdate, ~mcpServerInterface?, ~onMcpMessage?)
+
+  switch joinResult {
+  | Error(e) => Error(e)
+  | Ok(session) =>
+    // Send ACP session/load request to session channel (not tasks channel)
+    // History notifications are sent to the channel that receives this request,
+    // and the onUpdate callback is attached to the session channel in joinSession.
+    let params: Types.sessionLoadParams = {
+      sessionId,
+      cwd: "/",
+      mcpServers: [],
+    }
+    let loadResult = await Protocol.sendRequest(
+      ~channel=session.channel,
+      ~state=conn.state,
+      ~method="session/load",
+      ~params=Some(params->S.reverseConvertToJsonOrThrow(Types.sessionLoadParamsSchema)),
+      ~parseResult=_ => Ok(),
+      ~onMessage=conn.onMessage,
+    )
+
+    switch loadResult {
+    | Ok() => Ok(session)
+    | Error(e) => Error(e)
+    }
+  }
 }

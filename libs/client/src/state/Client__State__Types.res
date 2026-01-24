@@ -157,13 +157,10 @@ module Task = {
     contentWindow: option<WebAPI.DOMAPI.window>,
   }
 
-  type t = {
-    id: string,
-    title: string,
+  // Data that only exists for loaded tasks
+  type loadedData = {
     messages: Dict.t<Message.t>,
-    createdAt: float,
     lastMessageAt: option<float>,
-    previewFrame: previewFrame,
     webPreviewIsSelecting: bool,
     selectedElement: option<SelectedElement.t>,
     figmaNode: FigmaNode.t,
@@ -171,29 +168,95 @@ module Task = {
     planEntries: array<FrontmanFrontmanClient.FrontmanClient__ACP__Types.planEntry>,
   }
 
-  let make = (~title: string, ~previewUrl: string, ~messages=Dict.make()): t => {
-    let newId = WebAPI.Global.crypto->WebAPI.Crypto.randomUUID
-    let timestamp = Date.now()
+  // Load state - makes illegal states unrepresentable
+  type loadState =
+    | NotLoaded
+    | Loading(loadedData) // Being populated with messages from server
+    | Loaded(loadedData)
 
-    let normalizedTitle = switch String.trim(title) {
+  type t = {
+    id: string,
+    title: string,
+    createdAt: float,
+    updatedAt: float,
+    previewFrame: previewFrame,
+    loadState: loadState,
+  }
+
+  let normalizeTitle = (title: string): string => {
+    switch String.trim(title) {
     | "" => "New Chat"
     | text => {
         let sliced = text->String.slice(~start=0, ~end=50)
         String.length(sliced) < String.length(text) ? sliced ++ "..." : sliced
       }
     }
+  }
+
+  // Create default loaded data
+  let makeLoadedData = (~messages=Dict.make()): loadedData => {
+    messages,
+    lastMessageAt: None,
+    webPreviewIsSelecting: false,
+    selectedElement: None,
+    figmaNode: FigmaNode.NoSelection,
+    isAgentRunning: false,
+    planEntries: [],
+  }
+
+  // Create a new local task (always starts as Loaded)
+  let make = (~title: string, ~previewUrl: string, ~messages=Dict.make()): t => {
+    let newId = WebAPI.Global.crypto->WebAPI.Crypto.randomUUID
+    let timestamp = Date.now()
+
     {
       id: newId,
-      title: normalizedTitle,
-      messages,
+      title: normalizeTitle(title),
       createdAt: timestamp,
+      updatedAt: timestamp,
       previewFrame: {url: previewUrl, contentDocument: None, contentWindow: None},
-      lastMessageAt: None,
-      webPreviewIsSelecting: false,
-      selectedElement: None,
-      figmaNode: FigmaNode.NoSelection,
-      isAgentRunning: false,
-      planEntries: [],
+      loadState: Loaded(makeLoadedData(~messages)),
+    }
+  }
+
+  // Create a task with a specific ID (for hydrating persisted sessions - starts as NotLoaded)
+  let makeWithId = (~id: string, ~title: string, ~previewUrl: string, ~createdAt: float, ~updatedAt: option<float>=?): t => {
+    {
+      id,
+      title: normalizeTitle(title),
+      createdAt,
+      updatedAt: updatedAt->Option.getOr(createdAt),
+      previewFrame: {url: previewUrl, contentDocument: None, contentWindow: None},
+      loadState: NotLoaded,
+    }
+  }
+
+  // Create a task with a specific ID that starts as Loaded (for new tasks with known session ID)
+  let makeWithIdLoaded = (~id: string, ~title: string, ~previewUrl: string, ~createdAt: float): t => {
+    {
+      id,
+      title: normalizeTitle(title),
+      createdAt,
+      updatedAt: createdAt,
+      previewFrame: {url: previewUrl, contentDocument: None, contentWindow: None},
+      loadState: Loaded(makeLoadedData()),
+    }
+  }
+
+  // Helper to get loaded data if available (works for both Loading and Loaded)
+  let getLoadedData = (task: t): option<loadedData> => {
+    switch task.loadState {
+    | Loaded(data) | Loading(data) => Some(data)
+    | NotLoaded => None
+    }
+  }
+
+  // Helper to update loaded data (no-op if NotLoaded, preserves load state)
+  let updateLoadedData = (task: t, fn: loadedData => loadedData): t => {
+    switch task.loadState {
+    | Loaded(data) => {...task, loadState: Loaded(fn(data))}
+    | Loading(data) => {...task, loadState: Loading(fn(data))}
+    | NotLoaded => task
     }
   }
 }
@@ -393,34 +456,39 @@ let figmaImageToContentBlock = (imageDataUrl: string): ACPTypes.contentBlock => 
 // Build ContentBlocks array from Task
 // Returns array of ContentBlocks to be added to the prompt
 let taskToContentBlocks = (task: Task.t): array<ACPTypes.contentBlock> => {
-  let blocks = []
+  switch task.loadState {
+  | NotLoaded => []
+  | Loading(data) | Loaded(data) => {
+      let blocks = []
 
-  // Add selectedElement as Resource if available (with source location)
-  let blocks = switch task.selectedElement->Option.flatMap(selectedElementToContentBlock) {
-  | Some(block) => Array.concat(blocks, [block])
-  | None => blocks
-  }
-
-  // Add selectedElement screenshot as Image if available
-  let blocks = switch task.selectedElement->Option.flatMap(sel => sel.screenshot) {
-  | Some(screenshot) => Array.concat(blocks, [selectedElementScreenshotToContentBlock(screenshot)])
-  | None => blocks
-  }
-
-  // Add figmaNode as Resource and Image if available
-  let blocks = switch task.figmaNode {
-  | FigmaNode.SelectedNode({nodeId, nodeData, image, isDsl}) => {
-      let blocks = Array.concat(blocks, [figmaNodeToContentBlock(nodeId, nodeData, isDsl)])
-      // Add image as separate content block if available
-      switch image {
-      | Some(imageDataUrl) => Array.concat(blocks, [figmaImageToContentBlock(imageDataUrl)])
+      // Add selectedElement as Resource if available (with source location)
+      let blocks = switch data.selectedElement->Option.flatMap(selectedElementToContentBlock) {
+      | Some(block) => Array.concat(blocks, [block])
       | None => blocks
       }
-    }
-  | FigmaNode.NoSelection | FigmaNode.WaitingForSelection => blocks
-  }
 
-  blocks
+      // Add selectedElement screenshot as Image if available
+      let blocks = switch data.selectedElement->Option.flatMap(sel => sel.screenshot) {
+      | Some(screenshot) => Array.concat(blocks, [selectedElementScreenshotToContentBlock(screenshot)])
+      | None => blocks
+      }
+
+      // Add figmaNode as Resource and Image if available
+      let blocks = switch data.figmaNode {
+      | FigmaNode.SelectedNode({nodeId, nodeData, image, isDsl}) => {
+          let blocks = Array.concat(blocks, [figmaNodeToContentBlock(nodeId, nodeData, isDsl)])
+          // Add image as separate content block if available
+          switch image {
+          | Some(imageDataUrl) => Array.concat(blocks, [figmaImageToContentBlock(imageDataUrl)])
+          | None => blocks
+          }
+        }
+      | FigmaNode.NoSelection | FigmaNode.WaitingForSelection => blocks
+      }
+
+      blocks
+    }
+  }
 }
 
 type sendPromptFn = (
@@ -430,10 +498,23 @@ type sendPromptFn = (
   ~metadata: option<JSON.t>,
 ) => unit
 
+// Callback for loading a persisted task's messages
+// taskId: the task to load (maps to sessionId at protocol level)
+// onComplete: called when loading finishes (success or error)
+// Note: onUpdate is baked in when the callback is created (uses handleSessionUpdate)
+type loadTaskFn = (string, ~onComplete: result<unit, string> => unit) => unit
+
+// Callback for deleting a persisted session
+// taskId: the task/session to delete
+// onComplete: called when deletion finishes (success or error)
+type deleteSessionFn = (string, ~onComplete: result<unit, string> => unit) => unit
+
 // Connection state for the Frontman ACP session
+// Note: sessionId is NOT stored here - it's managed by ConnectionReducer (ACP layer)
+// Tasks store their own ID which equals the ACP session ID
 type connectionState =
   | Disconnected
-  | Connected(sendPromptFn)
+  | Connected({sendPrompt: sendPromptFn, loadTask: loadTaskFn, deleteSession: deleteSessionFn})
 
 // Usage info from API
 @schema
@@ -505,6 +586,13 @@ type anthropicOAuthStatus =
   | Connected({expiresAt: float})
   | Error(string)
 
+// Sessions load state for persisted sessions
+type sessionsLoadState =
+  | SessionsNotLoaded
+  | SessionsLoading
+  | SessionsLoaded
+  | SessionsLoadError(string)
+
 type state = {
   tasks: Dict.t<Task.t>,
   currentTaskId: option<string>,
@@ -516,4 +604,5 @@ type state = {
   anthropicOAuthStatus: anthropicOAuthStatus,
   modelsConfig: option<modelsConfig>,
   selectedModel: option<selectedModel>,
+  sessionsLoadState: sessionsLoadState,
 }
