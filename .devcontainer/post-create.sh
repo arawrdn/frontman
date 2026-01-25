@@ -4,7 +4,22 @@ set -e
 # mise is installed in ~/.local/bin
 export PATH="$HOME/.local/bin:$PATH"
 
-cd /workspaces/frontman
+# Find the workspace directory (DevPod may mount to different paths)
+WORKSPACE_DIR=""
+for dir in /workspaces/*/mise.toml; do
+    if [ -f "$dir" ]; then
+        WORKSPACE_DIR=$(dirname "$dir")
+        break
+    fi
+done
+
+if [ -z "$WORKSPACE_DIR" ]; then
+    echo "ERROR: Could not find workspace with mise.toml"
+    exit 1
+fi
+
+echo "==> Found workspace at: $WORKSPACE_DIR"
+cd "$WORKSPACE_DIR"
 
 echo "==> Trusting mise config..."
 ~/.local/bin/mise trust --all
@@ -12,8 +27,7 @@ echo "==> Trusting mise config..."
 echo "==> Installing runtimes via mise (this may take a while)..."
 ~/.local/bin/mise install --yes
 
-# Activate mise for current shell and add shims to PATH
-eval "$(~/.local/bin/mise activate bash)"
+# Add shims to PATH
 export PATH="$HOME/.local/share/mise/shims:$PATH"
 
 echo "==> Verifying tools..."
