@@ -15,6 +15,8 @@ export default vite.defineConfig({
 		port: 5173,
 		// Allow worktree hostnames (wt-*.local) for DevPod development
 		allowedHosts: [".local"],
+		// Enable CORS for cross-origin requests from Next.js
+		cors: true,
 		// HMR configuration for remote development via Caddy proxy
 		hmr: process.env.VITE_HMR_HOST
 			? {
