@@ -4,18 +4,25 @@ set -e
 # mise is installed in ~/.local/bin
 export PATH="$HOME/.local/bin:$PATH"
 
-echo "==> Installing runtimes via mise..."
 cd /workspaces/frontman
 
-# Trust the project and install runtimes
-~/.local/bin/mise trust
-~/.local/bin/mise install
+echo "==> Trusting mise config..."
+~/.local/bin/mise trust --all
 
-# Activate mise for current shell
+echo "==> Installing runtimes via mise (this may take a while)..."
+~/.local/bin/mise install --yes
+
+# Activate mise for current shell and add shims to PATH
 eval "$(~/.local/bin/mise activate bash)"
+export PATH="$HOME/.local/share/mise/shims:$PATH"
+
+echo "==> Verifying tools..."
+which node && node --version
+which yarn && yarn --version
+which elixir && elixir --version
 
 echo "==> Installing project dependencies..."
-make install
+yarn install
 
 echo "==> Setup complete!"
 echo ""
