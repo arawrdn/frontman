@@ -13,6 +13,8 @@ export default vite.defineConfig({
 		// Listen on all interfaces for container access
 		host: "0.0.0.0",
 		port: 5173,
+		// Allow worktree hostnames (wt-*.local) for DevPod development
+		allowedHosts: [".local"],
 		// HMR configuration for remote development via Caddy proxy
 		hmr: process.env.VITE_HMR_HOST
 			? {

@@ -249,6 +249,64 @@ devpod up my-feature
 devpod delete my-feature
 ```
 
+## Configuration for Remote Development
+
+The following configuration changes enable services to work through the Caddy reverse proxy:
+
+### Vite (`libs/client/vite.config.ts`)
+
+```typescript
+server: {
+  host: "0.0.0.0",           // Bind to all interfaces
+  port: 5173,
+  allowedHosts: [".local"],  // Allow wt-*.local hostnames
+  hmr: process.env.VITE_HMR_HOST
+    ? {
+        host: process.env.VITE_HMR_HOST,
+        port: Number.parseInt(process.env.VITE_HMR_PORT || "8443"),
+        protocol: (process.env.VITE_HMR_PROTOCOL as "ws" | "wss") || "wss",
+      }
+    : true,
+}
+```
+
+### Phoenix (`apps/frontman_server/config/dev.exs`)
+
+```elixir
+# Database - supports container development via DB_HOST env var
+config :frontman_server, FrontmanServer.Repo,
+  hostname: System.get_env("DB_HOST") || "localhost",
+  # ... other config
+
+# Endpoint - binds to 0.0.0.0 and supports PHX_HOST override
+config :frontman_server, FrontmanServerWeb.Endpoint,
+  url: [
+    host: System.get_env("PHX_HOST") || "frontman.local",
+    port: String.to_integer(System.get_env("PHX_URL_PORT") || "4000"),
+    scheme: "https"
+  ],
+  https: [
+    ip: {0, 0, 0, 0},  # Bind to all interfaces
+    # ... other config
+  ]
+```
+
+### Environment Variables (`.env.devpod`)
+
+The post-create script generates `.env.devpod` with worktree-specific URLs:
+
+```bash
+# Example for worktree "issue-164" (hash: ea0c)
+WORKTREE_NAME=issue-164
+WORKTREE_ID=wt-ea0c
+FRONTMAN_HOST=wt-ea0c-api.local:8443
+VITE_HMR_HOST=wt-ea0c-vite.local
+VITE_HMR_PORT=8443
+VITE_HMR_PROTOCOL=wss
+PHX_HOST=wt-ea0c-api.local
+DB_HOST=host.docker.internal
+```
+
 ## Database
 
 PostgreSQL runs on the host server and is shared across all workspaces.
@@ -259,7 +317,7 @@ PostgreSQL runs on the host server and is shared across all workspaces.
 - **User:** `postgres`
 - **Password:** `postgres`
 
-The `DATABASE_URL` environment variable is automatically set in the devcontainer.
+The `DB_HOST` environment variable must be set to `host.docker.internal` for Phoenix to connect from inside the container.
 
 ### Creating Additional Databases
 
@@ -311,6 +369,73 @@ devpod status my-feature
 
 # Manually forward a port
 devpod ssh my-feature -- -L 4000:localhost:4000
+```
+
+### Services Return 502 Bad Gateway
+
+If Caddy returns 502, the service isn't reachable from the host. Common causes:
+
+**Service not bound to 0.0.0.0:**
+- Vite and Next.js must bind to all interfaces, not just localhost
+- Check `libs/client/vite.config.ts` has `server.host: "0.0.0.0"`
+- Next.js binds to 0.0.0.0 by default in dev mode
+
+**Vite returns 403 Forbidden:**
+Vite 7+ blocks requests from unknown hosts. The config must include:
+```typescript
+server: {
+  host: "0.0.0.0",
+  allowedHosts: [".local"],  // Allow *.local hostnames
+}
+```
+
+### Phoenix Can't Connect to Database
+
+If Phoenix shows `connection refused` to PostgreSQL:
+
+1. **Add host.docker.internal to container:**
+   ```bash
+   # Get host gateway IP
+   HOST_IP=$(ssh root@77.42.16.199 "ip route | grep default | awk '{print \$3}'")
+   
+   # Add to container's /etc/hosts
+   ssh root@77.42.16.199 "docker exec -u root CONTAINER_NAME bash -c \"echo '\$HOST_IP host.docker.internal' >> /etc/hosts\""
+   ```
+
+2. **Set DB_HOST environment variable:**
+   Add to `apps/frontman_server/envs/.dev.env`:
+   ```
+   DB_HOST=host.docker.internal
+   ```
+
+### Phoenix SSL Certificate Error
+
+If Phoenix fails to start with SSL keyfile errors:
+
+1. **Copy certs to container:**
+   ```bash
+   scp -r .certs root@77.42.16.199:/tmp/frontman-certs
+   ssh root@77.42.16.199 "docker cp /tmp/frontman-certs CONTAINER_NAME:/workspaces/WORKTREE/.certs"
+   ssh root@77.42.16.199 "docker exec -u root CONTAINER_NAME chown -R vscode:vscode /workspaces/WORKTREE/.certs"
+   ```
+
+2. **Or generate new certs in container:**
+   ```bash
+   docker exec CONTAINER_NAME bash -c 'cd /workspaces/WORKTREE && mkcert -install && mkcert -key-file .certs/frontman.local-key.pem -cert-file .certs/frontman.local.pem frontman.local localhost'
+   ```
+
+### Next.js Instrumentation Error
+
+If Next.js crashes with Sentry/instrumentation errors:
+
+```
+TypeError: options.transport is not a function
+```
+
+Temporarily disable instrumentation:
+```bash
+mv test/sites/blog-starter/instrumentation.ts test/sites/blog-starter/instrumentation.ts.bak
+rm -rf test/sites/blog-starter/.next
 ```
 
 ### Out of Disk Space
