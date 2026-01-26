@@ -259,7 +259,7 @@ module Task = {
     title: string,
     messages: array<Message.t>,
     createdAt: float,
-    lastMessageAt: option<float>,
+    updatedAt: float,
     webPreviewIsSelecting: bool,
     selectedElement: option<SelectedElement.t>,
     figmaNode: FigmaNode.t,
@@ -267,15 +267,21 @@ module Task = {
   }
 
   let schema = S.object(s => {
-    id: s.field("id", S.string),
-    title: s.field("title", S.string),
-    messages: s.field("messages", S.array(Message.schema)),
-    createdAt: s.field("createdAt", S.float),
-    lastMessageAt: s.field("lastMessageAt", S.option(S.float)),
-    webPreviewIsSelecting: s.field("webPreviewIsSelecting", S.bool),
-    selectedElement: s.field("selectedElement", nullableToOption(SelectedElement.schema)),
-    figmaNode: s.field("figmaNode", FigmaNode.schema),
-    previewUrl: s.field("previewUrl", S.string),
+    let createdAt = s.field("createdAt", S.float)
+    let updatedAt = s.field("updatedAt", S.option(S.float))
+
+    {
+      id: s.field("id", S.string),
+      title: s.field("title", S.string),
+      messages: s.field("messages", S.array(Message.schema)),
+      createdAt,
+      // Fall back to createdAt for backward compat with snapshots that don't have updatedAt
+      updatedAt: updatedAt->Option.getOr(createdAt),
+      webPreviewIsSelecting: s.field("webPreviewIsSelecting", S.bool),
+      selectedElement: s.field("selectedElement", nullableToOption(SelectedElement.schema)),
+      figmaNode: s.field("figmaNode", FigmaNode.schema),
+      previewUrl: s.field("previewUrl", S.string),
+    }
   })
 }
 
@@ -419,7 +425,7 @@ let convertTask = (task: Client__State__Types.Task.t): Task.t => {
     title: task.title,
     messages,
     createdAt: task.createdAt,
-    lastMessageAt: loadedData->Option.flatMap(d => d.lastMessageAt),
+    updatedAt: task.updatedAt,
     webPreviewIsSelecting: loadedData->Option.mapOr(false, d => d.webPreviewIsSelecting),
     selectedElement: loadedData->Option.flatMap(d => d.selectedElement)->Option.map(convertSelectedElement),
     figmaNode: convertFigmaNode(loadedData->Option.mapOr(Client__State__Types.FigmaNode.NoSelection, d => d.figmaNode)),
@@ -585,7 +591,7 @@ let taskToJson = (task: Task.t): JSON.t => {
     ("title", JSON.Encode.string(task.title)),
     ("messages", JSON.Encode.array(task.messages->Array.map(messageToJson))),
     ("createdAt", JSON.Encode.float(task.createdAt)),
-    ("lastMessageAt", task.lastMessageAt->Option.mapOr(JSON.Encode.null, JSON.Encode.float)),
+    ("updatedAt", JSON.Encode.float(task.updatedAt)),
     ("webPreviewIsSelecting", JSON.Encode.bool(task.webPreviewIsSelecting)),
     ("selectedElement", task.selectedElement->Option.mapOr(JSON.Encode.null, selectedElementToJson)),
     ("figmaNode", figmaNodeToJson(task.figmaNode)),
