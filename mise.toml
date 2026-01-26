@@ -8,6 +8,8 @@ elixir-ls="0.30.0"
 "npm:rescript"="latest"
 "npm:corepack"="latest"
 "npm:@tailwindcss/language-server"="latest"
+"npm:vscode-langservers-extracted"="latest"
+"npm:@biomejs/biome"="latest"
 
 [env]
 MIX_OS_DEPS_COMPILE_PARTITION_COUNT = "1"
