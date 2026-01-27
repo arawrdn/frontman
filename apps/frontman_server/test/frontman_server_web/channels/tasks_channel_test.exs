@@ -1,5 +1,7 @@
 defmodule FrontmanServerWeb.TasksChannelTest do
-  use FrontmanServerWeb.ChannelCase, async: true
+  # async: false required because "ACP session/load" describe block uses shared_sandbox: true
+  # Shared sandbox mode is incompatible with async tests as it can interfere with other tests' connections
+  use FrontmanServerWeb.ChannelCase, async: false
 
   alias AgentClientProtocol, as: ACP
   alias FrontmanServerWeb.UserSocket
@@ -307,6 +309,9 @@ defmodule FrontmanServerWeb.TasksChannelTest do
   end
 
   describe "ACP session/load" do
+    # Shared sandbox mode because add_user_message can spawn agent Tasks needing DB access
+    @describetag shared_sandbox: true
+
     setup %{scope: scope} do
       task_id = Ecto.UUID.generate()
       {:ok, ^task_id} = FrontmanServer.Tasks.create_task(scope, task_id, "test-framework")
@@ -507,7 +512,9 @@ defmodule FrontmanServerWeb.TasksChannelTest do
       }
     end
 
-    test "returns error for unauthorized session", %{socket: socket} do
+    test "returns error for unauthorized session (appears as not found)", %{socket: socket} do
+      # Security: Implementation returns "not found" for unauthorized access
+      # to avoid revealing whether a resource exists
       {:ok, other_user} =
         FrontmanServer.Accounts.register_user(%{
           email: "other_load_#{System.unique_integer([:positive])}@test.local",
@@ -525,7 +532,7 @@ defmodule FrontmanServerWeb.TasksChannelTest do
 
       assert_push "acp:message", %{
         "id" => 1,
-        "error" => %{"code" => -32_602, "message" => "Unauthorized"}
+        "error" => %{"code" => -32_602, "message" => "Session not found"}
       }
     end
 

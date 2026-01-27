@@ -269,13 +269,11 @@ module Task = {
   let schema = S.object(s => {
     let createdAt = s.field("createdAt", S.float)
     let updatedAt = s.field("updatedAt", S.option(S.float))
-
     {
       id: s.field("id", S.string),
       title: s.field("title", S.string),
       messages: s.field("messages", S.array(Message.schema)),
       createdAt,
-      // Fall back to createdAt for backward compat with snapshots that don't have updatedAt
       updatedAt: updatedAt->Option.getOr(createdAt),
       webPreviewIsSelecting: s.field("webPreviewIsSelecting", S.bool),
       selectedElement: s.field("selectedElement", nullableToOption(SelectedElement.schema)),

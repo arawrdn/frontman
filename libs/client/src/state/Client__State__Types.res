@@ -157,25 +157,33 @@ module Task = {
     contentWindow: option<WebAPI.DOMAPI.window>,
   }
 
-  // Data that only exists for loaded tasks
+  // Data that only exists when a task is Loading or Loaded.
+  // These fields represent ephemeral UI state that doesn't need persistence.
   type loadedData = {
     messages: Dict.t<Message.t>,
     webPreviewIsSelecting: bool,
+    // None until user explicitly selects an element via the web preview picker
     selectedElement: option<SelectedElement.t>,
     figmaNode: FigmaNode.t,
     isAgentRunning: bool,
     planEntries: array<FrontmanFrontmanClient.FrontmanClient__ACP__Types.planEntry>,
   }
 
-  // Load state - makes illegal states unrepresentable
+  // Load state tracks whether a task's messages have been fetched from the server.
+  // NotLoaded: Task metadata exists but messages haven't been fetched yet
+  // Loading: Messages are being fetched from server, loadedData is being populated
+  // Loaded: Messages have been fetched, task is ready for interaction
   type loadState =
     | NotLoaded
-    | Loading(loadedData) // Being populated with messages from server
+    | Loading(loadedData)
     | Loaded(loadedData)
 
+  // A task represents a chat session. Metadata (id, title, timestamps) is always
+  // available from the server. Message content requires explicit loading.
   type t = {
     id: string,
     title: string,
+    // Server-provided timestamps, always available. Used for sorting tasks.
     createdAt: float,
     updatedAt: float,
     previewFrame: previewFrame,
@@ -498,9 +506,10 @@ type sendPromptFn = (
 
 // Callback for loading a persisted task's messages
 // taskId: the task to load (maps to sessionId at protocol level)
+// needsHistory: true = load full history (task not loaded), false = just activate channel (task already loaded)
 // onComplete: called when loading finishes (success or error)
 // Note: onUpdate is baked in when the callback is created (uses handleSessionUpdate)
-type loadTaskFn = (string, ~onComplete: result<unit, string> => unit) => unit
+type loadTaskFn = (string, ~needsHistory: bool, ~onComplete: result<unit, string> => unit) => unit
 
 // Callback for deleting a persisted session
 // taskId: the task/session to delete
