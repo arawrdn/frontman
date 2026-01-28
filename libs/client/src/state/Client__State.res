@@ -6,8 +6,8 @@ let useSelector = selection =>
   FrontmanReactStatestore.StateStore.useSelector(Client__State__Store.store, selection)
 
 module Selectors = Client__State__StateReducer.Selectors
-module UserContentPart = Client__State__StateReducer.UserContentPart
-module AssistantContentPart = Client__State__StateReducer.AssistantContentPart
+module UserContentPart = Client__State__Types.UserContentPart
+module AssistantContentPart = Client__State__Types.AssistantContentPart
 
 // Action creators
 module Actions = {
@@ -23,9 +23,6 @@ module Actions = {
         content: [UserContentPart.Text({text: text})],
       }),
     )
-
-  let messageCompleted = (~taskId) =>
-    Client__State__Store.dispatch(MessageCompleted({taskId: taskId}))
 
   let textDeltaReceived = (~taskId, ~text) =>
     Client__State__Store.dispatch(TextDeltaReceived({taskId, text}))
