@@ -54,14 +54,14 @@ type action =
   | ClearFigmaNode
   | SetFigmaNodeWaiting
   | ClearFigmaNodeWaiting
-  // Connection actions
-  | Connect({
+  // ACP session actions
+  | SetAcpSession({
       sendPrompt: Client__State__Types.sendPromptFn,
       loadTask: Client__State__Types.loadTaskFn,
       deleteSession: Client__State__Types.deleteSessionFn,
       apiBaseUrl: string,
     })
-  | Disconnect
+  | ClearAcpSession
   // Task loading actions (for persisted sessions)
   | TaskLoadStarted({taskId: string})
   | TaskLoadComplete({taskId: string})
@@ -227,7 +227,7 @@ let saveSelectedModelToStorage = (model: Client__State__Types.selectedModel): un
 let defaultState: state = {
   tasks: Dict.make(),
   currentTask: Task.New(Task.makeNew(~previewUrl=getInitialUrl())),
-  connectionState: Disconnected,
+  acpSession: NoAcpSession,
   sessionInitialized: false,
   usageInfo: None,
   openrouterKeySettings: {
@@ -266,8 +266,8 @@ let actionToString = action => {
   | ClearFigmaNode => `ClearFigmaNode`
   | SetFigmaNodeWaiting => `SetFigmaNodeWaiting`
   | ClearFigmaNodeWaiting => `ClearFigmaNodeWaiting`
-  | Connect(_) => `Connect`
-  | Disconnect => `Disconnect`
+  | SetAcpSession(_) => `SetAcpSession`
+  | ClearAcpSession => `ClearAcpSession`
   | TaskLoadStarted({taskId}) => `TaskLoadStarted(${taskId})`
   | TaskLoadComplete({taskId}) => `TaskLoadComplete(${taskId})`
   | TaskLoadError({taskId, error}) => `TaskLoadError(${taskId}, ${error})`
@@ -409,14 +409,14 @@ module Selectors = {
   }
 
   // Global state selectors
-  let connectionState = (state: state): Client__State__Types.connectionState => {
-    state.connectionState
+  let acpSession = (state: state): Client__State__Types.acpSession => {
+    state.acpSession
   }
 
-  let isConnected = (state: state): bool => {
-    switch state.connectionState {
-    | Connected(_) => true
-    | Disconnected => false
+  let hasActiveACPSession = (state: state): bool => {
+    switch state.acpSession {
+    | AcpSessionActive(_) => true
+    | NoAcpSession => false
     }
   }
 
@@ -453,8 +453,8 @@ module Selectors = {
 let handleEffect = (effect, state: state, dispatch) => {
   switch effect {
   | SendMessageToAPI({message, taskId}) =>
-    switch state.connectionState {
-    | Connected({sendPrompt}) =>
+    switch state.acpSession {
+    | AcpSessionActive({sendPrompt}) =>
       let additionalBlocks =
         state.tasks
         ->Dict.get(taskId)
@@ -500,7 +500,7 @@ let handleEffect = (effect, state: state, dispatch) => {
         },
         ~metadata,
       )
-    | Disconnected => Console.error("[Effect] Cannot send message: not connected")
+    | NoAcpSession => Console.error("[Effect] Cannot send message: no active ACP session")
     }
   | FetchUsageInfo({apiBaseUrl}) =>
     let fetch = async () => {
@@ -832,8 +832,8 @@ let handleEffect = (effect, state: state, dispatch) => {
     disconnect()->ignore
 
   | LoadTaskEffect({taskId}) =>
-    switch state.connectionState {
-    | Connected({loadTask}) =>
+    switch state.acpSession {
+    | AcpSessionActive({loadTask}) =>
       let taskIdToLoad = taskId
       // Check if task needs history loading or just channel activation
       let needsHistory = switch state.tasks->Dict.get(taskId) {
@@ -852,7 +852,7 @@ let handleEffect = (effect, state: state, dispatch) => {
         | Error(err) => dispatch(TaskLoadError({taskId: taskIdToLoad, error: err}))
         }
       })
-    | Disconnected => dispatch(TaskLoadError({taskId, error: "Not connected"}))
+    | NoAcpSession => dispatch(TaskLoadError({taskId, error: "No active ACP session"}))
     }
   }
 }
@@ -993,9 +993,9 @@ let next = (state: state, action) => {
       }
 
       // Persist deletion to server (fire and forget - optimistic UI)
-      switch state.connectionState {
-      | Connected({deleteSession}) => deleteSession(taskId, ~onComplete=_ => ())
-      | Disconnected => ()
+      switch state.acpSession {
+      | AcpSessionActive({deleteSession}) => deleteSession(taskId, ~onComplete=_ => ())
+      | NoAcpSession => ()
       }
 
       {
@@ -1025,13 +1025,13 @@ let next = (state: state, action) => {
   | ClearFigmaNodeWaiting =>
     state->Lens.delegateToTask(state.currentTask, ClearFigmaNodeWaiting)
 
-  | Connect({sendPrompt, loadTask, deleteSession, apiBaseUrl}) =>
-    // Just set up connection functions - task creation happens in AddUserMessage
+  | SetAcpSession({sendPrompt, loadTask, deleteSession, apiBaseUrl}) =>
+    // Just set up session callbacks - task creation happens in AddUserMessage
     // when user sends their first message (lazy session creation)
-    // apiBaseUrl is now co-located in Connected to make illegal state unrepresentable
+    // apiBaseUrl is co-located in AcpSessionActive to make illegal state unrepresentable
     {
       ...state,
-      connectionState: Connected({sendPrompt, loadTask, deleteSession, apiBaseUrl}),
+      acpSession: AcpSessionActive({sendPrompt, loadTask, deleteSession, apiBaseUrl}),
       sessionInitialized: true,
     }->FrontmanReactStatestore.StateReducer.update(
       ~sideEffects=[
@@ -1040,8 +1040,8 @@ let next = (state: state, action) => {
       ],
     )
 
-  | Disconnect =>
-    {...state, connectionState: Disconnected}->FrontmanReactStatestore.StateReducer.update
+  | ClearAcpSession =>
+    {...state, acpSession: NoAcpSession}->FrontmanReactStatestore.StateReducer.update
 
   | ReceivedDiscoveredProjectRule({taskId: _}) =>
     // Mark initialization complete
@@ -1051,9 +1051,9 @@ let next = (state: state, action) => {
     }->FrontmanReactStatestore.StateReducer.update
 
   | TurnCompleted({taskId}) =>
-    let sideEffects = switch state.connectionState {
-    | Connected({apiBaseUrl}) => [FetchUsageInfo({apiBaseUrl: apiBaseUrl})]
-    | Disconnected => []
+    let sideEffects = switch state.acpSession {
+    | AcpSessionActive({apiBaseUrl}) => [FetchUsageInfo({apiBaseUrl: apiBaseUrl})]
+    | NoAcpSession => []
     }
     state->Lens.delegateToTask(Task.Selected(taskId), TurnCompleted, ~sideEffects)
 
@@ -1066,12 +1066,12 @@ let next = (state: state, action) => {
 
   // API key settings actions
   | FetchApiKeySettings =>
-    switch state.connectionState {
-    | Connected({apiBaseUrl}) =>
+    switch state.acpSession {
+    | AcpSessionActive({apiBaseUrl}) =>
       state->FrontmanReactStatestore.StateReducer.update(
         ~sideEffects=[FetchApiKeySettingsEffect({apiBaseUrl: apiBaseUrl})],
       )
-    | Disconnected => state->FrontmanReactStatestore.StateReducer.update
+    | NoAcpSession => state->FrontmanReactStatestore.StateReducer.update
     }
 
   | ApiKeySettingsReceived({source}) =>
@@ -1084,17 +1084,17 @@ let next = (state: state, action) => {
     }->FrontmanReactStatestore.StateReducer.update
 
   | SaveOpenRouterKey({key}) =>
-    switch state.connectionState {
-    | Connected({apiBaseUrl}) =>
+    switch state.acpSession {
+    | AcpSessionActive({apiBaseUrl}) =>
       state->FrontmanReactStatestore.StateReducer.update(
         ~sideEffects=[SaveOpenRouterKeyEffect({apiBaseUrl, key})],
       )
-    | Disconnected =>
+    | NoAcpSession =>
       {
         ...state,
         openrouterKeySettings: {
           ...state.openrouterKeySettings,
-          saveStatus: SaveError("Not connected to server"),
+          saveStatus: SaveError("No active ACP session"),
         },
       }->FrontmanReactStatestore.StateReducer.update
     }
@@ -1110,9 +1110,9 @@ let next = (state: state, action) => {
 
   | OpenRouterKeySaved =>
     // After saving the API key, refresh usage info so the chatbox reflects the new state
-    let effects = switch state.connectionState {
-    | Connected({apiBaseUrl}) => [FetchUsageInfo({apiBaseUrl: apiBaseUrl})]
-    | Disconnected => []
+    let effects = switch state.acpSession {
+    | AcpSessionActive({apiBaseUrl}) => [FetchUsageInfo({apiBaseUrl: apiBaseUrl})]
+    | NoAcpSession => []
     }
     {
       ...state,
@@ -1142,12 +1142,12 @@ let next = (state: state, action) => {
 
   // Model selection actions
   | FetchModelsConfig =>
-    switch state.connectionState {
-    | Connected({apiBaseUrl}) =>
+    switch state.acpSession {
+    | AcpSessionActive({apiBaseUrl}) =>
       state->FrontmanReactStatestore.StateReducer.update(
         ~sideEffects=[FetchModelsConfigEffect({apiBaseUrl: apiBaseUrl})],
       )
-    | Disconnected => state->FrontmanReactStatestore.StateReducer.update
+    | NoAcpSession => state->FrontmanReactStatestore.StateReducer.update
     }
 
   | ModelsConfigReceived({config}) =>
@@ -1178,15 +1178,15 @@ let next = (state: state, action) => {
 
   // Anthropic OAuth actions
   | FetchAnthropicOAuthStatus =>
-    switch state.connectionState {
-    | Connected({apiBaseUrl}) =>
+    switch state.acpSession {
+    | AcpSessionActive({apiBaseUrl}) =>
       {
         ...state,
         anthropicOAuthStatus: Client__State__Types.FetchingStatus,
       }->FrontmanReactStatestore.StateReducer.update(
         ~sideEffects=[FetchAnthropicOAuthStatusEffect({apiBaseUrl: apiBaseUrl})],
       )
-    | Disconnected => state->FrontmanReactStatestore.StateReducer.update
+    | NoAcpSession => state->FrontmanReactStatestore.StateReducer.update
     }
 
   | AnthropicOAuthStatusReceived({connected, expiresAt}) =>
@@ -1204,12 +1204,12 @@ let next = (state: state, action) => {
     {...state, anthropicOAuthStatus: status}->FrontmanReactStatestore.StateReducer.update
 
   | InitiateAnthropicOAuth =>
-    switch state.connectionState {
-    | Connected({apiBaseUrl}) =>
+    switch state.acpSession {
+    | AcpSessionActive({apiBaseUrl}) =>
       state->FrontmanReactStatestore.StateReducer.update(
         ~sideEffects=[GetAnthropicOAuthUrlEffect({apiBaseUrl: apiBaseUrl})],
       )
-    | Disconnected => state->FrontmanReactStatestore.StateReducer.update
+    | NoAcpSession => state->FrontmanReactStatestore.StateReducer.update
     }
 
   | AnthropicOAuthUrlReceived({authorizeUrl, verifier}) =>
@@ -1219,15 +1219,15 @@ let next = (state: state, action) => {
     }->FrontmanReactStatestore.StateReducer.update
 
   | ExchangeAnthropicOAuthCode({code, verifier}) =>
-    switch state.connectionState {
-    | Connected({apiBaseUrl}) =>
+    switch state.acpSession {
+    | AcpSessionActive({apiBaseUrl}) =>
       {
         ...state,
         anthropicOAuthStatus: Client__State__Types.Exchanging,
       }->FrontmanReactStatestore.StateReducer.update(
         ~sideEffects=[ExchangeAnthropicOAuthCodeEffect({apiBaseUrl, code, verifier})],
       )
-    | Disconnected => state->FrontmanReactStatestore.StateReducer.update
+    | NoAcpSession => state->FrontmanReactStatestore.StateReducer.update
     }
 
   | AnthropicOAuthConnected({expiresAt}) =>
@@ -1244,12 +1244,12 @@ let next = (state: state, action) => {
     }->FrontmanReactStatestore.StateReducer.update
 
   | DisconnectAnthropicOAuth =>
-    switch state.connectionState {
-    | Connected({apiBaseUrl}) =>
+    switch state.acpSession {
+    | AcpSessionActive({apiBaseUrl}) =>
       state->FrontmanReactStatestore.StateReducer.update(
         ~sideEffects=[DisconnectAnthropicOAuthEffect({apiBaseUrl: apiBaseUrl})],
       )
-    | Disconnected => state->FrontmanReactStatestore.StateReducer.update
+    | NoAcpSession => state->FrontmanReactStatestore.StateReducer.update
     }
 
   | AnthropicOAuthDisconnected =>
