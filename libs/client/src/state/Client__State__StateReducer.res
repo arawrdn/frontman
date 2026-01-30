@@ -448,6 +448,20 @@ module Selectors = {
   let anthropicOAuthStatus = (state: state): Client__State__Types.anthropicOAuthStatus => {
     state.anthropicOAuthStatus
   }
+
+  // Whether the user has any API provider configured via state-tracked sources
+  // (DB-stored OpenRouter key or Anthropic OAuth).
+  // Env-injected keys (window.__frontmanRuntime) live outside state — check RuntimeConfig separately.
+  let hasAnyProviderConfigured = (state: state): bool => {
+    switch state.usageInfo {
+    | Some({hasUserKey: Some(true)}) => true
+    | _ =>
+      switch state.anthropicOAuthStatus {
+      | Connected(_) => true
+      | _ => false
+      }
+    }
+  }
 }
 
 let handleEffect = (effect, state: state, dispatch) => {
@@ -493,8 +507,7 @@ let handleEffect = (effect, state: state, dispatch) => {
         ~onComplete=result => {
           switch result {
           | Ok(_) => dispatch(TurnCompleted({taskId: taskId}))
-          | Error(error) =>
-            Console.error2("[Effect] Failed to send message:", error)
+          | Error(_) =>
             dispatch(TurnCompleted({taskId: taskId}))
           }
         },
@@ -875,7 +888,6 @@ let next = (state: state, action) => {
   | AddUserMessage({id, sessionId, content}) => {
       let textContent = extractTextFromUserContent(content)
 
-      // Handle based on current task state
       switch state.currentTask {
       | Task.New(newTask) =>
         // New → Loaded: promote to persisted task
@@ -922,7 +934,15 @@ let next = (state: state, action) => {
   | ToolErrorReceived({taskId, id, error}) => state->Lens.delegateToTask(Task.Selected(taskId), ToolErrorReceived({id, error}))
 
   | SetPreviewUrl({url}) =>
-    state->Lens.delegateToTask(state.currentTask, SetPreviewUrl({url: url}))
+    let currentUrl = Selectors.previewUrl(state)
+    let urlChanged = normalizeUrl(currentUrl) != normalizeUrl(url)
+    let (stateWithUrl, effects) = state->Lens.delegateToTask(state.currentTask, SetPreviewUrl({url: url}))
+    // Clear selected element only on actual navigation, not initial iframe mount
+    if urlChanged {
+      stateWithUrl->Lens.delegateToTask(stateWithUrl.currentTask, SetSelectedElement({selectedElement: None}), ~sideEffects=effects)
+    } else {
+      (stateWithUrl, effects)
+    }
 
   | SetPreviewFrame({contentDocument, contentWindow}) =>
     state->Lens.delegateToTask(state.currentTask, SetPreviewFrame({contentDocument, contentWindow}))
@@ -1037,6 +1057,7 @@ let next = (state: state, action) => {
       ~sideEffects=[
         FetchUsageInfo({apiBaseUrl: apiBaseUrl}),
         FetchModelsConfigEffect({apiBaseUrl: apiBaseUrl}),
+        FetchAnthropicOAuthStatusEffect({apiBaseUrl: apiBaseUrl}),
       ],
     )
 

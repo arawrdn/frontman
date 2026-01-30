@@ -112,20 +112,22 @@ let make = () => {
   let usageInfo = Client__State.useSelector(Client__State.Selectors.usageInfo)
   let modelsConfig = Client__State.useSelector(Client__State.Selectors.modelsConfig)
   let selectedModel = Client__State.useSelector(Client__State.Selectors.selectedModel)
-  let runtimeConfig = RuntimeConfig.read()
-  let hasEnvKey = RuntimeConfig.hasOpenrouterKey(runtimeConfig)
+  let hasProviderConfigured = Client__State.useSelector(Client__State.Selectors.hasAnyProviderConfigured)
+  let hasEnvKey = RuntimeConfig.hasOpenrouterKey(RuntimeConfig.read())
+  let hasAnyKey = hasProviderConfigured || hasEnvKey
 
   let providers = modelsConfig->Option.mapOr([], config => config.providers)
 
-  let isUsageExhausted = switch usageInfo {
-  | Some({remaining: Some(remaining), hasUserKey: Some(false), hasServerKey: Some(true)})
-    if remaining <= 0 && !hasEnvKey => true
+  let isUsageExhausted = switch (usageInfo, hasAnyKey) {
+  | (Some({remaining: Some(remaining), hasServerKey: Some(true)}), false)
+    if remaining <= 0 => true
   | _ => false
   }
 
   let (thinkingState, thinkingMessageId) = UseThinkingState.useWithMessageId(
     ~messages,
     ~isStreaming,
+    ~isAgentRunning,
     ~hasActiveACPSession,
     ~sessionInitialized,
   )
@@ -139,10 +141,11 @@ let make = () => {
       }
       switch session {
       | Some(sess) => sendMessage(sess.sessionId)
-      | None => createSession(~onComplete=result => {
+      | None =>
+        createSession(~onComplete=result => {
           switch result {
           | Ok(sessionId) => sendMessage(sessionId)
-          | Error(_) => ()
+          | Error(err) => Console.error2("[Chatbox] Session creation failed:", err)
           }
         })
       }
@@ -317,13 +320,8 @@ let make = () => {
     <Client__PlanDisplay entries=planEntries />
     <Client__SelectedElementDisplay />
     <Client__FigmaNodeDisplay />
-    {switch usageInfo {
-    | Some({
-        limit: Some(limit),
-        remaining: Some(remaining),
-        hasUserKey: Some(false),
-        hasServerKey: Some(true),
-      }) if !hasEnvKey =>
+    {switch (usageInfo, hasAnyKey) {
+    | (Some({limit: Some(limit), remaining: Some(remaining), hasServerKey: Some(true)}), false) =>
       <div className="px-4 pb-1 text-xs text-zinc-400">
         {React.string(
           `Free requests remaining: ${remaining->Int.toString} / ${limit->Int.toString}. Add your API key in Settings to remove limits.`,
