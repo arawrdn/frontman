@@ -12,13 +12,13 @@ const monorepoRoot = path.resolve(appRoot, "../..");
 
 const frontman = FRONTMAN_ENABLED
   ? createMiddleware(
-      makeConfig(
-        appRoot,
-        monorepoRoot,  // sourceRoot for file path resolution
-        "__frontman",
-        "marketing",
-        "1.0.0"
-      )
+      makeConfig({
+        projectRoot: appRoot,
+        sourceRoot: monorepoRoot,
+        basePath: "__frontman",
+        serverName: "marketing",
+        serverVersion: "1.0.0",
+      })
     )
   : null;
 
