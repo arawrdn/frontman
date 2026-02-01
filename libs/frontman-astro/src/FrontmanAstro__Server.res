@@ -147,6 +147,8 @@ let handleResolveSourceLocation = async (
           file,
           line: line->Float.toInt,
           column: column->Float.toInt,
+          componentProps: None,
+          parent: None,
         }
 
         let resolved = await DOMElementToComponentSource.resolveSourceLocationInServer(sourceLocation)
