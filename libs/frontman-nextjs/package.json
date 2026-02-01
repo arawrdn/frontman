@@ -10,7 +10,7 @@
 	},
 	"bin": {
 		"frontman-nextjs": "./dist/cli.js",
-		"@frontman-ai/nextjs": "./dist/cli.js"
+		"nextjs": "./dist/cli.js"
 	},
 	"keywords": [
 		"frontman",

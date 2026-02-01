@@ -6,7 +6,7 @@
 		"@frontman/bindings",
 		"@frontman/client",
 		"@frontman/frontman-client",
-		"@frontman/frontman-nextjs",
+		"@frontman-ai/nextjs",
 		"@frontman/frontman-protocol",
 		"@frontman/react-statestore",
 		"@rescript/webapi"
