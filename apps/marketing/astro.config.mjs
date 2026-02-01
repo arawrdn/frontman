@@ -6,13 +6,13 @@ import sitemap from "@astrojs/sitemap";
 import node from "@astrojs/node";
 import { frontmanIntegration } from "@frontman/frontman-astro";
 
+const isProd = process.env.NODE_ENV === "production";
+
 // https://astro.build/config
 export default defineConfig({
-  site: "https://foxi.netlify.app/",
-  // Server mode with prerendering: pages are static by default (prerendered)
-  // Only /__frontman/* routes are SSR (handled by middleware)
-  output: "server",
-  adapter: node({ mode: "standalone" }),
+  site: "https://frontman.sh",
+  // SSR only needed in dev for /__frontman/* routes
+  ...(isProd ? {} : { output: "server", adapter: node({ mode: "standalone" }) }),
   integrations: [
     frontmanIntegration(),
     tailwind(),
