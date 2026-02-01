@@ -63,7 +63,7 @@ describe("Concurrent Tasks Event Routing", () => {
     // Act: Receive StreamingStarted event for Task A (not current task)
     let (finalState, _) = StateReducer.next(
       stateWithB,
-      StreamingStarted({taskId: taskAId}),
+      TaskAction({target: ForTask(taskAId), action: StreamingStarted}),
     )
 
     // Assert: Message should be in Task A, not Task B
@@ -86,7 +86,7 @@ describe("Concurrent Tasks Event Routing", () => {
     // Add streaming message to Task A
     let (stateWithMessage, _) = StateReducer.next(
       stateWithB,
-      StreamingStarted({taskId: taskAId}),
+      TaskAction({target: ForTask(taskAId), action: StreamingStarted}),
     )
 
     // Current task is still B
@@ -95,7 +95,7 @@ describe("Concurrent Tasks Event Routing", () => {
     // Act: Receive text delta for Task A
     let (finalState, _) = StateReducer.next(
       stateWithMessage,
-      TextDeltaReceived({taskId: taskAId, text: "Hello from Task A"}),
+      TaskAction({target: ForTask(taskAId), action: TextDeltaReceived({text: "Hello from Task A"})}),
     )
 
     // Assert: Text should be in Task A's message, not Task B
@@ -111,7 +111,7 @@ describe("Concurrent Tasks Event Routing", () => {
     t->expect(getTaskMessages(taskB)->Array.length)->Expect.toBe(0)
   })
 
-  test("ToolInputStartReceived event routes to correct task", t => {
+  test("ToolCallReceived event routes to correct task", t => {
     // Setup: Two tasks
     let taskAId = "task-a"
     let taskBId = "task-b"
@@ -121,14 +121,23 @@ describe("Concurrent Tasks Event Routing", () => {
     let (stateWithB, _) = StateReducer.next(state, SwitchTask({taskId: taskBId}))
 
     // Act: Receive tool call for Task A while Task B is current
+    let toolCall: StateReducer.Message.toolCall = {
+      id: "tool-1",
+      toolName: "ReadFile",
+      state: StateReducer.Message.InputAvailable,
+      inputBuffer: "",
+      input: Some(JSON.parseOrThrow(`{"path": "file.txt"}`)),
+      result: None,
+      errorText: None,
+      createdAt: Date.now(),
+      parentAgentId: None,
+      spawningToolName: None,
+    }
     let (finalState, _) = StateReducer.next(
       stateWithB,
-      ToolInputStartReceived({
-        taskId: taskAId,
-        id: "tool-1",
-        toolName: "ReadFile",
-        parentAgentId: None,
-        spawningToolName: None,
+      TaskAction({
+        target: ForTask(taskAId),
+        action: ToolCallReceived({toolCall: toolCall}),
       }),
     )
 
@@ -157,14 +166,14 @@ describe("Concurrent Tasks Event Routing", () => {
     let state = TestSetup.createStateWithLoadedTasks(~taskIds=[taskAId, taskBId, taskCId])
 
     // Act: Start streaming in all three tasks
-    let (state1, _) = StateReducer.next(state, StreamingStarted({taskId: taskAId}))
-    let (state2, _) = StateReducer.next(state1, StreamingStarted({taskId: taskBId}))
-    let (state3, _) = StateReducer.next(state2, StreamingStarted({taskId: taskCId}))
+    let (state1, _) = StateReducer.next(state, TaskAction({target: ForTask(taskAId), action: StreamingStarted}))
+    let (state2, _) = StateReducer.next(state1, TaskAction({target: ForTask(taskBId), action: StreamingStarted}))
+    let (state3, _) = StateReducer.next(state2, TaskAction({target: ForTask(taskCId), action: StreamingStarted}))
 
     // Send text deltas to each task
-    let (state4, _) = StateReducer.next(state3, TextDeltaReceived({taskId: taskAId, text: "A"}))
-    let (state5, _) = StateReducer.next(state4, TextDeltaReceived({taskId: taskBId, text: "B"}))
-    let (finalState, _) = StateReducer.next(state5, TextDeltaReceived({taskId: taskCId, text: "C"}))
+    let (state4, _) = StateReducer.next(state3, TaskAction({target: ForTask(taskAId), action: TextDeltaReceived({text: "A"})}))
+    let (state5, _) = StateReducer.next(state4, TaskAction({target: ForTask(taskBId), action: TextDeltaReceived({text: "B"})}))
+    let (finalState, _) = StateReducer.next(state5, TaskAction({target: ForTask(taskCId), action: TextDeltaReceived({text: "C"})}))
 
     // Assert: Each task has its own message with correct content
     let taskA = finalState.tasks->Dict.get(taskAId)->Option.getOrThrow
@@ -199,15 +208,15 @@ describe("Concurrent Tasks Event Routing", () => {
     // Start streaming in Task A
     let (stateWithStream, _) = StateReducer.next(
       stateWithB,
-      StreamingStarted({taskId: taskAId}),
+      TaskAction({target: ForTask(taskAId), action: StreamingStarted}),
     )
     let (stateWithText, _) = StateReducer.next(
       stateWithStream,
-      TextDeltaReceived({taskId: taskAId, text: "Complete message"}),
+      TaskAction({target: ForTask(taskAId), action: TextDeltaReceived({text: "Complete message"})}),
     )
 
     // Act: Complete the message in Task A
-    let (finalState, _) = StateReducer.next(stateWithText, TurnCompleted({taskId: taskAId}))
+    let (finalState, _) = StateReducer.next(stateWithText, TaskAction({target: ForTask(taskAId), action: TurnCompleted}))
 
     // Assert: Message in Task A should be completed
     let taskA = finalState.tasks->Dict.get(taskAId)->Option.getOrThrow
@@ -246,31 +255,29 @@ describe("Concurrent Tasks Event Routing", () => {
     // Switch to task B
     let (stateWithB, _) = StateReducer.next(state, SwitchTask({taskId: taskBId}))
 
-    // Create tool call in Task A
+    // Create tool call in Task A via ToolCallReceived
+    let toolCall: StateReducer.Message.toolCall = {
+      id: "tool-1",
+      toolName: "ReadFile",
+      state: StateReducer.Message.InputAvailable,
+      inputBuffer: "",
+      input: Some(JSON.parseOrThrow(`{"path": "file.txt"}`)),
+      result: None,
+      errorText: None,
+      createdAt: Date.now(),
+      parentAgentId: None,
+      spawningToolName: None,
+    }
     let (stateWithTool, _) = StateReducer.next(
       stateWithB,
-      ToolInputStartReceived({
-        taskId: taskAId,
-        id: "tool-1",
-        toolName: "ReadFile",
-        parentAgentId: None,
-        spawningToolName: None,
-      }),
-    )
-    let (stateWithInput, _) = StateReducer.next(
-      stateWithTool,
-      ToolInputDeltaReceived({taskId: taskAId, id: "tool-1", delta: `{"path": "file.txt"}`}),
-    )
-    let (stateWithInputEnd, _) = StateReducer.next(
-      stateWithInput,
-      ToolInputEndReceived({taskId: taskAId, id: "tool-1"}),
+      TaskAction({target: ForTask(taskAId), action: ToolCallReceived({toolCall: toolCall})}),
     )
 
     // Act: Send tool result to Task A
     let resultJson = JSON.parseOrThrow(`{"content": "file contents"}`)
     let (finalState, _) = StateReducer.next(
-      stateWithInputEnd,
-      ToolResultReceived({taskId: taskAId, id: "tool-1", result: resultJson}),
+      stateWithTool,
+      TaskAction({target: ForTask(taskAId), action: ToolResultReceived({id: "tool-1", result: resultJson})}),
     )
 
     // Assert: Tool result should be in Task A
@@ -294,10 +301,10 @@ describe("Concurrent Tasks Event Routing", () => {
     let state = TestSetup.createStateWithLoadedTasks(~taskIds=[taskAId, taskBId])
 
     // Start streaming in Task A
-    let (stateWithStream, _) = StateReducer.next(state, StreamingStarted({taskId: taskAId}))
+    let (stateWithStream, _) = StateReducer.next(state, TaskAction({target: ForTask(taskAId), action: StreamingStarted}))
     let (stateWithText1, _) = StateReducer.next(
       stateWithStream,
-      TextDeltaReceived({taskId: taskAId, text: "Part 1. "}),
+      TaskAction({target: ForTask(taskAId), action: TextDeltaReceived({text: "Part 1. "})}),
     )
 
     // Switch to Task B mid-stream
@@ -307,7 +314,7 @@ describe("Concurrent Tasks Event Routing", () => {
     // Continue receiving text for Task A
     let (finalState, _) = StateReducer.next(
       stateWithB,
-      TextDeltaReceived({taskId: taskAId, text: "Part 2."}),
+      TaskAction({target: ForTask(taskAId), action: TextDeltaReceived({text: "Part 2."})}),
     )
 
     // Assert: All text should be in Task A, Task B should be empty
