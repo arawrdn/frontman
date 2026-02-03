@@ -1,0 +1,34 @@
+# Build artifacts
+_build/
+deps/
+node_modules/
+.elixir_ls/
+cover/
+
+# Git
+.git/
+
+# Environment files
+.env
+.env.*
+envs/
+
+# Dev tooling
+.devcontainer/
+.worktrees/
+.claude/
+.mcp.json
+
+# Test/dev only
+test/
+!test/sites/blog-starter/package.json
+*.test.res.mjs
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+*.swp
+*.swo
+*~
