@@ -638,11 +638,11 @@ let selectedElementToContentBlock = (sel: SelectedElement.t): option<ACPTypes.co
 }
 
 // Build an Image ContentBlock from SelectedElement screenshot
-// Uses resource type with image/png mimeType and selected_component_screenshot meta
+// Uses resource type with image/jpeg mimeType and selected_component_screenshot meta
 let selectedElementScreenshotToContentBlock = (
   screenshotDataUrl: string,
 ): ACPTypes.contentBlock => {
-  // Extract base64 data from data URL (data:image/png;base64,<data>)
+  // Extract base64 data from data URL (data:image/jpeg;base64,<data>)
   let base64Data = switch screenshotDataUrl->String.split(";base64,") {
   | [_, base64] => base64
   | _ => screenshotDataUrl // Fallback to full string if format unexpected
@@ -650,7 +650,7 @@ let selectedElementScreenshotToContentBlock = (
 
   let blobResource: ACPTypes.blobResourceContents = {
     uri: "component://screenshot",
-    mimeType: Some("image/png"),
+    mimeType: Some("image/jpeg"),
     blob: base64Data,
   }
 

@@ -806,7 +806,7 @@ defmodule FrontmanServer.Tasks.Interaction do
 
   defp append_screenshot(parts, base64_data) do
     case Base.decode64(base64_data) do
-      {:ok, decoded_data} -> parts ++ [ContentPart.image(decoded_data, "image/png")]
+      {:ok, decoded_data} -> parts ++ [ContentPart.image(decoded_data, "image/jpeg")]
       :error -> parts
     end
   end
