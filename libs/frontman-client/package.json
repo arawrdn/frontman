@@ -1,0 +1,47 @@
+{
+	"name": "@frontman/frontman-client",
+	"version": "0.1.0",
+	"description": "Browser-side client for Frontman",
+	"license": "Apache-2.0",
+	"author": "Frontman AI",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/frontman-ai/frontman.git",
+		"directory": "libs/frontman-client"
+	},
+	"homepage": "https://frontman.sh",
+	"bugs": {
+		"url": "https://github.com/frontman-ai/frontman/issues"
+	},
+	"keywords": [
+		"frontman",
+		"client",
+		"ai",
+		"development"
+	],
+	"type": "module",
+	"main": "./src/FrontmanClient.res.mjs",
+	"files": [
+		"src"
+	],
+	"scripts": {
+		"build": "rescript build",
+		"prepublishOnly": "yarn build"
+	},
+	"dependencies": {
+		"@frontman/logs": "workspace:*",
+		"@sentry/browser": "^8.0.0",
+		"phoenix": "^1.7.0"
+	},
+	"devDependencies": {
+		"@rescript/webapi": "catalog:",
+		"@vitest/ui": "catalog:",
+		"rescript": "catalog:",
+		"rescript-vitest": "catalog:",
+		"sentry-testkit": "^5.0.9",
+		"sury": "catalog:",
+		"sury-ppx": "^11.0.0-alpha.2",
+		"vite": "catalog:",
+		"vitest": "catalog:"
+	}
+}

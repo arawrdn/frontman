@@ -1,0 +1,48 @@
+test/sites/glitter
+# ReScript build output
+*.res.mjs
+*.res.js
+*.gen.tsx
+
+# ReScript build artifacts
+lib/
+.bsb.lock
+.compiler.log
+
+# Node
+node_modules/
+
+# Environment variables
+.env.local
+
+# Yarn
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/sdks
+!.yarn/versions
+.pnp.*
+yarn-error.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+.claude/settings.local.json
+# thoughts/shared
+
+# Git worktrees
+.worktrees/
+.chunkhound.json
+.chunkhound
+# Local SSL certificates
+.certs/
+opencode.json
+scripts/certs/
+mprocs.log

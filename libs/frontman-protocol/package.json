@@ -1,0 +1,43 @@
+{
+	"name": "@frontman/frontman-protocol",
+	"version": "0.1.0",
+	"description": "Protocol definitions for Frontman",
+	"license": "Apache-2.0",
+	"author": "Frontman AI",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/frontman-ai/frontman.git",
+		"directory": "libs/frontman-protocol"
+	},
+	"homepage": "https://frontman.sh",
+	"bugs": {
+		"url": "https://github.com/frontman-ai/frontman/issues"
+	},
+	"keywords": [
+		"frontman",
+		"protocol",
+		"ai",
+		"development"
+	],
+	"type": "module",
+	"main": "./src/FrontmanProtocol.res.mjs",
+	"exports": {
+		".": "./src/FrontmanProtocol.res.mjs",
+		"./src/*": "./src/*"
+	},
+	"files": [
+		"src",
+		"schemas"
+	],
+	"scripts": {
+		"build": "rescript build",
+		"prepublishOnly": "yarn build"
+	},
+	"dependencies": {
+		"sury": "11.0.0-alpha.4"
+	},
+	"devDependencies": {
+		"@rescript/webapi": "catalog:",
+		"rescript": "catalog:"
+	}
+}

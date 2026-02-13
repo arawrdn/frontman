@@ -1,0 +1,17 @@
+[tools]
+node="24.9.0"
+yarn="4.10.3"
+elixir="1.19.3-otp-28"
+erlang="28.1.1"
+elixir-ls="0.30.0"
+mprocs="latest"
+mkcert="latest"
+"npm:@rescript/language-server"="latest"
+"npm:rescript"="latest"
+"npm:corepack"="latest"
+"npm:@tailwindcss/language-server"="latest"
+"npm:vscode-langservers-extracted"="latest"
+"npm:@biomejs/biome"="latest"
+
+[env]
+MIX_OS_DEPS_COMPILE_PARTITION_COUNT = "1"

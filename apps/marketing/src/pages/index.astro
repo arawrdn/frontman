@@ -1,0 +1,42 @@
+---
+// Components
+// - Layout
+import Layout from '../layouts/Layout.astro'
+// - UI
+import Hero from '../components/blocks/hero/HomeCTA.astro'
+import FullContextSection from '../components/blocks/context/FullContextSection.astro'
+import FeatureHighlights from '../components/blocks/features/FeatureHighlights.astro'
+import FrameworkSupport from '../components/blocks/frameworks/FrameworkSupport.astro'
+import ComparisonTable from '../components/blocks/comparison/ComparisonTable.astro'
+import TestimonialsGallery from '../components/blocks/testimonials/TestimonialsGallery.astro'
+import InstallSteps from '../components/blocks/install/InstallSteps.astro'
+import HomeFAQ from '../components/blocks/FAQ/HomeFAQ.astro'
+import FinalCTA from '../components/blocks/CTA/FinalCTA.astro'
+
+// Content
+// - SEO
+const SEO = {
+	title: 'Frontman | Stop Guessing What Your AI Built — Edit Your Frontend Live',
+	description:
+		'Frontman lives in your browser, sees your live DOM, and turns plain English into real code changes — no more refresh-and-check cycles.'
+}
+---
+
+<Layout title={SEO.title} description={SEO.description}>
+	<!-- Act 1: The Insight — hook them, then show why we're different -->
+	<Hero />
+	<FullContextSection />
+
+	<!-- Act 2: The Product — show what it does, prove it fits -->
+	<FeatureHighlights />
+	<FrameworkSupport />
+
+	<!-- Act 3: The Proof — rational then emotional validation -->
+	<ComparisonTable />
+	<TestimonialsGallery />
+
+	<!-- Act 4: The Close — make it easy, handle objections, seal the deal -->
+	<InstallSteps />
+	<HomeFAQ />
+	<FinalCTA />
+</Layout>

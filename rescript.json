@@ -1,0 +1,31 @@
+{
+	"name": "frontman",
+	"namespace": true,
+	"dependencies": [
+		"@frontman/chrome-extension",
+		"@frontman/bindings",
+		"@frontman/client",
+		"@frontman/frontman-astro",
+		"@frontman/frontman-client",
+		"@frontman-ai/nextjs",
+		"@frontman/frontman-protocol",
+		"@frontman/react-statestore",
+		"@rescript/webapi"
+	],
+	"package-specs": {
+		"module": "esmodule",
+		"in-source": true
+	},
+	"jsx": {
+		"version": 4
+	},
+	"gentypeconfig": {
+		"language": "typescript",
+		"module": "esmodule",
+		"shims": {
+			"JsxDOM": "JsxDOM"
+		}
+	},
+	"suffix": ".res.mjs",
+	"compiler-flags": []
+}

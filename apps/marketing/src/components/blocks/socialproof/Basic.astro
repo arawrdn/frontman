@@ -1,0 +1,58 @@
+---
+// Social Proof Section
+// ------------
+// Description: A section showing open source community links instead of company logos.
+
+// Components
+// - Layout
+import Section from '../../ui/Section.astro'
+import Row from '../../ui/Row.astro'
+import Col from '../../ui/Col.astro'
+// - UI
+import { Icon } from 'astro-icon/components'
+
+// Props
+type Props = {
+	classes?: string
+}
+const { classes } = Astro.props
+---
+
+<Section padding="bottom" classes={classes}>
+	<Row>
+		<Col span="12" align="center">
+			<h2 class="!mb-6 text-base font-normal text-neutral-400 dark:text-neutral-600">
+				<strong class="highlight">Open Source</strong> · Apache 2.0 Licensed
+			</h2>
+		</Col>
+	</Row>
+	<Row flex classes="!flex-row !flex-wrap !justify-center !gap-4 md:!gap-12">
+		<Col classes="!flex-none !w-auto">
+			<a href="https://github.com/frontman-ai/frontman" target="_blank" rel="noopener noreferrer" class="social-proof-link">
+				<Icon name="github-icon" class="social-proof-link__icon" />
+				<span>Star on GitHub</span>
+			</a>
+		</Col>
+		<Col classes="!flex-none !w-auto">
+			<a href="https://discord.gg/J77jBzMM" target="_blank" rel="noopener noreferrer" class="social-proof-link">
+				<Icon name="discord-icon" class="social-proof-link__icon" />
+				<span>Join Discord</span>
+			</a>
+		</Col>
+		<Col classes="!flex-none !w-auto">
+			<a href="https://twitter.com/frontman_agent" target="_blank" rel="noopener noreferrer" class="social-proof-link">
+				<Icon name="twitter-icon" class="social-proof-link__icon" />
+				<span>Follow on X</span>
+			</a>
+		</Col>
+	</Row>
+</Section>
+
+<style>
+	.social-proof-link {
+		@apply inline-flex items-center gap-2 text-sm font-medium text-neutral-500 transition-colors duration-200 hover:text-primary-500 dark:text-neutral-400 dark:hover:text-primary-400;
+	}
+	.social-proof-link__icon {
+		@apply h-5 w-5;
+	}
+</style>

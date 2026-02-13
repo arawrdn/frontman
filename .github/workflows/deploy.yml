@@ -1,0 +1,121 @@
+name: Deploy Production
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'apps/frontman_server/**'
+      - 'libs/**'
+      - 'rescript.json'
+      - 'mise.toml'
+      - '.github/workflows/deploy.yml'
+      - 'infra/**'
+  workflow_dispatch:
+
+jobs:
+  # ==========================================================================
+  # Server: rsync source → build natively on prod server → blue-green deploy
+  # ==========================================================================
+  deploy-server:
+    name: Deploy Server
+    runs-on: self-hosted
+    environment: production
+    env:
+      PROD_SERVER: ${{ secrets.PROD_SERVER }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY_B64 }}" | base64 -d > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "$PROD_SERVER" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Sync source to production server
+        run: |
+          rsync -az --delete \
+            --exclude '.git' \
+            --exclude 'node_modules' \
+            --exclude '_build' \
+            --exclude 'deps' \
+            --exclude '.worktrees' \
+            --exclude '.DS_Store' \
+            --exclude '.yarn' \
+            --exclude '.env.local' \
+            --exclude '.certs' \
+            --exclude 'docs' \
+            --exclude 'infra/marketing' \
+            -e "ssh -i ~/.ssh/deploy_key" \
+            ./ \
+            "deploy@${PROD_SERVER}:/opt/frontman/build/"
+
+      - name: Copy deploy script
+        run: |
+          scp -i ~/.ssh/deploy_key \
+            infra/production/build-and-deploy.sh \
+            "deploy@${PROD_SERVER}:/opt/frontman/build-and-deploy.sh"
+          ssh -i ~/.ssh/deploy_key "deploy@${PROD_SERVER}" \
+            'chmod +x /opt/frontman/build-and-deploy.sh'
+
+      - name: Build and deploy on server
+        run: |
+          ssh -i ~/.ssh/deploy_key \
+            -o ServerAliveInterval=30 \
+            -o ServerAliveCountMax=10 \
+            "deploy@${PROD_SERVER}" \
+            '/opt/frontman/build-and-deploy.sh'
+
+      - name: Cleanup SSH
+        if: always()
+        run: rm -f ~/.ssh/deploy_key
+
+  # ==========================================================================
+  # Client: build standalone bundle on CI → deploy to Cloudflare Pages
+  # ==========================================================================
+  deploy-client:
+    name: Deploy Client
+    runs-on: self-hosted
+    environment: production
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24.4.1'
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Cache Yarn
+        uses: actions/cache@v4
+        with:
+          path: ~/.yarn/berry/cache
+          key: yarn-${{ hashFiles('yarn.lock') }}
+          restore-keys: yarn-
+
+      - name: Install dependencies
+        run: yarn install --immutable
+
+      - name: Build ReScript
+        run: yarn rescript clean && yarn rescript build
+
+      - name: Build client standalone bundle
+        env:
+          NODE_OPTIONS: '--max-old-space-size=4096'
+        run: |
+          cd libs/client
+          yarn vite build --config vite.config.standalone.ts
+          echo "Client bundle built:"
+          ls -lh dist/
+
+      - name: Deploy client to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy libs/client/dist --project-name=frontman-client --branch=main

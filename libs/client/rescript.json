@@ -1,0 +1,44 @@
+{
+	"name": "@frontman/client",
+	"namespace": true,
+	"sources": [
+		{
+			"dir": "src",
+			"subdirs": true
+		},
+		{
+			"dir": "test",
+			"subdirs": true,
+			"type": "dev"
+		}
+	],
+	"package-specs": [
+		{
+			"module": "esmodule",
+			"in-source": true,
+			"suffix": ".res.mjs"
+		}
+	],
+	"reanalyze": {
+		"analysis": ["dce"],
+		"suppress": [],
+		"unsuppress": [],
+		"transitive": false
+	},
+	"ppx-flags": ["sury-ppx/bin"],
+	"dependencies": [
+		"@frontman/bindings",
+		"@rescript/react",
+		"@rescript/webapi",
+		"@frontman/frontman-client",
+		"@frontman-ai/nextjs",
+		"@frontman/frontman-protocol",
+		"@frontman/react-statestore",
+		"sury"
+	],
+	"dev-dependencies": ["rescript-vitest"],
+	"compiler-flags": [],
+	"jsx": {
+		"version": 4
+	}
+}

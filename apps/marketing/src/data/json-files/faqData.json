@@ -1,0 +1,56 @@
+[
+	{
+		"question": "What is Frontman?",
+		"reply": "Frontman is an AI agent that lives inside your app, not your editor. It plugs into your framework, giving anyone on your team a chat interface alongside a live view of your app. Describe what you want to change, and the agent makes it happen — outputting real code your team can review and merge.",
+		"category": "general",
+		"open": true
+	},
+	{
+		"question": "How is this different from Cursor or Claude Code?",
+		"reply": "Cursor and Claude Code work at the file level — they read your code but don't understand your running application. Frontman is wired into your app's runtime. It sees your component tree, routes, server logs, query performance, and everything happening live. That deep context means better results, faster.",
+		"category": "general",
+		"open": false
+	},
+	{
+		"question": "Who is Frontman built for?",
+		"reply": "Frontend developers who want faster iteration with richer context than terminal-based AI tools. But also designers, product managers, and other semi-technical teammates who need to make changes — from tweaking copy and structure to exploring entirely new feature ideas — without opening an IDE.",
+		"category": "general",
+		"open": false
+	},
+	{
+		"question": "Is it open source?",
+		"reply": "Yes. Frontman is fully open source under the Apache 2.0 license. The entire codebase is on GitHub at github.com/frontman-ai/frontman. Every prompt, every tool call, every piece of context the agent uses is visible in the source.",
+		"category": "general",
+		"open": false
+	},
+	{
+		"question": "What can I actually do with it?",
+		"reply": "Implement a design change from a Figma mockup. Explore a new feature idea end to end. Tweak page structure or copy. Fix styling issues. Anything involving your frontend and fullstack application — described in natural language, executed as real code.",
+		"category": "product",
+		"open": true
+	},
+	{
+		"question": "What does the interface look like?",
+		"reply": "Navigate to localhost/frontman in your browser. You get a chat interface on the left and a live view of your app on the right. No terminal, no IDE — just a conversation with an agent that understands your entire system.",
+		"category": "product",
+		"open": false
+	},
+	{
+		"question": "Isn't it dangerous to let non-engineers change code?",
+		"reply": "Frontman runs in development only — never in production. Every change produces a standard code diff that goes through your team's normal review process. Nothing gets merged without an engineer approving it.",
+		"category": "product",
+		"open": false
+	},
+	{
+		"question": "Which frameworks are supported?",
+		"reply": "Frontman currently supports Next.js, Astro, and Vite. It integrates at the framework level as middleware, turning your local dev server into an MCP server that our agent connects to for both client-side and server-side context.",
+		"category": "technical",
+		"open": true
+	},
+	{
+		"question": "How does it get context about my app?",
+		"reply": "When you install Frontman, a lightweight middleware hooks into your framework and exposes tools via MCP — client-side tools (component tree, performance, logs, click targets) and server-side tools (routes, server logs, query timing, compiled modules). Our agent connects to your local dev server and queries this context in real time, so it always knows what's actually happening in your app.",
+		"category": "technical",
+		"open": false
+	}
+]

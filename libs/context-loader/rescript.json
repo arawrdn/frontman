@@ -1,0 +1,24 @@
+{
+	"name": "@frontman/context-loader",
+	"namespace": true,
+	"exposed-modules": ["ContextLoader"],
+	"sources": [
+		{
+			"dir": "src",
+			"subdirs": true
+		},
+		{
+			"dir": "tests",
+			"type": "dev"
+		}
+	],
+	"package-specs": [
+		{
+			"module": "esmodule",
+			"in-source": true,
+			"suffix": ".res.mjs"
+		}
+	],
+	"dependencies": ["@frontman/bindings"],
+	"dev-dependencies": ["rescript-vitest"]
+}

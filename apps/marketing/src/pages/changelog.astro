@@ -1,0 +1,73 @@
+---
+// Components
+// - Layout
+import Layout from '../layouts/Layout.astro'
+// - UI
+import SimpleFeed from '../components/blocks/feeds/BasicFeed.astro'
+import CTA from '../components/blocks/CTA/FinalCTA.astro'
+
+// Data
+import { parseChangelog } from '../utils/parseChangelog'
+const feedData = parseChangelog()
+
+// Content
+const SEO = {
+	title: 'Frontman | Version Updates and Improvements',
+	description:
+		'Track every update, new feature, and improvement shipped in Frontman.'
+}
+---
+
+<Layout title={SEO.title} description={SEO.description}>
+	<section class="changelog-hero">
+		<div class="changelog-hero__container">
+			<p class="changelog-hero__label">Changelog</p>
+			<h1 class="changelog-hero__title">What's new in Frontman</h1>
+			<p class="changelog-hero__subtitle">Every feature, fix, and improvement — as it ships.</p>
+		</div>
+	</section>
+	<SimpleFeed data={feedData} />
+	<CTA link="/#install" />
+</Layout>
+
+<style>
+	.changelog-hero {
+		@apply relative overflow-hidden;
+		background: #FAFAFA;
+		padding: 80px 24px 64px;
+	}
+
+	@media (min-width: 1024px) {
+		.changelog-hero {
+			padding: 120px 48px 80px;
+		}
+	}
+
+	.changelog-hero__container {
+		@apply mx-auto max-w-3xl;
+		text-align: left;
+	}
+
+	.changelog-hero__label {
+		@apply font-headings text-sm font-semibold uppercase tracking-widest mb-4;
+		color: #A259FF;
+	}
+
+	.changelog-hero__title {
+		@apply font-headings font-bold text-black;
+		font-size: 36px;
+		line-height: 1.15;
+	}
+
+	@media (min-width: 1024px) {
+		.changelog-hero__title {
+			font-size: 56px;
+		}
+	}
+
+	.changelog-hero__subtitle {
+		@apply mt-4 text-lg leading-relaxed;
+		color: #334155;
+		max-width: 480px;
+	}
+</style>

@@ -1,0 +1,80 @@
+{
+	"name": "@frontman-ai/nextjs",
+	"version": "0.1.7",
+	"description": "Next.js integration for Frontman - AI-powered development tools and observability",
+	"type": "module",
+	"main": "./dist/index.js",
+	"exports": {
+		".": "./dist/index.js",
+		"./Instrumentation": "./dist/instrumentation.js"
+	},
+	"bin": {
+		"frontman-nextjs": "./dist/cli.js",
+		"nextjs": "./dist/cli.js"
+	},
+	"keywords": [
+		"frontman",
+		"nextjs",
+		"next.js",
+		"ai",
+		"development",
+		"observability",
+		"opentelemetry",
+		"middleware"
+	],
+	"author": "Frontman AI",
+	"license": "Apache-2.0",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/frontman-ai/frontman.git",
+		"directory": "libs/frontman-nextjs"
+	},
+	"homepage": "https://frontman.sh",
+	"bugs": {
+		"url": "https://github.com/frontman-ai/frontman/issues"
+	},
+	"files": [
+		"dist",
+		"README.md"
+	],
+	"scripts": {
+		"build:rescript": "rescript build",
+		"build:bundle": "tsup",
+		"build": "yarn build:rescript && yarn build:bundle",
+		"prepublishOnly": "yarn build"
+	},
+	"dependencies": {
+		"@sentry/nextjs": "^8.0.0"
+	},
+	"peerDependencies": {
+		"@opentelemetry/api": "^1.9.0",
+		"@opentelemetry/sdk-logs": "^0.52.0",
+		"@opentelemetry/sdk-trace-base": "^1.25.0"
+	},
+	"peerDependenciesMeta": {
+		"@opentelemetry/api": {
+			"optional": true
+		},
+		"@opentelemetry/sdk-logs": {
+			"optional": true
+		},
+		"@opentelemetry/sdk-trace-base": {
+			"optional": true
+		}
+	},
+	"devDependencies": {
+		"@frontman/frontman-core": "*",
+		"@frontman/frontman-protocol": "*",
+		"@rescript/runtime": "12.0.0-beta.14",
+		"@rescript/webapi": "catalog:",
+		"@vitest/ui": "catalog:",
+		"dom-element-to-component-source": "0.5.0",
+		"rescript": "catalog:",
+		"rescript-vitest": "catalog:",
+		"sentry-testkit": "^5.0.9",
+		"sury": "11.0.0-alpha.4",
+		"tsup": "^8.0.0",
+		"vite": "catalog:",
+		"vitest": "catalog:"
+	}
+}

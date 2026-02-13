@@ -1,0 +1,61 @@
+---
+// Imports
+import { ClientRouter } from 'astro:transitions'
+import GoogleAnalytics from '../../scripts/googleAnalytics.astro'
+import GoogleTagManagerHead from '../../scripts/googleTagManagerHead.astro'
+import GoogleSearchConsole from '../../scripts/googleSearchConsole.astro'
+// Partials
+import Seo from './partials/Seo.astro'
+import StructuredData from './partials/StructuredData.astro'
+// Data
+import { configData } from '../../../config/config'
+
+import { googleAnalyticsMeasurementID } from '../../../config/analytics'
+import { googleTagManagerID } from '../../../config/analytics'
+
+// Font preloading
+import interLatinUrl from '@fontsource-variable/inter/files/inter-latin-wght-normal.woff2?url'
+import outfitLatinUrl from '@fontsource-variable/outfit/files/outfit-latin-wght-normal.woff2?url'
+
+// Props
+type Props = {
+	title?: string
+	description?: string
+	ogImage?: string
+	canonical?: boolean
+	noindex?: boolean
+}
+// Page Metadata
+const {
+	title = configData.siteTitle,
+	description = configData.siteDescription,
+	ogImage = configData.ogImage,
+	canonical = configData.canonical,
+	noindex = configData.noindex
+} = Astro.props
+---
+
+<head>
+	<meta charset="UTF-8" />
+	<link rel="preload" href={interLatinUrl} as="font" type="font/woff2" crossorigin />
+	<link rel="preload" href={outfitLatinUrl} as="font" type="font/woff2" crossorigin />
+	{googleAnalyticsMeasurementID && <GoogleAnalytics />}
+	{googleTagManagerID && <GoogleTagManagerHead />}
+	<GoogleSearchConsole />
+	<meta name="viewport" content="width=device-width, initial-scale=1" />
+	<link rel="preconnect" href="https://www.googletagmanager.com" />
+	<link rel="preconnect" href="https://www.google-analytics.com" />
+	<Seo
+		title={title}
+		description={description}
+		ogImage={ogImage}
+		canonical={canonical}
+		noindex={noindex}
+	/>
+	<link rel="icon" href={configData.logo.src} type="image/svg+xml" />
+	<link rel="sitemap" href="/sitemap-index.xml" />
+	<meta name="generator" content={Astro.generator} />
+	<meta name="theme-color" content="#134e4a" />
+	<StructuredData />
+	<ClientRouter fallback="swap" />
+</head>

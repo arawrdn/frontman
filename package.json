@@ -1,0 +1,42 @@
+{
+	"name": "frontman",
+	"license": "Apache-2.0",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/frontman-ai/frontman.git"
+	},
+	"homepage": "https://frontman.sh",
+	"bugs": {
+		"url": "https://github.com/frontman-ai/frontman/issues"
+	},
+	"packageManager": "yarn@4.10.3",
+	"enableGlobalCache": false,
+	"workspaces": [
+		"apps/chrome-extension",
+		"apps/frontman_server/assets",
+		"apps/marketing",
+		"libs/bindings",
+		"libs/client",
+		"libs/context-loader",
+		"libs/experimental-rescript-webapi",
+		"libs/frontman-client",
+		"libs/frontman-protocol",
+		"libs/frontman-core",
+		"libs/frontman-astro",
+		"libs/frontman-nextjs",
+		"test/sites/blog-starter",
+		"libs/logs",
+		"libs/react-statestore",
+		"libs/vite-plugin"
+	],
+	"dependencies": {
+		"rescript": "catalog:"
+	},
+	"devDependencies": {
+		"@changesets/changelog-github": "^0.5.2",
+		"@changesets/cli": "^2.29.8",
+		"@rescript/tools": "^0.6.6",
+		"@vitest/coverage-v8": "^3.2.4",
+		"vitest": "^3.2.4"
+	}
+}

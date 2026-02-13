@@ -1,0 +1,67 @@
+---
+// Imports
+const { frontmatter } = Astro.props
+
+//Layout Components
+import Layout from './Layout.astro'
+
+// Section Components
+import BlogPostHero from '../components/blocks/blog/BlogPostHero.astro'
+
+// Content
+// - SEO
+const SEO = {
+	title: `${frontmatter.title} | Frontman`,
+	description: `${frontmatter.description}`
+}
+
+// BlogPosting JSON-LD
+const blogPostJsonLd = {
+	"@context": "https://schema.org",
+	"@type": "BlogPosting",
+	"headline": frontmatter.title,
+	"description": frontmatter.description,
+	"datePublished": frontmatter.pubDate instanceof Date ? frontmatter.pubDate.toISOString() : frontmatter.pubDate,
+	"author": {
+		"@type": "Person",
+		"name": frontmatter.author
+	},
+	...(frontmatter.image ? { "image": `https://frontman.sh${frontmatter.image}` } : {}),
+	"publisher": {
+		"@type": "Organization",
+		"name": "Frontman",
+		"logo": {
+			"@type": "ImageObject",
+			"url": "https://frontman.sh/logo.svg"
+		}
+	},
+	"mainEntityOfPage": {
+		"@type": "WebPage",
+		"@id": Astro.url.href
+	}
+}
+---
+
+<Layout title={SEO.title} description={SEO.description} ogImage={frontmatter.image}>
+	<script is:inline type="application/ld+json" set:html={JSON.stringify(blogPostJsonLd)} />
+	<BlogPostHero
+		tags={frontmatter.tags}
+		title={frontmatter.title}
+		author={frontmatter.author}
+		publishDate={frontmatter.pubDate.toLocaleDateString('en-US', {
+			year: 'numeric',
+			month: 'long',
+			day: 'numeric'
+		})}
+	/>
+
+	<div class="post-body basic-text basic-text--lg">
+		<slot />
+	</div>
+</Layout>
+
+<style>
+	.post-body {
+		@apply mx-auto max-w-3xl px-6 py-12 lg:py-24;
+	}
+</style>

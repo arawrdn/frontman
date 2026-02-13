@@ -1,0 +1,24 @@
+{
+	"name": "@frontman/frontman-protocol",
+	"namespace": true,
+	"sources": [
+		{
+			"dir": "src",
+			"subdirs": true
+		},
+		{
+			"dir": "scripts",
+			"type": "dev"
+		}
+	],
+	"package-specs": [
+		{
+			"module": "esmodule",
+			"in-source": true,
+			"suffix": ".res.mjs"
+		}
+	],
+	"ppx-flags": ["sury-ppx/bin"],
+	"dependencies": ["@rescript/webapi", "sury"],
+	"dev-dependencies": ["@frontman/bindings"]
+}
