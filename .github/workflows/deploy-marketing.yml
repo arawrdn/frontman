@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - 'apps/marketing/**'
+      - 'libs/frontman-astro/**'
       - 'CHANGELOG.md'
   workflow_dispatch:
 
@@ -35,6 +36,9 @@ jobs:
 
       - name: Install dependencies
         run: yarn install --immutable
+
+      - name: Build ReScript packages
+        run: yarn rescript
 
       - name: Build marketing site
         run: cd apps/marketing && yarn build
