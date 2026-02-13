@@ -9,7 +9,7 @@
 
 // Constants
 let defaultWidth = 384 // w-96 equivalent
-let minWidth = 280
+let minWidth = 380
 let maxWidth = 600
 let storageKey = "frontman:chatbox-width"
 
