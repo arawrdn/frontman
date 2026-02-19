@@ -2,6 +2,7 @@
 
 // Data for file/image attachments extracted from user content parts
 type fileAttachmentData = {
+  id: string,
   dataUrl: string,
   mediaType: string,
   filename: string,
@@ -11,7 +12,7 @@ type fileAttachmentData = {
 module UserContentPart = {
   type t =
     | Text({text: string})
-    | Image({image: string, mediaType: option<string>, name: option<string>})
+    | Image({id: option<string>, image: string, mediaType: option<string>, name: option<string>})
     | File({file: string})
 
   let text = (text: string): t => Text({text: text})

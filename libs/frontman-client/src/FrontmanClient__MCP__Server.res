@@ -8,10 +8,19 @@ module Log = FrontmanLogs.Logs.Make({
   let component = #MCPServer
 })
 
+// Resolved image data for write_file image_ref interception
+type resolvedImage = {
+  base64: string,
+  mediaType: string,
+}
+
 type t = {
   tools: array<module(Tool.Tool)>,
   relay: Relay.t,
   serverInfo: Types.info,
+  // Optional callback to resolve an image_ref URI to base64 data.
+  // Set by the client layer which has access to the state store.
+  mutable resolveImageRef: option<string => option<resolvedImage>>,
 }
 
 let make = (~relay: Relay.t, ~serverName="frontman-browser", ~serverVersion="1.0.0"): t => {
@@ -19,7 +28,13 @@ let make = (~relay: Relay.t, ~serverName="frontman-browser", ~serverVersion="1.0
     tools: [],
     relay,
     serverInfo: {name: serverName, version: serverVersion},
+    resolveImageRef: None,
   }
+}
+
+// Set the image ref resolver (called from client layer after store is available)
+let setImageRefResolver = (server: t, resolver: string => option<resolvedImage>): unit => {
+  server.resolveImageRef = Some(resolver)
 }
 
 let registerToolModule = (server: t, toolModule: module(Tool.Tool)): t => {
@@ -102,6 +117,50 @@ let executeLocalTool = async (
   }
 }
 
+// Resolve image_ref in write_file arguments before forwarding to relay.
+// Replaces image_ref with content (base64) and encoding ("base64").
+let resolveWriteFileImageRef = (
+  server: t,
+  arguments: option<Dict.t<JSON.t>>,
+): result<option<Dict.t<JSON.t>>, string> => {
+  switch arguments {
+  | None => Ok(None)
+  | Some(args) =>
+    switch args->Dict.get("image_ref") {
+    | None => Ok(Some(args)) // No image_ref, pass through
+    | Some(imageRefJson) =>
+      let imageRef = switch imageRefJson {
+      | String(s) => s
+      | _ => ""
+      }
+      if imageRef == "" {
+        Error("image_ref must be a non-empty string")
+      } else {
+        switch server.resolveImageRef {
+        | None =>
+          Error("Cannot resolve image_ref: no resolver configured")
+        | Some(resolve) =>
+          switch resolve(imageRef) {
+          | None =>
+            Error(`Image not found for URI: ${imageRef}. Available images may have expired or the URI is incorrect.`)
+          | Some({base64}) =>
+            // Build new arguments: remove image_ref, add content + encoding
+            let newArgs = Dict.make()
+            args->Dict.forEachWithKey((value, key) => {
+              if key != "image_ref" {
+                newArgs->Dict.set(key, value)
+              }
+            })
+            newArgs->Dict.set("content", JSON.Encode.string(base64))
+            newArgs->Dict.set("encoding", JSON.Encode.string("base64"))
+            Ok(Some(newArgs))
+          }
+        }
+      }
+    }
+  }
+}
+
 // Execute tool - tries local first, then relay
 let executeTool = async (
   server: t,
@@ -115,12 +174,29 @@ let executeTool = async (
   | None =>
     // Try relay if it has this tool
     if server.relay->Relay.hasTool(name) {
-      let result = await server.relay->Relay.executeTool(~name, ~arguments?, ~onProgress?)
-      switch result {
-      | Ok(toolResult) => toolResult
+      // Intercept write_file with image_ref to resolve from state
+      let resolvedArgs = if name == "write_file" {
+        switch resolveWriteFileImageRef(server, arguments) {
+        | Ok(args) => Ok(args)
+        | Error(msg) => Error(msg)
+        }
+      } else {
+        Ok(arguments)
+      }
+
+      switch resolvedArgs {
       | Error(msg) => {
           content: [{type_: "text", text: msg}],
           isError: Some(true),
+        }
+      | Ok(finalArgs) =>
+        let result = await server.relay->Relay.executeTool(~name, ~arguments=?finalArgs, ~onProgress?)
+        switch result {
+        | Ok(toolResult) => toolResult
+        | Error(msg) => {
+            content: [{type_: "text", text: msg}],
+            isError: Some(true),
+          }
         }
       }
     } else {

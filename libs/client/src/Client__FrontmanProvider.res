@@ -100,6 +100,23 @@ module Provider = {
       let mcpServer = MCPServer.make(~relay, ~serverName=clientName, ~serverVersion=clientVersion)
       let mcpServer = Client__ToolRegistry.registerAll(toolRegistry, mcpServer)
 
+      // Wire up image ref resolver so write_file can save user-attached images
+      MCPServer.setImageRefResolver(mcpServer, uri => {
+        let state = FrontmanReactStatestore.StateStore.getState(Client__State__Store.store)
+        let currentTask = Client__State__StateReducer.Selectors.currentTask(state)
+        let attachments = Client__State__Types.Task.getImageAttachments(currentTask)
+        switch attachments->Dict.get(uri) {
+        | None => None
+        | Some(att) =>
+          // Strip "data:mime;base64," prefix to get raw base64
+          let base64 = switch att.dataUrl->String.indexOf(";base64,") {
+          | -1 => att.dataUrl
+          | idx => att.dataUrl->String.slice(~start=idx + 8, ~end=String.length(att.dataUrl))
+          }
+          Some({MCPServer.base64, mediaType: att.mediaType})
+        }
+      })
+
       let config: Reducer.initConfig = {
         endpoint,
         tokenUrl,
