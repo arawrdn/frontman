@@ -8,6 +8,7 @@
 		"@frontman-ai/astro",
 		"@frontman/frontman-client",
 		"@frontman-ai/nextjs",
+		"@frontman-ai/vue-cli",
 		"@frontman/frontman-protocol",
 		"@frontman/react-statestore",
 		"@rescript/webapi"

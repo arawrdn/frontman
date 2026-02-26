@@ -25,7 +25,9 @@
 		"libs/frontman-astro",
 		"libs/frontman-nextjs",
 		"libs/frontman-vite",
+		"libs/frontman-vue-cli",
 		"test/sites/blog-starter",
+		"test/sites/vue-cli-app",
 		"libs/logs",
 		"libs/react-statestore"
 	],

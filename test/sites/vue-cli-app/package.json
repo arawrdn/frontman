@@ -1,0 +1,17 @@
+{
+	"name": "vue-cli-test-app",
+	"version": "0.1.0",
+	"private": true,
+	"scripts": {
+		"serve": "vue-cli-service serve --port 8080 --host 0.0.0.0",
+		"build": "vue-cli-service build"
+	},
+	"dependencies": {
+		"vue": "^2.7.16"
+	},
+	"devDependencies": {
+		"@frontman-ai/vue-cli": "workspace:*",
+		"@vue/cli-service": "^5.0.8",
+		"vue-template-compiler": "^2.7.16"
+	}
+}
