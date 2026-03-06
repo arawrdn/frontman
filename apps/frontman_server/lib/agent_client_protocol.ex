@@ -12,6 +12,38 @@ defmodule AgentClientProtocol do
 
   @protocol_version 1
 
+  # Tool call status constants — the single source of truth for ACP wire values.
+  @tool_call_status_pending "pending"
+  @tool_call_status_in_progress "in_progress"
+  @tool_call_status_completed "completed"
+  @tool_call_status_failed "failed"
+
+  @tool_call_statuses [
+    @tool_call_status_pending,
+    @tool_call_status_in_progress,
+    @tool_call_status_completed,
+    @tool_call_status_failed
+  ]
+
+  # Plan entry priority constants
+  @plan_priority_high "high"
+  @plan_priority_medium "medium"
+  @plan_priority_low "low"
+
+  @plan_priorities [@plan_priority_high, @plan_priority_medium, @plan_priority_low]
+
+  # Plan entry status constants
+  @plan_status_pending "pending"
+  @plan_status_in_progress "in_progress"
+  @plan_status_completed "completed"
+
+  @plan_statuses [@plan_status_pending, @plan_status_in_progress, @plan_status_completed]
+
+  def tool_call_status_pending, do: @tool_call_status_pending
+  def tool_call_status_in_progress, do: @tool_call_status_in_progress
+  def tool_call_status_completed, do: @tool_call_status_completed
+  def tool_call_status_failed, do: @tool_call_status_failed
+
   def protocol_version, do: @protocol_version
 
   def agent_info do
@@ -81,6 +113,43 @@ defmodule AgentClientProtocol do
   end
 
   @doc """
+  Builds an agent_turn_complete session/update notification.
+
+  Sent when the agent finishes a turn that was resumed via tool:submit_result
+  (not via session/prompt), so there is no pending JSON-RPC request to respond to.
+  The client uses this to finalize the streaming message and reset the agent-running state.
+  """
+  def build_agent_turn_complete_notification(session_id, stop_reason) do
+    params = %{
+      "sessionId" => session_id,
+      "update" => %{
+        "sessionUpdate" => "agent_turn_complete",
+        "stopReason" => stop_reason
+      }
+    }
+
+    JsonRpc.notification("session/update", params)
+  end
+
+  @doc """
+  Builds an error session/update notification.
+
+  Sent when the agent encounters an error. Always delivered as a notification
+  so the client can display it regardless of whether a pending prompt exists.
+  """
+  def build_error_notification(session_id, message) do
+    params = %{
+      "sessionId" => session_id,
+      "update" => %{
+        "sessionUpdate" => "error",
+        "message" => message
+      }
+    }
+
+    JsonRpc.notification("session/update", params)
+  end
+
+  @doc """
   Builds a session/prompt response with stop reason.
   """
   def build_prompt_result(stop_reason) do
@@ -96,7 +165,15 @@ defmodule AgentClientProtocol do
     - `:parent_agent_id` - If present, indicates this tool call is from a sub-agent
     - `:spawning_tool_name` - Name of the tool that spawned this agent
   """
-  def tool_call_create(session_id, tool_call_id, title, kind, status \\ "pending", opts \\ []) do
+  def tool_call_create(
+        session_id,
+        tool_call_id,
+        title,
+        kind,
+        status \\ @tool_call_status_pending,
+        opts \\ []
+      )
+      when status in @tool_call_statuses do
     parent_agent_id = Keyword.get(opts, :parent_agent_id)
     spawning_tool_name = Keyword.get(opts, :spawning_tool_name)
 
@@ -138,7 +215,8 @@ defmodule AgentClientProtocol do
   Content should be an array of ACP content blocks if provided.
   Per ACP spec: "All fields except toolCallId are optional in updates"
   """
-  def tool_call_update(session_id, tool_call_id, status, content \\ nil) do
+  def tool_call_update(session_id, tool_call_id, status, content \\ nil)
+      when status in @tool_call_statuses do
     update = %{
       "sessionUpdate" => "tool_call_update",
       "toolCallId" => tool_call_id,
@@ -215,26 +293,27 @@ defmodule AgentClientProtocol do
     end
   end
 
-  defp validate_priority!(priority) when priority in ["high", "medium", "low"], do: :ok
+  defp validate_priority!(priority) when priority in @plan_priorities, do: :ok
 
   defp validate_priority!(priority),
     do:
       raise(
         ArgumentError,
-        "priority must be one of: high, medium, low, got: #{inspect(priority)}"
+        "priority must be one of: #{Enum.join(@plan_priorities, ", ")}, got: #{inspect(priority)}"
       )
 
-  defp validate_status!(status) when status in ["pending", "in_progress", "completed"], do: :ok
+  defp validate_status!(status) when status in @plan_statuses, do: :ok
 
   defp validate_status!(status),
     do:
       raise(
         ArgumentError,
-        "status must be one of: pending, in_progress, completed, got: #{inspect(status)}"
+        "status must be one of: #{Enum.join(@plan_statuses, ", ")}, got: #{inspect(status)}"
       )
 
   # Deprecated - use tool_call_create/6 instead
-  def build_tool_call_notification(session_id, tool_call, status, opts \\ []) do
+  def build_tool_call_notification(session_id, tool_call, status, opts \\ [])
+      when status in @tool_call_statuses do
     tool_call_create(
       session_id,
       tool_call.tool_call_id,
@@ -246,7 +325,8 @@ defmodule AgentClientProtocol do
   end
 
   # Deprecated - use tool_call_update/4 instead
-  def build_tool_call_update_notification(session_id, tool_call_id, status, content \\ nil) do
+  def build_tool_call_update_notification(session_id, tool_call_id, status, content \\ nil)
+      when status in @tool_call_statuses do
     formatted_content =
       if content do
         [%{"type" => "content", "content" => %{"type" => "text", "text" => content}}]
@@ -263,7 +343,8 @@ defmodule AgentClientProtocol do
         tool_call_id,
         status,
         structured_content
-      ) do
+      )
+      when status in @tool_call_statuses do
     content = [%{"type" => "content", "content" => structured_content}]
     tool_call_update(session_id, tool_call_id, status, content)
   end
@@ -326,4 +407,56 @@ defmodule AgentClientProtocol do
       has_resources: false
     }
   end
+
+  @doc """
+  Extracts the environment API key map from prompt metadata.
+
+  Looks for `openrouterKeyValue` in the metadata and returns a map
+  suitable for passing as `env_api_key` to execution opts.
+
+  ## Examples
+
+      ACP.extract_env_api_key(%{"openrouterKeyValue" => "sk-or-..."})
+      #=> %{"openrouter" => "sk-or-..."}
+
+      ACP.extract_env_api_key(%{})
+      #=> %{}
+  """
+  @spec extract_env_api_key(map()) :: map()
+  def extract_env_api_key(metadata) when is_map(metadata) do
+    case Map.get(metadata, "openrouterKeyValue") do
+      key when is_binary(key) and key != "" -> %{"openrouter" => key}
+      _ -> %{}
+    end
+  end
+
+  def extract_env_api_key(_), do: %{}
+
+  @doc """
+  Extracts the model selection from prompt metadata.
+
+  Expected format: `%{"model" => %{"provider" => "openrouter", "value" => "google/gemini-3-flash-preview"}}`.
+  Returns a map with atom keys `%{provider: ..., value: ...}` or `nil`.
+
+  ## Examples
+
+      ACP.extract_model(%{"model" => %{"provider" => "openrouter", "value" => "google/gemini-3-flash"}})
+      #=> %{provider: "openrouter", value: "google/gemini-3-flash"}
+
+      ACP.extract_model(%{})
+      #=> nil
+  """
+  @spec extract_model(map()) :: %{provider: String.t(), value: String.t()} | nil
+  def extract_model(metadata) when is_map(metadata) do
+    case Map.get(metadata, "model") do
+      %{"provider" => provider, "value" => value}
+      when is_binary(provider) and is_binary(value) and provider != "" and value != "" ->
+        %{provider: provider, value: value}
+
+      _ ->
+        nil
+    end
+  end
+
+  def extract_model(_), do: nil
 end

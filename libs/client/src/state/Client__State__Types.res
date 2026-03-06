@@ -40,6 +40,20 @@ type deleteSessionFn = (string, ~onComplete: result<unit, string> => unit) => un
 // Fire-and-forget: sends ACP session/cancel notification
 type cancelPromptFn = unit => unit
 
+// Callback for submitting a tool result directly via the channel.
+// Used by interactive tools (e.g. question) whose results bypass MCP.
+// toolCallId: the tool call to resolve
+// toolName: the tool name (e.g. "question")
+// result: serialized JSON result string
+// isError: whether this is an error result
+type submitToolResultFn = (
+  ~toolCallId: string,
+  ~toolName: string,
+  ~result: string,
+  ~isError: bool,
+  ~metadata: option<JSON.t>,
+) => unit
+
 // ACP session state - stores callbacks for API operations when session is active
 // Note: sessionId is NOT stored here - it's managed by ConnectionReducer (ACP layer)
 // Tasks store their own ID which equals the ACP session ID
@@ -51,6 +65,7 @@ type acpSession =
       cancelPrompt: cancelPromptFn,
       loadTask: loadTaskFn,
       deleteSession: deleteSessionFn,
+      submitToolResult: submitToolResultFn,
       apiBaseUrl: string,
     })
 

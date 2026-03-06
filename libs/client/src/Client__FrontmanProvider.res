@@ -7,6 +7,7 @@ module Log = FrontmanLogs.Logs.Make({
 
 module ACP = FrontmanAiFrontmanClient.FrontmanClient__ACP
 module Types = FrontmanAiFrontmanProtocol.FrontmanProtocol__ACP
+module Channel = FrontmanAiFrontmanClient.FrontmanClient__Phoenix__Channel
 module Relay = FrontmanAiFrontmanClient.FrontmanClient__Relay
 module MCPServer = FrontmanAiFrontmanClient.FrontmanClient__MCP__Server
 module Reducer = Client__ConnectionReducer
@@ -14,8 +15,8 @@ module RuntimeConfig = Client__RuntimeConfig
 
 // Create the text delta buffer instance and register it as active.
 // The onFlush callback breaks the circular dep: TextDeltaBuffer doesn't import Client__State.
-let textDeltaBuffer = Client__TextDeltaBuffer.make(~onFlush=(~taskId, ~text) => {
-  Client__State.Actions.textDeltaReceived(~taskId, ~text)
+let textDeltaBuffer = Client__TextDeltaBuffer.make(~onFlush=(~taskId, ~text, ~timestamp) => {
+  Client__State.Actions.textDeltaReceived(~taskId, ~text, ~timestamp)
 })
 let () = Client__TextDeltaBuffer.active := Some(textDeltaBuffer)
 
@@ -40,6 +41,7 @@ type contextValue = {
     ~metadata: option<JSON.t>,
   ) => unit,
   cancelPrompt: unit => unit,
+  submitToolResult: Client__State__Types.submitToolResultFn,
   loadTask: (string, ~needsHistory: bool, ~onComplete: result<unit, string> => unit) => unit,
   deleteSession: (string, ~onComplete: result<unit, string> => unit) => unit,
 }
@@ -56,6 +58,7 @@ let defaultContextValue: contextValue = {
   clearSession: () => (),
   sendPrompt: (_, ~additionalBlocks as _, ~onComplete as _, ~metadata as _) => (),
   cancelPrompt: () => (),
+  submitToolResult: (~toolCallId as _, ~toolName as _, ~result as _, ~isError as _, ~metadata as _) => (),
   loadTask: (_, ~needsHistory as _, ~onComplete as _) => (),
   deleteSession: (_, ~onComplete as _) => (),
 }
@@ -142,20 +145,37 @@ module Provider = {
     let handleSessionUpdate = React.useCallback0((sessionId: string, update: Types.sessionUpdate) => {
       let taskId = sessionId
       switch update {
-      | AgentMessageChunk({content}) =>
+      | AgentMessageChunk({content, timestamp}) =>
         // Per ACP spec: first agent_message_chunk implicitly signals message start.
         // Message end is signaled by session/prompt response with stopReason.
         // Buffer text deltas and flush once per animation frame to avoid
         // dozens of full state rebuilds per second during fast streaming.
         content->Option.flatMap(c => c.text)->Option.forEach(text => {
-          textDeltaBuffer.add(~taskId, ~text)
+          textDeltaBuffer.add(~taskId, ~text, ~timestamp)
         })
       | UserMessageChunk({content, timestamp}) =>
+        // Flush buffered agent text BEFORE dispatching the user message so
+        // the preceding assistant response is committed to state first.
+        // Without this, during history replay the rAF-buffered agent text
+        // would be lost because UserMessageReceived calls completeStreamingMessage
+        // before the buffer has flushed.
+        textDeltaBuffer.flush()
         content.text->Option.forEach(text => {
           let id = `user-hydrated-${WebAPI.Global.crypto->WebAPI.Crypto.randomUUID}`
           Client__State.Actions.userMessageReceived(~taskId, ~id, ~text, ~timestamp)
         })
-      | ToolCall({toolCallId, title, parentAgentId, spawningToolName}) =>
+      | ToolCall({toolCallId, title, parentAgentId, spawningToolName, timestamp}) =>
+        // Flush buffered agent text before the tool call for the same reason:
+        // ToolCallReceived calls completeStreamingMessage.
+        textDeltaBuffer.flush()
+        // Use server timestamp when available (history replay) so tool calls
+        // sort correctly relative to other messages. Without this, Date.now()
+        // produces a much later timestamp causing tool calls to float to the
+        // end of the message list after LoadComplete sorting.
+        let createdAt = switch timestamp {
+        | Some(ts) => Date.fromString(ts)->Date.getTime
+        | None => Date.now()
+        }
         Client__State.Actions.toolCallReceived(~taskId, ~toolCall={
           id: toolCallId,
           toolName: title->Option.getOr("unknown_tool"),
@@ -164,31 +184,35 @@ module Provider = {
           result: None,
           errorText: None,
           state: Client__State__Types.Message.InputStreaming,
-          createdAt: Date.now(),
+          createdAt,
           parentAgentId,
           spawningToolName,
         })
       | ToolCallUpdate({toolCallId, status, content}) =>
         let text = content->Option.flatMap(c => c->Array.get(0))->Option.flatMap(i => i.content)->Option.flatMap(c => c.text)
         switch status {
-        | Some("pending") =>
+        | Some(Types.Pending) =>
           text->Option.flatMap(t => try { Some(JSON.parseOrThrow(t)) } catch { | _ => None })->Option.forEach(input => {
             Client__State.Actions.toolInputReceived(~taskId, ~id=toolCallId, ~input)
           })
-        | Some("completed") =>
+        | Some(Completed) =>
           let result = text->Option.mapOr(JSON.Encode.null, t =>
             try { JSON.parseOrThrow(t) } catch { | _ => JSON.Encode.string(t) }
           )
           Client__State.Actions.toolResultReceived(~taskId, ~id=toolCallId, ~result)
-        | Some("failed") =>
+        | Some(Failed) =>
           Client__State.Actions.toolErrorReceived(~taskId, ~id=toolCallId, ~error=text->Option.getOr("Unknown error"))
-        | Some("in_progress") => () // Normal transitional status for MCP tools
-        | Some(status) =>
-          Log.warning(~ctx={"status": status, "toolCallId": toolCallId}, "Unhandled tool call status received")
+        | Some(InProgress) => () // Normal transitional status for MCP tools
         | None => ()
         }
       | Plan({entries}) =>
         Client__State.Actions.planReceived(~taskId, ~entries)
+      | AgentTurnComplete(_) =>
+        // The agent finished a turn that was resumed via tool:submit_result
+        // (no pending session/prompt request). Flush buffered text and finalize
+        // the streaming message, same as the normal onComplete path.
+        textDeltaBuffer.flush()
+        Client__State.Actions.turnCompleted(~taskId)
       | Error({message}) =>
         Client__State.Actions.agentErrorReceived(~taskId, ~error=message)
       | Unknown(_) => ()
@@ -214,6 +238,24 @@ module Provider = {
     let cancelPrompt = React.useCallback1(() => {
       dispatch(CancelPrompt)
     }, [dispatch])
+
+    // Submit a tool result directly via the Phoenix channel.
+    // Used by interactive tools (e.g. question) whose results bypass MCP.
+    // Fire-and-forget: the server handles persistence and re-execution.
+    let currentSession = Reducer.Selectors.getSession(state)
+    let submitToolResult = React.useCallback1(
+      (~toolCallId, ~toolName, ~result, ~isError, ~metadata) => {
+        switch currentSession {
+        | Some(session) =>
+          let payload: Types.toolSubmitResult = {toolCallId, toolName, result, isError, metadata}
+          let json = S.reverseConvertToJsonOrThrow(payload, Types.toolSubmitResultSchema)
+          session.channel->Channel.push(~event=#"tool:submit_result", ~payload=json)->ignore
+        | None =>
+          Log.error("Cannot submit tool result: no active session")
+        }
+      },
+      [currentSession],
+    )
 
     let loadTask = React.useCallback1(
       (taskId: string, ~needsHistory, ~onComplete) => {
@@ -250,6 +292,7 @@ module Provider = {
       clearSession,
       sendPrompt,
       cancelPrompt,
+      submitToolResult,
       loadTask,
       deleteSession,
     }

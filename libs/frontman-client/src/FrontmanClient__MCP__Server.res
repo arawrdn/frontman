@@ -52,6 +52,14 @@ let registerToolModule = (server: t, toolModule: module(Tool.Tool)): t => {
 // JSONSchema.t is JSON.t at runtime
 external jsonSchemaAsJson: JSONSchema.t => JSON.t = "%identity"
 
+module ToolProto = FrontmanAiFrontmanProtocol.FrontmanProtocol__Tool
+
+// Schema for executionMode — serializes to "synchronous"/"interactive" on the wire
+let executionModeSchema = S.union([
+  S.literal(ToolProto.Synchronous),
+  S.literal(ToolProto.Interactive),
+])
+
 // Tool wire format schema - serialized directly to JSON
 let toolWireSchema = S.object(s => {
   {
@@ -59,6 +67,7 @@ let toolWireSchema = S.object(s => {
     "description": s.field("description", S.string),
     "inputSchema": s.field("inputSchema", S.json),
     "visibleToAgent": s.field("visibleToAgent", S.bool),
+    "executionMode": s.field("executionMode", executionModeSchema),
   }
 })
 
@@ -70,6 +79,7 @@ let serializeTool = (m: module(Tool.Tool)): JSON.t => {
     "description": T.description,
     "inputSchema": T.inputSchema->S.toJSONSchema->jsonSchemaAsJson,
     "visibleToAgent": T.visibleToAgent,
+    "executionMode": T.executionMode,
   }->S.reverseConvertToJsonOrThrow(toolWireSchema)
 }
 
@@ -87,38 +97,47 @@ let getToolByName = (server: t, name: string): option<module(Tool.Tool)> => {
   })
 }
 
-// Execute a local tool module
+// Execute a local tool module.
+// The tool's executionMode determines whether a result is returned inline
+// (Completed) or deferred to a channel event (Suspended).
 let executeLocalTool = async (
   toolModule: module(Tool.Tool),
   ~arguments: option<Dict.t<JSON.t>>,
-): Types.callToolResult => {
+  ~taskId: string,
+  ~toolCallId: string,
+): Types.executeToolResult => {
   module T = unpack(toolModule)
   Log.debug(~ctx={"tool": T.name}, "Executing local tool")
   let inputJson = arguments->Option.getOr(Dict.make())->JSON.Encode.object
   try {
     let input = inputJson->S.parseOrThrow(T.inputSchema)
     Log.debug(~ctx={"tool": T.name}, "Calling execute")
-    let result = await T.execute(input)
+    let result = await T.execute(input, ~taskId, ~toolCallId)
     Log.debug(~ctx={"tool": T.name}, "Execute returned")
-    switch result {
-    | Ok(output) =>
-      let outputJson = output->S.reverseConvertToJsonOrThrow(T.outputSchema)
-      {
-        content: [{type_: "text", text: JSON.stringify(outputJson)}],
-        isError: None,
-      }
-    | Error(msg) => {
-        content: [{type_: "text", text: msg}],
-        isError: Some(true),
+    switch T.executionMode {
+    | Interactive => Suspended
+    | Synchronous =>
+      switch result {
+      | Ok(output) =>
+        let outputJson = output->S.reverseConvertToJsonOrThrow(T.outputSchema)
+        Completed({
+          content: [{type_: "text", text: JSON.stringify(outputJson)}],
+          isError: None,
+        })
+      | Error(msg) =>
+        Completed({
+          content: [{type_: "text", text: msg}],
+          isError: Some(true),
+        })
       }
     }
   } catch {
   | S.Error(e) =>
     Log.error(~ctx={"tool": T.name}, "Schema error")
-    {
+    Completed({
       content: [{type_: "text", text: `Invalid input: ${e.message}`}],
       isError: Some(true),
-    }
+    })
   }
 }
 
@@ -157,20 +176,22 @@ let toolError = (msg: string): Types.callToolResult => {
   isError: Some(true),
 }
 
-// Execute tool - tries local first, then relay
+// Execute tool - tries local first, then relay.
+// Local tools declare their own executionMode; relay tools are always Synchronous.
 let executeTool = async (
   server: t,
   ~name: string,
   ~arguments: option<Dict.t<JSON.t>>=?,
   ~taskId: string,
+  ~callId: string,
   ~onProgress: option<string => unit>=?,
-): Types.callToolResult => {
+): Types.executeToolResult => {
   // Try local tools first
   switch getToolByName(server, name) {
-  | Some(toolModule) => await executeLocalTool(toolModule, ~arguments)
+  | Some(toolModule) => await executeLocalTool(toolModule, ~arguments, ~taskId, ~toolCallId=callId)
   | None =>
     switch server.relay->Relay.hasTool(name) {
-    | false => toolError(`Tool not found: ${name}`)
+    | false => Completed(toolError(`Tool not found: ${name}`))
     | true =>
       // Intercept write_file with image_ref to resolve from the correct task
       let resolvedArgs = switch name == ToolNames.writeFile {
@@ -179,12 +200,12 @@ let executeTool = async (
       }
 
       switch resolvedArgs {
-      | Error(msg) => toolError(msg)
+      | Error(msg) => Completed(toolError(msg))
       | Ok(finalArgs) =>
         let result = await server.relay->Relay.executeTool(~name, ~arguments=?finalArgs, ~onProgress?)
         switch result {
-        | Ok(toolResult) => toolResult
-        | Error(msg) => toolError(msg)
+        | Ok(toolResult) => Completed(toolResult)
+        | Error(msg) => Completed(toolError(msg))
         }
       }
     }
@@ -214,6 +235,6 @@ let toInterface = (server: t): Types.serverInterface<t> => {
   server,
   buildInitializeResult,
   buildToolsListResult,
-  executeTool: (server, ~name, ~arguments, ~taskId, ~onProgress) =>
-    executeTool(server, ~name, ~arguments?, ~taskId, ~onProgress?),
+  executeTool: (server, ~name, ~arguments, ~taskId, ~callId, ~onProgress) =>
+    executeTool(server, ~name, ~arguments?, ~taskId, ~callId, ~onProgress?),
 }

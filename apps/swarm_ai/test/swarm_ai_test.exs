@@ -415,6 +415,107 @@ defmodule SwarmTest do
     end
   end
 
+  describe "suspended tool results and suspension" do
+    test "run_streaming suspends when tool executor returns :suspended" do
+      llm =
+        tool_then_complete_llm(
+          [%SwarmAi.ToolCall{id: "tc_1", name: "question", arguments: "{}"}],
+          "Done"
+        )
+
+      agent = test_agent(llm)
+
+      # Tool executor returns :suspended for interactive tools
+      result =
+        SwarmAi.run_streaming(agent, "Ask the user", tool_executor: fn _tc -> :suspended end)
+
+      assert {:suspended, _loop_id} = result
+    end
+
+    test "run_streaming runs non-suspended tools and suspends on suspended ones" do
+      llm =
+        multi_turn_llm([
+          {:tool_calls,
+           [
+             %SwarmAi.ToolCall{id: "tc_1", name: "read_file", arguments: ~s({"path":"a.txt"})},
+             %SwarmAi.ToolCall{id: "tc_2", name: "question", arguments: ~s({"text":"ok?"})},
+             %SwarmAi.ToolCall{id: "tc_3", name: "write_file", arguments: ~s({"path":"b.txt"})}
+           ], "Running tools..."},
+          {:complete, "All done"}
+        ])
+
+      agent = test_agent(llm)
+
+      executed_tools = :ets.new(:executed_tools, [:set, :public])
+
+      result =
+        SwarmAi.run_streaming(agent, "Do work",
+          tool_executor: fn tc ->
+            :ets.insert(executed_tools, {tc.name, true})
+
+            case tc.name do
+              "question" -> :suspended
+              _ -> {:ok, "result for #{tc.name}"}
+            end
+          end
+        )
+
+      # Should suspend because question is suspended
+      assert {:suspended, _loop_id} = result
+
+      # Non-interactive tools should have executed
+      assert [{_, true}] = :ets.lookup(executed_tools, "read_file")
+      assert [{_, true}] = :ets.lookup(executed_tools, "write_file")
+      assert [{_, true}] = :ets.lookup(executed_tools, "question")
+
+      :ets.delete(executed_tools)
+    end
+
+    test "run_blocking suspends when tool executor returns :suspended" do
+      llm =
+        tool_then_complete_llm(
+          [%SwarmAi.ToolCall{id: "tc_1", name: "question", arguments: "{}"}],
+          "Done"
+        )
+
+      agent = test_agent(llm)
+
+      result = SwarmAi.run_blocking(agent, "Ask", fn _tc -> :suspended end)
+      assert {:suspended, _loop_id} = result
+    end
+
+    test "ToolCall.suspended? returns true for suspended results" do
+      tc = %SwarmAi.ToolCall{id: "tc_1", name: "question", arguments: "{}"}
+      suspended_result = ToolResult.suspended("tc_1")
+      tc_with_suspended = SwarmAi.ToolCall.with_result(tc, suspended_result)
+
+      assert SwarmAi.ToolCall.suspended?(tc_with_suspended)
+      refute SwarmAi.ToolCall.completed?(tc_with_suspended)
+    end
+
+    test "ToolCall.suspended? returns false for completed results" do
+      tc = %SwarmAi.ToolCall{id: "tc_1", name: "test", arguments: "{}"}
+      result = ToolResult.make("tc_1", "done", false)
+      tc_with_result = SwarmAi.ToolCall.with_result(tc, result)
+
+      refute SwarmAi.ToolCall.suspended?(tc_with_result)
+      assert SwarmAi.ToolCall.completed?(tc_with_result)
+    end
+
+    test "ToolCall.suspended? returns false for nil result" do
+      tc = %SwarmAi.ToolCall{id: "tc_1", name: "test", arguments: "{}"}
+      refute SwarmAi.ToolCall.suspended?(tc)
+      refute SwarmAi.ToolCall.completed?(tc)
+    end
+
+    test "ToolResult.suspended creates a suspended result" do
+      result = ToolResult.suspended("tc_1")
+      assert result.id == "tc_1"
+      assert result.suspended == true
+      assert result.is_error == false
+    end
+  end
+
   describe "tool call utilities" do
     test "tool call arguments can be parsed as JSON" do
       llm =

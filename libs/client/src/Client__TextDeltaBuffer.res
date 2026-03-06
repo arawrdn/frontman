@@ -8,14 +8,16 @@
 // StateReducer (consumer needing to flush before TurnCompleted) can access it
 // without circular dependencies.
 
+type entry = {text: string, timestamp: option<string>}
+
 type t = {
-  add: (~taskId: string, ~text: string) => unit,
+  add: (~taskId: string, ~text: string, ~timestamp: option<string>) => unit,
   flush: unit => unit,
   reset: unit => unit,
 }
 
-let make = (~onFlush: (~taskId: string, ~text: string) => unit): t => {
-  let buffer = ref(Dict.make())
+let make = (~onFlush: (~taskId: string, ~text: string, ~timestamp: option<string>) => unit): t => {
+  let buffer: ref<Dict.t<entry>> = ref(Dict.make())
   let rafId: ref<option<int>> = ref(None)
 
   let flush = () => {
@@ -26,14 +28,18 @@ let make = (~onFlush: (~taskId: string, ~text: string) => unit): t => {
     | None => ()
     }
     rafId := None
-    pending->Dict.forEachWithKey((text, taskId) => {
-      onFlush(~taskId, ~text)
+    pending->Dict.forEachWithKey(({text, timestamp}, taskId) => {
+      onFlush(~taskId, ~text, ~timestamp)
     })
   }
 
-  let add = (~taskId: string, ~text: string) => {
-    let current = buffer.contents->Dict.get(taskId)->Option.getOr("")
-    buffer.contents->Dict.set(taskId, current ++ text)
+  let add = (~taskId: string, ~text: string, ~timestamp: option<string>) => {
+    let current = buffer.contents->Dict.get(taskId)
+    let entry = switch current {
+    | Some(existing) => {text: existing.text ++ text, timestamp: existing.timestamp}
+    | None => {text, timestamp}
+    }
+    buffer.contents->Dict.set(taskId, entry)
     switch rafId.contents {
     | Some(_) => () // Already scheduled
     | None =>

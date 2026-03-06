@@ -103,7 +103,7 @@ describe("Client State Reducer", () => {
     )
 
     let taskId = TestHelpers.getCurrentTaskId(state)->Option.getOrThrow
-    let action = Reducer.TaskAction({target: ForTask(taskId), action: TextDeltaReceived({text: " world"})})
+    let action = Reducer.TaskAction({target: ForTask(taskId), action: TextDeltaReceived({text: " world", timestamp: None})})
     let (nextState, _effects) = Reducer.next(state, action)
 
     let message = TestHelpers.getMessage(nextState, 0)->Option.getOrThrow
@@ -157,7 +157,7 @@ describe("Client State Reducer", () => {
 
     let taskId = TestHelpers.getCurrentTaskId(state)->Option.getOrThrow
     let (state, _) = Reducer.next(state, TaskAction({target: ForTask(taskId), action: StreamingStarted}))
-    let (state, _) = Reducer.next(state, TaskAction({target: ForTask(taskId), action: TextDeltaReceived({text: "Hello"})}))
+    let (state, _) = Reducer.next(state, TaskAction({target: ForTask(taskId), action: TextDeltaReceived({text: "Hello", timestamp: None})}))
     let (state, _) = Reducer.next(state, TaskAction({target: ForTask(taskId), action: TurnCompleted}))
 
     let messages = TestHelpers.getMessages(state)
@@ -374,8 +374,8 @@ describe("Client State Reducer - Streaming Flow", () => {
     }
 
     // 2. Receive text deltas
-    let (state, _) = Reducer.next(state, TaskAction({target: ForTask(taskId), action: TextDeltaReceived({text: "Hello"})}))
-    let (state, _) = Reducer.next(state, TaskAction({target: ForTask(taskId), action: TextDeltaReceived({text: " world"})}))
+    let (state, _) = Reducer.next(state, TaskAction({target: ForTask(taskId), action: TextDeltaReceived({text: "Hello", timestamp: None})}))
+    let (state, _) = Reducer.next(state, TaskAction({target: ForTask(taskId), action: TextDeltaReceived({text: " world", timestamp: None})}))
 
     // 3. Complete message
     let (state, _) = Reducer.next(state, TaskAction({target: ForTask(taskId), action: TurnCompleted}))
@@ -684,6 +684,7 @@ describe("Client State Reducer - Task Management Actions", () => {
       updateInfo: None,
       updateCheckStatus: UpdateNotChecked,
       updateBannerDismissed: false,
+
     }
 
     let (nextState, _) = Reducer.next(state, SwitchTask({taskId: "task-2"}))
@@ -736,6 +737,7 @@ describe("Client State Reducer - Task Management Actions", () => {
       updateInfo: None,
       updateCheckStatus: UpdateNotChecked,
       updateBannerDismissed: false,
+
     }
 
     let (nextState, _) = Reducer.next(state, DeleteTask({taskId: "task-1"}))
@@ -788,6 +790,7 @@ describe("Client State Reducer - Task Management Actions", () => {
       updateInfo: None,
       updateCheckStatus: UpdateNotChecked,
       updateBannerDismissed: false,
+
     }
 
     // Delete the only task
@@ -861,6 +864,7 @@ describe("Client State Reducer - Task Management Actions", () => {
       updateInfo: None,
       updateCheckStatus: UpdateNotChecked,
       updateBannerDismissed: false,
+
     }
 
     // Add message to task 1
@@ -984,6 +988,7 @@ describe("Client State Reducer - Session Loading Actions", () => {
       updateInfo: None,
       updateCheckStatus: UpdateNotChecked,
       updateBannerDismissed: false,
+
     }
 
     // Load sessions including one with the same ID as existing task
@@ -1076,6 +1081,7 @@ describe("Client State Reducer - Session Loading Actions", () => {
       updateInfo: None,
       updateCheckStatus: UpdateNotChecked,
       updateBannerDismissed: false,
+
     }
 
     let (nextState, _effects) = Reducer.next(

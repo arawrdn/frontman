@@ -72,7 +72,7 @@ let sendResponse = (handler: mcpHandler<'server>, id: int, result: JSON.t): unit
 
 // Send a JSON-RPC error response
 let sendError = (handler: mcpHandler<'server>, id: int, _code: int, message: string): unit => {
-  let error = JsonRpc.RpcError.make(~code=MethodNotFound, ~message, ~data=None)
+  let error = JsonRpc.RpcError.make(~code=JsonRpc.ErrorCode.methodNotFound, ~message, ~data=None)
   let response = JsonRpc.Response.makeError(~id, ~error)
   let payload = response->S.reverseConvertToJsonOrThrow(JsonRpc.Response.schema)
   handler.onMessage->Option.forEach(cb => cb(Send, payload))
@@ -95,7 +95,10 @@ let handleToolsList = (handler: mcpHandler<'server>, id: int): unit => {
   sendResponse(handler, id, resultJson)
 }
 
-// Handle tools/call request
+// Handle tools/call request.
+// Synchronous tools return Completed — we send an MCP response.
+// Interactive tools return Suspended — no MCP response; the result
+// arrives later via the tool:submit_result channel event.
 let handleToolsCall = async (
   handler: mcpHandler<'server>,
   id: int,
@@ -104,7 +107,7 @@ let handleToolsCall = async (
   switch params {
   | Some(paramsJson) =>
     try {
-      let {name, arguments}: Types.toolCallParams =
+      let {callId, name, arguments}: Types.toolCallParams =
         paramsJson->S.parseOrThrow(Types.toolCallParamsSchema)
       let {serverInterface} = handler
       let result = await serverInterface.executeTool(
@@ -112,10 +115,15 @@ let handleToolsCall = async (
         ~name,
         ~arguments,
         ~taskId=handler.sessionId,
+        ~callId,
         ~onProgress=None,
       )
-      let resultJson = result->S.reverseConvertToJsonOrThrow(Types.callToolResultSchema)
-      sendResponse(handler, id, resultJson)
+      switch result {
+      | Completed(callToolResult) =>
+        let resultJson = callToolResult->S.reverseConvertToJsonOrThrow(Types.callToolResultSchema)
+        sendResponse(handler, id, resultJson)
+      | Suspended => ()
+      }
     } catch {
     | S.Error(e) =>
       sendError(handler, id, Types.ErrorCode.invalidParams, `Invalid params: ${e.message}`)

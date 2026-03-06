@@ -67,8 +67,8 @@ describe("Task - Single Streaming Message Invariant", () => {
   test("TextDeltaReceived appends to streaming message", t => {
     let task = _startAgent()
     let (task1, _) = TaskReducer.next(task, StreamingStarted)
-    let (task2, _) = TaskReducer.next(task1, TextDeltaReceived({text: "Hello"}))
-    let (task3, _) = TaskReducer.next(task2, TextDeltaReceived({text: " world"}))
+    let (task2, _) = TaskReducer.next(task1, TextDeltaReceived({text: "Hello", timestamp: None}))
+    let (task3, _) = TaskReducer.next(task2, TextDeltaReceived({text: " world", timestamp: None}))
 
     switch TaskReducer.Selectors.streamingMessage(task3) {
     | Some(Message.Streaming({textBuffer})) =>
@@ -80,7 +80,7 @@ describe("Task - Single Streaming Message Invariant", () => {
   test("TurnCompleted converts streaming to completed", t => {
     let task = _startAgent()
     let (task1, _) = TaskReducer.next(task, StreamingStarted)
-    let (task2, _) = TaskReducer.next(task1, TextDeltaReceived({text: "Hello"}))
+    let (task2, _) = TaskReducer.next(task1, TextDeltaReceived({text: "Hello", timestamp: None}))
     let (task3, _) = TaskReducer.next(task2, TurnCompleted)
 
     let messages = TestHelpers.getMessages(task3)
@@ -329,7 +329,7 @@ describe("Task - Error Handling", () => {
       }),
     )
     let (task1, _) = TaskReducer.next(task0, StreamingStarted)
-    let (task2, _) = TaskReducer.next(task1, TextDeltaReceived({text: "Partial response"}))
+    let (task2, _) = TaskReducer.next(task1, TextDeltaReceived({text: "Partial response", timestamp: None}))
 
     // Verify we have a streaming message
     switch TaskReducer.Selectors.streamingMessage(task2) {
@@ -415,7 +415,7 @@ describe("Task - CancelTurn", () => {
     )
     // Agent is now running
     let (task2, _) = TaskReducer.next(task1, StreamingStarted)
-    let (task3, _) = TaskReducer.next(task2, TextDeltaReceived({text: "Partial resp"}))
+    let (task3, _) = TaskReducer.next(task2, TextDeltaReceived({text: "Partial resp", timestamp: None}))
     task3
   }
 
@@ -543,7 +543,7 @@ describe("Task - CancelTurn", () => {
 
     // Start new streaming
     let (task3, _) = TaskReducer.next(task2, StreamingStarted)
-    let (task4, _) = TaskReducer.next(task3, TextDeltaReceived({text: "New response"}))
+    let (task4, _) = TaskReducer.next(task3, TextDeltaReceived({text: "New response", timestamp: None}))
 
     let messages = TestHelpers.getMessages(task4)
     // Messages: User1 + Completed(Partial resp) + User2 + Streaming(New response)
@@ -589,7 +589,7 @@ describe("Task - Stale Event Guard", () => {
 
   test("TextDeltaReceived is silently dropped when agent not running", t => {
     let task = _cancelledTask()
-    let (unchanged, effects) = TaskReducer.next(task, TextDeltaReceived({text: "stale text"}))
+    let (unchanged, effects) = TaskReducer.next(task, TextDeltaReceived({text: "stale text", timestamp: None}))
 
     t->expect(effects)->Expect.toEqual([])
     t->expect(TestHelpers.getMessages(unchanged)->Array.length)->Expect.toBe(1)
@@ -653,7 +653,7 @@ describe("Task - Stale Event Guard", () => {
     // Loading state should still process streaming events normally
     let task = TestHelpers.makeLoadingTask()
     let (task1, _) = TaskReducer.next(task, StreamingStarted)
-    let (task2, _) = TaskReducer.next(task1, TextDeltaReceived({text: "loading text"}))
+    let (task2, _) = TaskReducer.next(task1, TextDeltaReceived({text: "loading text", timestamp: None}))
 
     switch TaskReducer.Selectors.streamingMessage(task2) {
     | Some(Message.Streaming({textBuffer})) =>

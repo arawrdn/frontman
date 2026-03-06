@@ -26,6 +26,7 @@ module ToolNames = {
   let listTree = "list_tree"
 
   // Browser tools (client)
+  let question = "question"
   let navigate = "navigate"
   let takeScreenshot = "take_screenshot"
   let setDeviceMode = "set_device_mode"
@@ -35,6 +36,14 @@ module ToolNames = {
   let searchText = "search_text"
 }
 
+// How a tool delivers its result back to the caller.
+// Synchronous tools return a result inline via MCP response.
+// Interactive tools suspend execution and deliver results via a separate
+// channel event (tool:submit_result) — e.g. the question tool.
+type executionMode =
+  | Synchronous
+  | Interactive
+
 // Browser tool - executes in browser, no context needed
 module type BrowserTool = {
   let name: string
@@ -43,9 +52,10 @@ module type BrowserTool = {
   type output
   let inputSchema: S.t<input>
   let outputSchema: S.t<output>
-  let execute: input => promise<toolResult<output>>
+  let execute: (input, ~taskId: string, ~toolCallId: string) => promise<toolResult<output>>
   //some tools we want to execute manually, and never have the llm see them
   let visibleToAgent: bool
+  let executionMode: executionMode
 }
 
 // Server tool - executes on server with context

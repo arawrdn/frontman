@@ -99,6 +99,9 @@
                   "required": [
                     "type"
                   ]
+                },
+                "timestamp": {
+                  "type": "string"
                 }
               },
               "additionalProperties": true,
@@ -219,12 +222,20 @@
                   "type": "string"
                 },
                 "status": {
-                  "type": "string"
+                  "enum": [
+                    "pending",
+                    "in_progress",
+                    "completed",
+                    "failed"
+                  ]
                 },
                 "parentAgentId": {
                   "type": "string"
                 },
                 "spawningToolName": {
+                  "type": "string"
+                },
+                "timestamp": {
                   "type": "string"
                 }
               },
@@ -245,7 +256,12 @@
                   "type": "string"
                 },
                 "status": {
-                  "type": "string"
+                  "enum": [
+                    "pending",
+                    "in_progress",
+                    "completed",
+                    "failed"
+                  ]
                 },
                 "content": {
                   "items": {
@@ -390,6 +406,23 @@
               "required": [
                 "sessionUpdate",
                 "entries"
+              ]
+            },
+            {
+              "type": "object",
+              "properties": {
+                "sessionUpdate": {
+                  "type": "string",
+                  "const": "agent_turn_complete"
+                },
+                "stopReason": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": true,
+              "required": [
+                "sessionUpdate",
+                "stopReason"
               ]
             },
             {

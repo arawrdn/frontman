@@ -12,6 +12,8 @@ type channelEvent = [
   | #"acp:message"
   // MCP events (all MCP JSON-RPC goes through mcp:message)
   | #"mcp:message"
+  // Direct tool result submission (bypasses MCP for interactive tools like question)
+  | #"tool:submit_result"
   // Session management (non-ACP)
   | #list_sessions
   | #delete_session

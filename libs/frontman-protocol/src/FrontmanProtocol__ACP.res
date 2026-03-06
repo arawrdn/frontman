@@ -233,6 +233,13 @@ type toolCallStatus =
   | @as("completed") Completed
   | @as("failed") Failed
 
+let toolCallStatusSchema = S.union([
+  S.literal(Pending),
+  S.literal(InProgress),
+  S.literal(Completed),
+  S.literal(Failed),
+])
+
 // session/prompt result
 @schema
 type promptResult = {
@@ -277,22 +284,24 @@ let planEntrySchema = S.object(s => {
 // Per ACP spec: only agent_message_chunk exists (first chunk implicitly starts message,
 // session/prompt response with stopReason signals message end)
 type sessionUpdate =
-  | AgentMessageChunk({content: option<contentBlock>})
+  | AgentMessageChunk({content: option<contentBlock>, timestamp: option<string>})
   | UserMessageChunk({content: contentBlock, timestamp: string})
   | ToolCall({
       toolCallId: string,
       title: option<string>,
       kind: option<string>,
-      status: option<string>,
+      status: option<toolCallStatus>,
       parentAgentId: option<string>, // If present, this is a sub-agent tool call
       spawningToolName: option<string>,
+      timestamp: option<string>, // Server timestamp for ordering during history replay
     }) // Tool name that spawned the sub-agent
   | ToolCallUpdate({
       toolCallId: string,
-      status: option<string>,
+      status: option<toolCallStatus>,
       content: option<array<toolCallContentItem>>,
     })
   | Plan({entries: array<planEntry>})
+  | AgentTurnComplete({stopReason: string})
   | Error({message: string})
   | Unknown({sessionUpdate: string})
 
@@ -302,6 +311,7 @@ let sessionUpdateSchema = S.union([
     s.tag("sessionUpdate", "agent_message_chunk")
     AgentMessageChunk({
       content: s.field("content", S.option(contentBlockSchema)),
+      timestamp: s.field("timestamp", S.option(S.string)),
     })
   }),
   S.object(s => {
@@ -317,16 +327,17 @@ let sessionUpdateSchema = S.union([
       toolCallId: s.field("toolCallId", S.string),
       title: s.field("title", S.option(S.string)),
       kind: s.field("kind", S.option(S.string)),
-      status: s.field("status", S.option(S.string)),
+      status: s.field("status", S.option(toolCallStatusSchema)),
       parentAgentId: s.field("parentAgentId", S.option(S.string)),
       spawningToolName: s.field("spawningToolName", S.option(S.string)),
+      timestamp: s.field("timestamp", S.option(S.string)),
     })
   }),
   S.object(s => {
     s.tag("sessionUpdate", "tool_call_update")
     ToolCallUpdate({
       toolCallId: s.field("toolCallId", S.string),
-      status: s.field("status", S.option(S.string)),
+      status: s.field("status", S.option(toolCallStatusSchema)),
       content: s.field("content", S.option(S.array(toolCallContentItemSchema))),
     })
   }),
@@ -334,6 +345,12 @@ let sessionUpdateSchema = S.union([
     s.tag("sessionUpdate", "plan")
     Plan({
       entries: s.field("entries", S.array(planEntrySchema)),
+    })
+  }),
+  S.object(s => {
+    s.tag("sessionUpdate", "agent_turn_complete")
+    AgentTurnComplete({
+      stopReason: s.field("stopReason", S.string),
     })
   }),
   S.object(s => {
@@ -394,3 +411,15 @@ type listSessionsResult = {sessions: array<sessionSummary>}
 let listSessionsResultSchema = S.object(s => {
   sessions: s.field("sessions", S.array(sessionSummarySchema)),
 })
+
+// Payload for the tool:submit_result Phoenix channel event.
+// Sent by the client when an interactive tool (e.g. question) completes
+// outside the MCP request/response flow.
+@schema
+type toolSubmitResult = {
+  @as("tool_call_id") toolCallId: string,
+  @as("tool_name") toolName: string,
+  result: string,
+  @as("is_error") isError: bool,
+  metadata: option<JSON.t>,
+}

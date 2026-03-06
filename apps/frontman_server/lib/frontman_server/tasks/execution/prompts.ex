@@ -253,7 +253,7 @@ defmodule FrontmanServer.Tasks.Execution.Prompts do
 
     ### Clarification Policy
 
-    **Ask for clarification using the ask_user tool when:**
+    **Ask for clarification using the question tool when:**
     - The instruction has multiple valid interpretations that would produce DIFFERENT outputs
     - The annotation comment is ambiguous about what to change
     - You would need to modify commented-out code to fulfill the request

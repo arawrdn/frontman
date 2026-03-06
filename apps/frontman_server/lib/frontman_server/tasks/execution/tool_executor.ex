@@ -46,6 +46,7 @@ defmodule FrontmanServer.Tasks.Execution.ToolExecutor do
   ## Options
 
   - `:mcp_tools` - List of SwarmAi.Tool.t() for sub-agents to use (default: [])
+  - `:mcp_tool_defs` - List of FrontmanServer.Tools.MCP.t() for execution mode lookups (default: [])
   - `:llm_opts` - Keyword list with :api_key and :model for sub-agents
 
   ## Examples
@@ -54,9 +55,10 @@ defmodule FrontmanServer.Tasks.Execution.ToolExecutor do
       SwarmAi.run_blocking(agent, messages, executor)
   """
   @spec make_executor(Scope.t(), String.t(), keyword()) ::
-          (SwarmAi.ToolCall.t() -> {:ok, String.t()} | {:error, String.t()})
+          (SwarmAi.ToolCall.t() -> {:ok, String.t()} | {:error, String.t()} | :suspended)
   def make_executor(%Scope{} = scope, task_id, opts \\ []) do
     mcp_tools = Keyword.get(opts, :mcp_tools, [])
+    mcp_tool_defs = Keyword.get(opts, :mcp_tool_defs, [])
     llm_opts = Keyword.fetch!(opts, :llm_opts)
 
     fn tool_call ->
@@ -76,12 +78,19 @@ defmodule FrontmanServer.Tasks.Execution.ToolExecutor do
       result =
         execute(scope, tool_call, task_id,
           mcp_tools: mcp_tools,
+          mcp_tool_defs: mcp_tool_defs,
           llm_opts: llm_opts
         )
 
-      # Convert tool results containing image data (e.g. screenshots) to multimodal
-      # content parts so the LLM receives proper image content instead of base64 text.
-      maybe_enrich_with_images(tool_call.name, result)
+      case result do
+        :suspended ->
+          :suspended
+
+        _ ->
+          # Convert tool results containing image data (e.g. screenshots) to multimodal
+          # content parts so the LLM receives proper image content instead of base64 text.
+          maybe_enrich_with_images(tool_call.name, result)
+      end
     end
   end
 
@@ -128,9 +137,10 @@ defmodule FrontmanServer.Tasks.Execution.ToolExecutor do
     - `:llm_opts` - Keyword list with :api_key and :model for sub-agents
   """
   @spec execute(Scope.t(), SwarmAi.ToolCall.t(), String.t(), keyword()) ::
-          {:ok, String.t()} | {:error, String.t()}
+          {:ok, String.t()} | {:error, String.t()} | :suspended
   def execute(scope, tool_call, task_id, opts \\ []) do
     mcp_tools = Keyword.get(opts, :mcp_tools, [])
+    mcp_tool_defs = Keyword.get(opts, :mcp_tool_defs, [])
     llm_opts = Keyword.fetch!(opts, :llm_opts)
 
     case Tools.find_tool(tool_call.name) do
@@ -145,7 +155,7 @@ defmodule FrontmanServer.Tasks.Execution.ToolExecutor do
         )
 
       :not_found ->
-        execute_mcp_tool(tool_call, task_id)
+        execute_mcp_tool(tool_call, task_id, mcp_tool_defs)
     end
   end
 
@@ -257,36 +267,52 @@ defmodule FrontmanServer.Tasks.Execution.ToolExecutor do
 
   # --- MCP Tool Execution ---
 
-  defp execute_mcp_tool(tool_call, task_id) do
+  defp execute_mcp_tool(tool_call, task_id, mcp_tool_defs) do
     Logger.info("ToolExecutor: Routing to MCP tool #{tool_call.name}")
 
-    # Registration already happened in register_if_mcp_tool before broadcast
     tool_call_id = tool_call.id
 
-    receive do
-      {:tool_result, ^tool_call_id, content, is_error} ->
-        Registry.unregister(FrontmanServer.ToolCallRegistry, {:tool_call, tool_call_id})
-        if is_error, do: {:error, content}, else: {:ok, content}
-    after
-      @tool_timeout_ms ->
-        Registry.unregister(FrontmanServer.ToolCallRegistry, {:tool_call, tool_call_id})
+    # Interactive tools (like question) return :suspended immediately.
+    # The executor continues processing other tools, and the execution
+    # suspends at the convergence gate when suspended tools remain.
+    # The user's answer arrives later via notify_tool_result, which
+    # persists the ToolResult and triggers re-execution.
+    if Tools.MCP.interactive_by_name?(mcp_tool_defs, tool_call.name) do
+      Logger.info(
+        "ToolExecutor: Interactive tool #{tool_call.name} (#{tool_call_id}) returning :suspended"
+      )
 
-        Logger.error(
-          "ToolExecutor: MCP tool #{tool_call.name} timed out after #{@tool_timeout_ms}ms"
-        )
+      # Unregister from ToolCallRegistry — no process will wait for the result.
+      # The result will arrive via Tasks.add_tool_result -> re-execution path.
+      Registry.unregister(FrontmanServer.ToolCallRegistry, {:tool_call, tool_call_id})
+      :suspended
+    else
+      # Non-interactive MCP tools block until the client responds
+      receive do
+        {:tool_result, ^tool_call_id, content, is_error} ->
+          Registry.unregister(FrontmanServer.ToolCallRegistry, {:tool_call, tool_call_id})
+          if is_error, do: {:error, content}, else: {:ok, content}
+      after
+        @tool_timeout_ms ->
+          Registry.unregister(FrontmanServer.ToolCallRegistry, {:tool_call, tool_call_id})
 
-        Sentry.capture_message("MCP tool timeout",
-          level: :error,
-          tags: %{error_type: "tool_timeout"},
-          extra: %{
-            tool_name: tool_call.name,
-            tool_call_id: tool_call_id,
-            task_id: task_id,
-            timeout_ms: @tool_timeout_ms
-          }
-        )
+          Logger.error(
+            "ToolExecutor: MCP tool #{tool_call.name} timed out after #{@tool_timeout_ms}ms"
+          )
 
-        {:error, "Tool timeout: #{tool_call.name}"}
+          Sentry.capture_message("MCP tool timeout",
+            level: :error,
+            tags: %{error_type: "tool_timeout"},
+            extra: %{
+              tool_name: tool_call.name,
+              tool_call_id: tool_call_id,
+              task_id: task_id,
+              timeout_ms: @tool_timeout_ms
+            }
+          )
+
+          {:error, "Tool timeout: #{tool_call.name}"}
+      end
     end
   end
 

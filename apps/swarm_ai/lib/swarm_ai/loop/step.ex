@@ -67,10 +67,16 @@ defmodule SwarmAi.Loop.Step do
     }
   end
 
-  @doc "Returns true if any tool calls are pending (no result yet)."
+  @doc "Returns true if any tool calls are incomplete (no result or pending result)."
   @spec has_pending_tools?(t()) :: boolean()
   def has_pending_tools?(%__MODULE__{tool_calls: calls}) do
     Enum.any?(calls, &(not SwarmAi.ToolCall.completed?(&1)))
+  end
+
+  @doc "Returns true if any tool calls are suspended (interactive tool awaiting user input)."
+  @spec has_suspended_tools?(t()) :: boolean()
+  def has_suspended_tools?(%__MODULE__{tool_calls: calls}) do
+    Enum.any?(calls, &SwarmAi.ToolCall.suspended?/1)
   end
 
   @doc "Returns true if there are tool calls and all have results."
