@@ -8,9 +8,21 @@ defmodule FrontmanServer.Tasks do
   This context provides the boundary for all task-related operations,
   delegating to the domain layer and infrastructure as appropriate.
   """
+  require Logger
+
   alias FrontmanServer.Accounts.Scope
   alias FrontmanServer.Repo
-  alias FrontmanServer.Tasks.{Execution, Interaction, InteractionSchema, Task, TaskSchema}
+
+  alias FrontmanServer.Tasks.{
+    Execution,
+    Interaction,
+    InteractionSchema,
+    Task,
+    TaskSchema,
+    TitleGenerator,
+    Todos
+  }
+
   alias ReqLLM.ToolCall
 
   # --- Authorization Helpers ---
@@ -395,13 +407,15 @@ defmodule FrontmanServer.Tasks do
   Creates and appends a ToolResult interaction.
 
   Routes the result to the waiting executor so the agent can continue.
+  When the tool is a todo mutation, broadcasts `{:plan_updated, entries}`
+  so subscribers can update the plan UI without domain knowledge.
   """
   @spec add_tool_result(Scope.t(), String.t(), map(), term(), boolean()) ::
           {:ok, Interaction.ToolResult.t()} | {:error, :not_found}
   def add_tool_result(
         %Scope{} = scope,
         task_id,
-        %{id: tool_call_id, name: _} = tool_call_data,
+        %{id: tool_call_id, name: tool_name} = tool_call_data,
         result,
         is_error \\ false
       ) do
@@ -409,9 +423,72 @@ defmodule FrontmanServer.Tasks do
          interaction = Interaction.ToolResult.new(tool_call_data, result, is_error),
          {:ok, interaction} <- append_interaction(schema, interaction) do
       Execution.notify_tool_result(scope, tool_call_id, result, is_error)
+      maybe_broadcast_plan_update(scope, task_id, tool_name)
       {:ok, interaction}
     end
   end
+
+  # After a todo mutation, broadcast the updated plan entries so subscribers
+  # (e.g. TaskChannel) can push the plan update without domain knowledge.
+  defp maybe_broadcast_plan_update(scope, task_id, tool_name) do
+    if FrontmanServer.Tools.todo_mutation?(tool_name) do
+      case list_todos(scope, task_id) do
+        {:ok, todos} ->
+          entries = Enum.map(todos, &Todos.to_plan_entry/1)
+          broadcast_task(task_id, {:plan_updated, entries})
+
+        {:error, _} ->
+          :ok
+      end
+    end
+  end
+
+  @doc """
+  Resumes execution after an interactive tool result arrives for a suspended task.
+
+  No-ops if the executor is still running. Only starts a new execution when
+  every tool_call from the last AgentResponse has a matching ToolResult.
+  """
+  @spec maybe_resume_after_tool_result(Scope.t(), String.t(), list(), keyword()) :: :ok
+  def maybe_resume_after_tool_result(%Scope{} = scope, task_id, tools, opts) do
+    if Execution.running?(scope, task_id), do: :ok, else: do_resume(scope, task_id, tools, opts)
+  end
+
+  defp do_resume(scope, task_id, tools, opts) do
+    case get_task(scope, task_id) do
+      {:ok, task} ->
+        if Interaction.all_pending_tools_resolved?(task.interactions) do
+          Logger.info("All pending tools resolved for task #{task_id}, resuming execution")
+          maybe_start_execution(scope, task_id, tools, opts)
+        else
+          :ok
+        end
+
+      {:error, :not_found} ->
+        Logger.warning("Task #{task_id} not found when attempting resume after tool result")
+        :ok
+    end
+  end
+
+  @doc """
+  Generates a title for the task if it still has the default title ("New Task")
+  and the provided text summary is non-empty.
+
+  Returns immediately — the LLM call runs asynchronously.
+  """
+  @spec maybe_generate_title(Scope.t(), String.t(), String.t(), map() | nil, map()) :: :ok
+  def maybe_generate_title(%Scope{} = scope, task_id, text_summary, model, env_api_key)
+      when text_summary != "" do
+    case get_short_desc(scope, task_id) do
+      {:ok, "New Task"} ->
+        TitleGenerator.generate_async(scope, task_id, text_summary, model, env_api_key)
+
+      _ ->
+        :ok
+    end
+  end
+
+  def maybe_generate_title(_, _, _, _, _), do: :ok
 
   # --- Execution Management ---
 
@@ -451,8 +528,6 @@ defmodule FrontmanServer.Tasks do
   end
 
   # Task List Management
-
-  alias FrontmanServer.Tasks.Todos
 
   @doc """
   Creates a new todo (in memory, returns for tool result).

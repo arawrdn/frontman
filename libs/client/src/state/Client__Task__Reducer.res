@@ -327,6 +327,14 @@ module Selectors = {
   let streamingMessage = (task: Task.t): option<Message.assistantMessage> => {
     Lens.getStreamingMessage(task)
   }
+
+  // Get the pending question (only available on Loaded tasks)
+  let pendingQuestion = (task: Task.t): option<Client__Question__Types.pendingQuestion> => {
+    switch task {
+    | Task.Loaded({pendingQuestion}) => pendingQuestion
+    | _ => None
+    }
+  }
 }
 
 // ============================================================================
@@ -392,6 +400,15 @@ type action =
   | LoadError({error: string})
   // Hydration actions
   | UserMessageReceived({id: string, text: string, timestamp: string})
+  // Question tool actions
+  | QuestionAsked({questions: array<Client__Question__Types.questionItem>, toolCallId: string})
+  | QuestionStepChanged({step: int})
+  | QuestionOptionToggled({questionIndex: int, label: string})
+  | QuestionCustomTextChanged({questionIndex: int, text: string})
+  | QuestionPerQuestionSkipped({questionIndex: int})
+  | QuestionSubmitted
+  | QuestionAllSkipped
+  | QuestionCancelled
 
 // ============================================================================
 // Effects - side effects that the task reducer requests
@@ -411,6 +428,8 @@ type effect =
     })
   | NotifyTurnCompleted
   | CancelPrompt
+  // Question tool effect — submit result directly to server via channel
+  | SubmitQuestionResultEffect({toolCallId: string, result: string, isError: bool})
 
 // Delegated effects - things the task needs from its parent
 type delegated =
@@ -421,6 +440,7 @@ type delegated =
     })
   | NeedUsageRefresh
   | NeedCancelPrompt
+  | NeedSubmitToolResult({toolCallId: string, toolName: string, result: string, isError: bool})
 
 let actionToString = (action: action): string =>
   switch action {
@@ -455,6 +475,14 @@ let actionToString = (action: action): string =>
   | LoadComplete => "LoadComplete"
   | LoadError(_) => "LoadError"
   | UserMessageReceived(_) => "UserMessageReceived"
+  | QuestionAsked(_) => "QuestionAsked"
+  | QuestionStepChanged(_) => "QuestionStepChanged"
+  | QuestionOptionToggled(_) => "QuestionOptionToggled"
+  | QuestionCustomTextChanged(_) => "QuestionCustomTextChanged"
+  | QuestionPerQuestionSkipped(_) => "QuestionPerQuestionSkipped"
+  | QuestionSubmitted => "QuestionSubmitted"
+  | QuestionAllSkipped => "QuestionAllSkipped"
+  | QuestionCancelled => "QuestionCancelled"
   }
 
 // Normalize URL by removing trailing slash for comparison
@@ -787,7 +815,8 @@ let next = (task: Task.t, action: action): (Task.t, array<effect>) => {
   | (Task.Loading(_) | Task.Loaded(_), ToolInputReceived({id, input})) => (
       Lens.updateMessage(task, id, msg =>
         switch msg {
-        | Message.ToolCall(tool) => Message.ToolCall({...tool, input: Some(input)})
+        | Message.ToolCall(tool) =>
+          Message.ToolCall({...tool, input: Some(input), state: Message.InputAvailable})
         | _ => failwith(`[TaskReducer] ToolInputReceived but message ${id} is not a ToolCall`)
         }
       ),
@@ -864,7 +893,7 @@ let next = (task: Task.t, action: action): (Task.t, array<effect>) => {
     let updatedTask = completed->Task.updateLoadedData(data => {...data, isAgentRunning: false})
     (updatedTask, [NotifyTurnCompleted])
 
-  // Cancel the current turn: complete any partial response, stop agent
+  // Cancel the current turn: complete any partial response, stop agent, dismiss pending question
   | (Task.Loaded(data), CancelTurn) =>
     if !data.isAgentRunning {
       (task, [])
@@ -882,8 +911,25 @@ let next = (task: Task.t, action: action): (Task.t, array<effect>) => {
           }
         )
       )
-      let final = withCancelledTools->Task.updateLoadedData(d => {...d, isAgentRunning: false, turnError: None})
-      (final, [CancelPrompt])
+      // Also dismiss any pending question — submit a cancelled result to the server
+      let questionEffects = switch data.pendingQuestion {
+      | Some(pq) =>
+        let output: Client__Question__Types.toolOutput = {
+          answers: [],
+          skippedAll: false,
+          cancelled: true,
+        }
+        let resultJson = S.reverseConvertToJsonStringOrThrow(output, Client__Question__Types.toolOutputSchema)
+        [SubmitQuestionResultEffect({toolCallId: pq.toolCallId, result: resultJson, isError: false})]
+      | None => []
+      }
+      let final = withCancelledTools->Task.updateLoadedData(d => {
+        ...d,
+        isAgentRunning: false,
+        turnError: None,
+        pendingQuestion: None,
+      })
+      (final, Array.concat([CancelPrompt], questionEffects))
     }
 
   | (Task.Loaded(data), AgentError({error})) =>
@@ -940,6 +986,28 @@ let next = (task: Task.t, action: action): (Task.t, array<effect>) => {
       let sortedMessages = MessageStore.toSorted(messages, (a, b) =>
         Selectors.getMessageCreatedAt(a) -. Selectors.getMessageCreatedAt(b)
       )
+      // Detect stale questions: a "question" tool call in InputAvailable state
+      // with no result means the agent suspended waiting for user input.
+      // Extract the question data and tool call ID from the tool input and show the drawer.
+      // Scan from the END so we find the most recent pending question
+      // (matches server behavior: only the last AgentResponse's tools matter).
+      let staleQuestion = MessageStore.toArray(sortedMessages)->Array.toReversed->Array.findMap(msg =>
+        switch msg {
+        | Message.ToolCall({id: toolCallId, toolName: "question", state: Message.InputAvailable, input: Some(inputJson), result: None}) =>
+          try {
+            let parsed = S.parseOrThrow(inputJson, Client__Question__Types.questionInputSchema)
+            Some({
+              Client__Question__Types.questions: parsed.questions,
+              answers: Dict.make(),
+              currentStep: 0,
+              toolCallId,
+            })
+          } catch {
+          | _ => None
+          }
+        | _ => None
+        }
+      )
       (
         Task.Loaded({
           id,
@@ -957,6 +1025,7 @@ let next = (task: Task.t, action: action): (Task.t, array<effect>) => {
           planEntries: [],
           turnError: None,
           imageAttachments: Dict.make(),
+          pendingQuestion: staleQuestion,
         }),
         [],
       )
@@ -967,6 +1036,157 @@ let next = (task: Task.t, action: action): (Task.t, array<effect>) => {
   | (Task.Loading({id, title, createdAt, updatedAt}), LoadError({error})) =>
     Log.error(~ctx={"error": error}, "Task load failed")
     (Task.Unloaded({id, title, createdAt, updatedAt}), [])
+
+  // ============================================================================
+  // Question Tool Actions
+  // ============================================================================
+
+  | (Task.Loaded(data), QuestionAsked({questions, toolCallId})) =>
+    (
+      Task.Loaded({
+        ...data,
+        pendingQuestion: Some({
+          Client__Question__Types.questions,
+          answers: Dict.make(),
+          currentStep: 0,
+          toolCallId,
+        }),
+      }),
+      [],
+    )
+
+  | (Task.Loaded(data), QuestionStepChanged({step})) =>
+    switch data.pendingQuestion {
+    | Some(pq) =>
+      (Task.Loaded({...data, pendingQuestion: Some({...pq, currentStep: step})}), [])
+    | None => (task, [])
+    }
+
+  | (Task.Loaded(data), QuestionOptionToggled({questionIndex, label})) =>
+    switch data.pendingQuestion {
+    | Some(pq) =>
+      let key = questionIndex->Int.toString
+      let question = pq.questions->Array.get(questionIndex)
+      let isMultiple = question->Option.flatMap(q => q.multiple)->Option.getOr(false)
+      let currentAnswer = pq.answers->Dict.get(key)
+
+      let newAnswer = switch (isMultiple, currentAnswer) {
+      | (true, Some(Client__Question__Types.Answered(labels))) =>
+        switch labels->Array.includes(label) {
+        | true =>
+          let filtered = labels->Array.filter(l => l != label)
+          switch Array.length(filtered) > 0 {
+          | true => Client__Question__Types.Answered(filtered)
+          | false => Client__Question__Types.Skipped
+          }
+        | false => Client__Question__Types.Answered(Array.concat(labels, [label]))
+        }
+      | (false, Some(Client__Question__Types.Answered(labels))) =>
+        switch labels->Array.get(0) == Some(label) {
+        | true => Client__Question__Types.Skipped
+        | false => Client__Question__Types.Answered([label])
+        }
+      | _ =>
+        Client__Question__Types.Answered([label])
+      }
+
+      let answers = pq.answers->Dict.copy
+      answers->Dict.set(key, newAnswer)
+      (Task.Loaded({...data, pendingQuestion: Some({...pq, answers})}), [])
+    | None => (task, [])
+    }
+
+  | (Task.Loaded(data), QuestionCustomTextChanged({questionIndex, text})) =>
+    switch data.pendingQuestion {
+    | Some(pq) =>
+      let key = questionIndex->Int.toString
+      let answers = pq.answers->Dict.copy
+      switch String.trim(text)->String.length > 0 {
+      | true => answers->Dict.set(key, Client__Question__Types.CustomText(text))
+      | false => answers->Dict.delete(key)
+      }
+      (Task.Loaded({...data, pendingQuestion: Some({...pq, answers})}), [])
+    | None => (task, [])
+    }
+
+  | (Task.Loaded(data), QuestionPerQuestionSkipped({questionIndex})) =>
+    switch data.pendingQuestion {
+    | Some(pq) =>
+      let key = questionIndex->Int.toString
+      let answers = pq.answers->Dict.copy
+      answers->Dict.set(key, Client__Question__Types.Skipped)
+      let nextStep = Math.Int.min(questionIndex + 1, Array.length(pq.questions) - 1)
+      (Task.Loaded({...data, pendingQuestion: Some({...pq, answers, currentStep: nextStep})}), [])
+    | None => (task, [])
+    }
+
+  | (Task.Loaded(data), QuestionSubmitted) =>
+    switch data.pendingQuestion {
+    | Some(pq) =>
+      let questionAnswers: array<Client__Question__Types.toolQuestionAnswer> =
+        pq.questions->Array.mapWithIndex((q, i) => {
+          let key = i->Int.toString
+          let answer = switch pq.answers->Dict.get(key) {
+          | Some(Client__Question__Types.Answered(labels)) => Some(labels)
+          | Some(Client__Question__Types.CustomText(text)) => Some([text])
+          | Some(Client__Question__Types.Skipped) | None => None
+          }
+          {Client__Question__Types.question: q.question, answer}
+        })
+      let output: Client__Question__Types.toolOutput = {
+        answers: questionAnswers,
+        skippedAll: false,
+        cancelled: false,
+      }
+      let resultJson = S.reverseConvertToJsonStringOrThrow(output, Client__Question__Types.toolOutputSchema)
+      (
+        Task.Loaded({...data, pendingQuestion: None}),
+        [SubmitQuestionResultEffect({toolCallId: pq.toolCallId, result: resultJson, isError: false})],
+      )
+    | None => (task, [])
+    }
+
+  | (Task.Loaded(data), QuestionAllSkipped) =>
+    switch data.pendingQuestion {
+    | Some(pq) =>
+      let questionAnswers: array<Client__Question__Types.toolQuestionAnswer> =
+        pq.questions->Array.mapWithIndex((q, i) => {
+          let key = i->Int.toString
+          let answer = switch pq.answers->Dict.get(key) {
+          | Some(Client__Question__Types.Answered(labels)) => Some(labels)
+          | Some(Client__Question__Types.CustomText(text)) => Some([text])
+          | Some(Client__Question__Types.Skipped) | None => None
+          }
+          {Client__Question__Types.question: q.question, answer}
+        })
+      let output: Client__Question__Types.toolOutput = {
+        answers: questionAnswers,
+        skippedAll: true,
+        cancelled: false,
+      }
+      let resultJson = S.reverseConvertToJsonStringOrThrow(output, Client__Question__Types.toolOutputSchema)
+      (
+        Task.Loaded({...data, pendingQuestion: None}),
+        [SubmitQuestionResultEffect({toolCallId: pq.toolCallId, result: resultJson, isError: false})],
+      )
+    | None => (task, [])
+    }
+
+  | (Task.Loaded(data), QuestionCancelled) =>
+    switch data.pendingQuestion {
+    | Some(pq) =>
+      let output: Client__Question__Types.toolOutput = {
+        answers: [],
+        skippedAll: false,
+        cancelled: true,
+      }
+      let resultJson = S.reverseConvertToJsonStringOrThrow(output, Client__Question__Types.toolOutputSchema)
+      (
+        Task.Loaded({...data, pendingQuestion: None}),
+        [SubmitQuestionResultEffect({toolCallId: pq.toolCallId, result: resultJson, isError: false})],
+      )
+    | None => (task, [])
+    }
 
   // ============================================================================
   // Catch-all - invalid state/action combinations
@@ -1132,5 +1352,8 @@ let handleEffect = (effect: effect, ~dispatch: action => unit, ~delegate: delega
   | SendMessage({text, attachments, annotations}) => delegate(NeedSendMessage({text, attachments, annotations}))
   | NotifyTurnCompleted => delegate(NeedUsageRefresh)
   | CancelPrompt => delegate(NeedCancelPrompt)
+  // Question tool effect — submit result directly to server via channel
+  | SubmitQuestionResultEffect({toolCallId, result, isError}) =>
+    delegate(NeedSubmitToolResult({toolCallId, toolName: "question", result, isError}))
   }
 }

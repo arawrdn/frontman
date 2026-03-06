@@ -68,6 +68,54 @@ defmodule SwarmAi.RuntimeTest do
       assert_receive {:errored, {:error, _reason, _loop_id}}, 1000
     end
 
+    test "invokes on_suspended callback when tool returns :suspended" do
+      runtime = start_runtime!()
+      test_pid = self()
+
+      llm =
+        tool_then_complete_llm(
+          [%SwarmAi.ToolCall{id: "tc_1", name: "question", arguments: "{}"}],
+          "Done"
+        )
+
+      agent = test_agent(llm)
+
+      {:ok, pid} =
+        SwarmAi.Runtime.run(runtime, "task-suspended", agent, "Ask user",
+          tool_executor: fn _tc -> :suspended end,
+          on_suspended: fn result ->
+            send(test_pid, {:suspended, result})
+          end
+        )
+
+      assert_receive {:suspended, {:suspended, _loop_id}}, 1000
+    end
+
+    test "on_suspended does not fire when tool completes normally" do
+      runtime = start_runtime!()
+      test_pid = self()
+
+      llm =
+        tool_then_complete_llm(
+          [%SwarmAi.ToolCall{id: "tc_1", name: "read_file", arguments: "{}"}],
+          "Done"
+        )
+
+      agent = test_agent(llm)
+
+      {:ok, pid} =
+        SwarmAi.Runtime.run(runtime, "task-no-suspend", agent, "Read",
+          tool_executor: fn _tc -> {:ok, "file contents"} end,
+          on_complete: fn result -> send(test_pid, {:completed, result}) end,
+          on_suspended: fn result -> send(test_pid, {:suspended, result}) end
+        )
+
+      ref = Process.monitor(pid)
+      assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 1000
+      assert_receive {:completed, {:ok, "Done", _loop_id}}, 1000
+      refute_receive {:suspended, _}, 200
+    end
+
     @tag echo_agent: true
     test "prevents duplicate execution for same key", %{echo_agent: agent} do
       runtime = start_runtime!()

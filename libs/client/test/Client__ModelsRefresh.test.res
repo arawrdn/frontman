@@ -8,6 +8,7 @@ let _dummySendPrompt: Types.sendPromptFn = (_, ~additionalBlocks as _, ~onComple
 let _dummyCancelPrompt: Types.cancelPromptFn = () => ()
 let _dummyLoadTask: Types.loadTaskFn = (_, ~needsHistory as _, ~onComplete as _) => ()
 let _dummyDeleteSession: Types.deleteSessionFn = (_, ~onComplete as _) => ()
+let _dummySubmitToolResult: Types.submitToolResultFn = (~toolCallId as _, ~toolName as _, ~result as _, ~isError as _, ~metadata as _) => ()
 
 let _apiBaseUrl = "http://localhost:4000"
 
@@ -21,6 +22,7 @@ let _makeState = (~anthropicOAuthStatus=Types.NotConnected, ~chatgptOAuthStatus=
       cancelPrompt: _dummyCancelPrompt,
       loadTask: _dummyLoadTask,
       deleteSession: _dummyDeleteSession,
+      submitToolResult: _dummySubmitToolResult,
       apiBaseUrl: _apiBaseUrl,
     }),
     sessionInitialized: true,

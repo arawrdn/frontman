@@ -143,6 +143,18 @@ defmodule FrontmanServer.Tasks.Todos do
   end
 
   @doc """
+  Converts a Todo struct to an ACP plan entry map.
+  """
+  @spec to_plan_entry(Todo.t()) :: map()
+  def to_plan_entry(%Todo{} = todo) do
+    %{
+      "content" => todo.content,
+      "priority" => "medium",
+      "status" => Atom.to_string(todo.status)
+    }
+  end
+
+  @doc """
   Updates a todo's status by first rebuilding state, then updating.
 
   Caller must provide interactions list. Returns the updated todo for the tool result.

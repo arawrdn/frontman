@@ -7,6 +7,7 @@ module Log = FrontmanLogs.Logs.Make({
 
 module ACP = FrontmanAiFrontmanClient.FrontmanClient__ACP
 module Types = FrontmanAiFrontmanProtocol.FrontmanProtocol__ACP
+module Channel = FrontmanAiFrontmanClient.FrontmanClient__Phoenix__Channel
 module Relay = FrontmanAiFrontmanClient.FrontmanClient__Relay
 module MCPServer = FrontmanAiFrontmanClient.FrontmanClient__MCP__Server
 module Reducer = Client__ConnectionReducer
@@ -40,6 +41,7 @@ type contextValue = {
     ~metadata: option<JSON.t>,
   ) => unit,
   cancelPrompt: unit => unit,
+  submitToolResult: Client__State__Types.submitToolResultFn,
   loadTask: (string, ~needsHistory: bool, ~onComplete: result<unit, string> => unit) => unit,
   deleteSession: (string, ~onComplete: result<unit, string> => unit) => unit,
 }
@@ -56,6 +58,7 @@ let defaultContextValue: contextValue = {
   clearSession: () => (),
   sendPrompt: (_, ~additionalBlocks as _, ~onComplete as _, ~metadata as _) => (),
   cancelPrompt: () => (),
+  submitToolResult: (~toolCallId as _, ~toolName as _, ~result as _, ~isError as _, ~metadata as _) => (),
   loadTask: (_, ~needsHistory as _, ~onComplete as _) => (),
   deleteSession: (_, ~onComplete as _) => (),
 }
@@ -171,20 +174,18 @@ module Provider = {
       | ToolCallUpdate({toolCallId, status, content}) =>
         let text = content->Option.flatMap(c => c->Array.get(0))->Option.flatMap(i => i.content)->Option.flatMap(c => c.text)
         switch status {
-        | Some("pending") =>
+        | Some(Types.Pending) =>
           text->Option.flatMap(t => try { Some(JSON.parseOrThrow(t)) } catch { | _ => None })->Option.forEach(input => {
             Client__State.Actions.toolInputReceived(~taskId, ~id=toolCallId, ~input)
           })
-        | Some("completed") =>
+        | Some(Completed) =>
           let result = text->Option.mapOr(JSON.Encode.null, t =>
             try { JSON.parseOrThrow(t) } catch { | _ => JSON.Encode.string(t) }
           )
           Client__State.Actions.toolResultReceived(~taskId, ~id=toolCallId, ~result)
-        | Some("failed") =>
+        | Some(Failed) =>
           Client__State.Actions.toolErrorReceived(~taskId, ~id=toolCallId, ~error=text->Option.getOr("Unknown error"))
-        | Some("in_progress") => () // Normal transitional status for MCP tools
-        | Some(status) =>
-          Log.warning(~ctx={"status": status, "toolCallId": toolCallId}, "Unhandled tool call status received")
+        | Some(InProgress) => () // Normal transitional status for MCP tools
         | None => ()
         }
       | Plan({entries}) =>
@@ -214,6 +215,24 @@ module Provider = {
     let cancelPrompt = React.useCallback1(() => {
       dispatch(CancelPrompt)
     }, [dispatch])
+
+    // Submit a tool result directly via the Phoenix channel.
+    // Used by interactive tools (e.g. question) whose results bypass MCP.
+    // Fire-and-forget: the server handles persistence and re-execution.
+    let currentSession = Reducer.Selectors.getSession(state)
+    let submitToolResult = React.useCallback1(
+      (~toolCallId, ~toolName, ~result, ~isError, ~metadata) => {
+        switch currentSession {
+        | Some(session) =>
+          let payload: Types.toolSubmitResult = {toolCallId, toolName, result, isError, metadata}
+          let json = S.reverseConvertToJsonOrThrow(payload, Types.toolSubmitResultSchema)
+          session.channel->Channel.push(~event=#"tool:submit_result", ~payload=json)->ignore
+        | None =>
+          Log.error("Cannot submit tool result: no active session")
+        }
+      },
+      [currentSession],
+    )
 
     let loadTask = React.useCallback1(
       (taskId: string, ~needsHistory, ~onComplete) => {
@@ -250,6 +269,7 @@ module Provider = {
       clearSession,
       sendPrompt,
       cancelPrompt,
+      submitToolResult,
       loadTask,
       deleteSession,
     }

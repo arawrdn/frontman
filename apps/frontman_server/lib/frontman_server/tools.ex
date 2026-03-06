@@ -46,6 +46,21 @@ defmodule FrontmanServer.Tools do
   def todo_mutation?(tool_name), do: tool_name in @todo_mutations
 
   @doc """
+  Returns whether a tool call should be tracked in pending requests.
+
+  Interactive tools (e.g. question) don't get tracked because the client
+  returns no MCP response for them — the result arrives via a separate
+  channel event (`tool:submit_result`) instead.
+
+  The tool's execution mode is read from the MCP tool definitions,
+  which are populated from the wire format during MCP initialization.
+  """
+  @spec track_pending?([MCP.t()], String.t()) :: boolean()
+  def track_pending?(mcp_tool_defs, tool_name) do
+    not MCP.interactive_by_name?(mcp_tool_defs, tool_name)
+  end
+
+  @doc """
   Prepares all available tools for a task.
 
   Aggregates backend tools and MCP tools into LLM format.

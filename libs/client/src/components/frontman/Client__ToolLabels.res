@@ -6,18 +6,28 @@
  */
 
 /**
+ * Strip "Calling " prefix (legacy server format) and lowercase.
+ * e.g., "Calling write_file" -> "write_file", "Write_File" -> "write_file"
+ */
+let cleanName = (str: string): string => {
+  let lower = String.toLowerCase(str)
+  switch String.startsWith(lower, "calling ") {
+  | true => String.slice(lower, ~start=8, ~end=String.length(lower))
+  | false => lower
+  }
+}
+
+/**
  * Convert snake_case tool name to Title Case for display
  * e.g., "get_routes" -> "Get Routes", "write_file" -> "Write File"
  * Also strips "Calling " prefix if present (legacy server format)
  */
 let toTitleCase = (str: string): string => {
-  // Strip "Calling " prefix if present (legacy server format)
-  let cleanStr = if String.startsWith(str, "Calling ") {
-    String.slice(str, ~start=8, ~end=String.length(str))
-  } else {
-    str
+  let cleanStr = switch String.startsWith(str, "Calling ") {
+  | true => String.slice(str, ~start=8, ~end=String.length(str))
+  | false => str
   }
-  
+
   cleanStr
   ->String.split("_")
   ->Array.map(word => {

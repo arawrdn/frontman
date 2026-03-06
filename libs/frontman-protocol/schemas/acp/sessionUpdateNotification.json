@@ -219,7 +219,12 @@
                   "type": "string"
                 },
                 "status": {
-                  "type": "string"
+                  "enum": [
+                    "pending",
+                    "in_progress",
+                    "completed",
+                    "failed"
+                  ]
                 },
                 "parentAgentId": {
                   "type": "string"
@@ -245,7 +250,12 @@
                   "type": "string"
                 },
                 "status": {
-                  "type": "string"
+                  "enum": [
+                    "pending",
+                    "in_progress",
+                    "completed",
+                    "failed"
+                  ]
                 },
                 "content": {
                   "items": {

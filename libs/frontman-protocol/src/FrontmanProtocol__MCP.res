@@ -76,6 +76,13 @@ module ErrorCode = {
   let methodNotFound = -32601
 }
 
+// Result of executing a tool — distinguishes between synchronous tools that
+// return a result inline (Completed) and interactive tools that suspend
+// execution until the user responds via a channel event (Suspended).
+type executeToolResult =
+  | Completed(callToolResult)
+  | Suspended
+
 // Server interface - runtime-compatible record for generic MCP handlers
 type serverInterface<'server> = {
   server: 'server,
@@ -86,8 +93,9 @@ type serverInterface<'server> = {
     ~name: string,
     ~arguments: option<Dict.t<JSON.t>>,
     ~taskId: string,
+    ~callId: string,
     ~onProgress: option<string => unit>,
-  ) => promise<callToolResult>,
+  ) => promise<executeToolResult>,
 }
 
 // Server module type - implement this to create an MCP server
@@ -100,6 +108,7 @@ module type Server = {
     ~name: string,
     ~arguments: option<Dict.t<JSON.t>>=?,
     ~taskId: string,
+    ~callId: string,
     ~onProgress: option<string => unit>=?,
-  ) => promise<callToolResult>
+  ) => promise<executeToolResult>
 }

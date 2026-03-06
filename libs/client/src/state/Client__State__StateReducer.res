@@ -41,6 +41,7 @@ type action =
       cancelPrompt: Client__State__Types.cancelPromptFn,
       loadTask: Client__State__Types.loadTaskFn,
       deleteSession: Client__State__Types.deleteSessionFn,
+      submitToolResult: Client__State__Types.submitToolResultFn,
       apiBaseUrl: string,
     })
   | ClearAcpSession
@@ -92,6 +93,7 @@ type action =
   | UpdateInfoReceived({updateInfo: Client__State__Types.updateInfo})
   | DismissUpdateBanner
 
+
 type effect =
   | TaskEffect({target: taskTarget, effect: TaskReducer.effect})
   | FetchUsageInfo({apiBaseUrl: string})
@@ -114,6 +116,7 @@ type effect =
   | LoadTaskEffect({taskId: string})
   // Update check effect
   | CheckForUpdateEffect({apiBaseUrl: string, installedVersion: string, npmPackage: string})
+
 
 // ============================================================================
 // Lens helpers for state updates
@@ -473,6 +476,15 @@ module Selectors = {
     state.updateBannerDismissed
   }
 
+  // Pending question for the current task (shown in the drawer)
+  let pendingQuestion = (state: state): option<Client__Question__Types.pendingQuestion> => {
+    switch state.currentTask {
+    | Task.Selected(id) =>
+      state.tasks->Dict.get(id)->Option.flatMap(TaskReducer.Selectors.pendingQuestion)
+    | Task.New(_) => None
+    }
+  }
+
   // Whether the user has any API provider configured via state-tracked sources
   // (DB-stored OpenRouter key or Anthropic OAuth).
   // Env-injected keys (window.__frontmanRuntime) live outside state — check RuntimeConfig separately.
@@ -666,6 +678,31 @@ let handleEffect = (effect, state: state, dispatch) => {
           switch state.acpSession {
           | AcpSessionActive({cancelPrompt}) => cancelPrompt()
           | NoAcpSession => Log.error("Cannot cancel prompt: no active ACP session")
+          }
+        | NeedSubmitToolResult({toolCallId, toolName, result, isError}) =>
+          switch state.acpSession {
+          | AcpSessionActive({submitToolResult}) =>
+            // Build metadata (env API key + model) so the server can resume
+            // execution with the correct provider credentials.
+            let runtimeConfig = Client__RuntimeConfig.read()
+            let baseMetadata = Client__RuntimeConfig.toMetadata(runtimeConfig)
+            let metadata = switch state.selectedModel {
+            | Some(model) =>
+              let modelJson: JSON.t = %raw(`(function(provider, value) {
+                return { provider: provider, value: value };
+              })`)(model.provider, model.value)
+              switch baseMetadata->JSON.Decode.object {
+              | Some(dict) =>
+                let newDict = dict->Dict.copy
+                newDict->Dict.set("model", modelJson)
+                Some(newDict->Obj.magic)
+              | None => Some(baseMetadata)
+              }
+            | None => Some(baseMetadata)
+            }
+            submitToolResult(~toolCallId, ~toolName, ~result, ~isError, ~metadata)
+          | NoAcpSession =>
+            Log.error("Cannot submit tool result: no active ACP session")
           }
         }
       }
@@ -1148,6 +1185,7 @@ let handleEffect = (effect, state: state, dispatch) => {
       }
     }
     fetch()->ignore
+
   }
 }
 
@@ -1195,6 +1233,7 @@ let next = (state: state, action) => {
   | CancelTurn =>
     switch state.currentTask {
     | Task.Selected(taskId) =>
+      // Task reducer handles question cleanup (sets pendingQuestion: None, emits RejectQuestionEffect)
       state->Lens.delegateToTask(Task.Selected(taskId), TaskReducer.CancelTurn)
     | Task.New(_) =>
       // No task to cancel
@@ -1286,13 +1325,13 @@ let next = (state: state, action) => {
   // ACP session actions
   // ============================================================================
 
-  | SetAcpSession({sendPrompt, cancelPrompt, loadTask, deleteSession, apiBaseUrl}) =>
+  | SetAcpSession({sendPrompt, cancelPrompt, loadTask, deleteSession, submitToolResult, apiBaseUrl}) =>
     // Just set up session callbacks - task creation happens in AddUserMessage
     // when user sends their first message (lazy session creation)
     // apiBaseUrl is co-located in AcpSessionActive to make illegal state unrepresentable
     {
       ...state,
-      acpSession: AcpSessionActive({sendPrompt, cancelPrompt, loadTask, deleteSession, apiBaseUrl}),
+      acpSession: AcpSessionActive({sendPrompt, cancelPrompt, loadTask, deleteSession, submitToolResult, apiBaseUrl}),
       sessionInitialized: true,
     }->StateReducer.update(
       ~sideEffects=[
@@ -1305,7 +1344,23 @@ let next = (state: state, action) => {
     )
 
   | ClearAcpSession =>
-    {...state, acpSession: NoAcpSession}->StateReducer.update
+    // Clear pending questions across all tasks — the connection is gone,
+    // so we can't submit results via channel. Just clear the UI state.
+    // When the user reconnects and loads the task, the stale question
+    // detection will re-show the drawer from the message history.
+    let updatedTasks = state.tasks->Dict.copy
+    updatedTasks->Dict.forEachWithKey((task, taskId) => {
+      switch TaskReducer.Selectors.pendingQuestion(task) {
+      | Some(_) =>
+        switch task {
+        | Task.Loaded(data) =>
+          updatedTasks->Dict.set(taskId, Task.Loaded({...data, pendingQuestion: None}))
+        | _ => ()
+        }
+      | None => ()
+      }
+    })
+    {...state, tasks: updatedTasks, acpSession: NoAcpSession}->StateReducer.update
 
   // ============================================================================
   // Global state actions

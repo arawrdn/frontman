@@ -102,9 +102,9 @@ module Actions = {
   let cancelTurn = () => Client__State__Store.dispatch(CancelTurn)
 
   // ACP session action creators
-  let setAcpSession = (~sendPrompt, ~cancelPrompt, ~loadTask, ~deleteSession, ~apiBaseUrl) =>
+  let setAcpSession = (~sendPrompt, ~cancelPrompt, ~loadTask, ~deleteSession, ~submitToolResult, ~apiBaseUrl) =>
     Client__State__Store.dispatch(
-      SetAcpSession({sendPrompt, cancelPrompt, loadTask, deleteSession, apiBaseUrl}),
+      SetAcpSession({sendPrompt, cancelPrompt, loadTask, deleteSession, submitToolResult, apiBaseUrl}),
     )
 
   let clearAcpSession = () => Client__State__Store.dispatch(ClearAcpSession)
@@ -178,4 +178,26 @@ module Actions = {
     Client__State__Store.dispatch(CheckForUpdate({installedVersion, npmPackage}))
 
   let dismissUpdateBanner = () => Client__State__Store.dispatch(DismissUpdateBanner)
+
+  // Question tool action creators — dispatched as TaskAction to the task sub-reducer
+  let questionStepChanged = (~taskId, ~step) =>
+    Client__State__Store.dispatch(TaskAction({target: ForTask(taskId), action: QuestionStepChanged({step: step})}))
+
+  let questionOptionToggled = (~taskId, ~questionIndex, ~label) =>
+    Client__State__Store.dispatch(TaskAction({target: ForTask(taskId), action: QuestionOptionToggled({questionIndex, label})}))
+
+  let questionCustomTextChanged = (~taskId, ~questionIndex, ~text) =>
+    Client__State__Store.dispatch(TaskAction({target: ForTask(taskId), action: QuestionCustomTextChanged({questionIndex, text})}))
+
+  let questionPerQuestionSkipped = (~taskId, ~questionIndex) =>
+    Client__State__Store.dispatch(TaskAction({target: ForTask(taskId), action: QuestionPerQuestionSkipped({questionIndex: questionIndex})}))
+
+  let questionSubmitted = (~taskId) =>
+    Client__State__Store.dispatch(TaskAction({target: ForTask(taskId), action: QuestionSubmitted}))
+
+  let questionAllSkipped = (~taskId) =>
+    Client__State__Store.dispatch(TaskAction({target: ForTask(taskId), action: QuestionAllSkipped}))
+
+  let questionCancelled = (~taskId) =>
+    Client__State__Store.dispatch(TaskAction({target: ForTask(taskId), action: QuestionCancelled}))
 }
