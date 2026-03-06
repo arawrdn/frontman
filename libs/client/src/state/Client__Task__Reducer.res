@@ -20,6 +20,18 @@ module ACPTypes = Types.ACPTypes
 module MessageStore = Client__MessageStore
 
 module Lens = {
+  // ---- Generic helpers to eliminate repetitive 4-way switches ----
+
+  // Update the previewFrame on New/Loading/Loaded (crashes on Unloaded)
+  let updatePreviewFrame = (task: Task.t, fn: Task.previewFrame => Task.previewFrame): Task.t =>
+    switch task {
+    | Task.New(data) => Task.New({...data, previewFrame: fn(data.previewFrame)})
+    | Task.Loading(data) => Task.Loading({...data, previewFrame: fn(data.previewFrame)})
+    | Task.Loaded(data) => Task.Loaded({...data, previewFrame: fn(data.previewFrame)})
+    | Task.Unloaded(_) =>
+      failwith("[Lens.updatePreviewFrame] Cannot update preview frame on Unloaded task")
+    }
+
   // Update messages within a task (crashes if New or Unloaded - they have no messages)
   let updateMessages = (task: Task.t, fn: MessageStore.t => MessageStore.t): Task.t => {
     switch task {
@@ -75,109 +87,43 @@ module Lens = {
     )
   }
 
-  // Update preview frame URL
-  let setPreviewUrl = (task: Task.t, url: string): Task.t => {
-    switch task {
-    | Task.New(data) => Task.New({...data, previewFrame: {...data.previewFrame, url}})
-    | Task.Loading(data) => Task.Loading({...data, previewFrame: {...data.previewFrame, url}})
-    | Task.Loaded(data) => Task.Loaded({...data, previewFrame: {...data.previewFrame, url}})
-    | Task.Unloaded(_) => failwith("[Lens.setPreviewUrl] Cannot set preview URL on Unloaded task")
-    }
-  }
+  // ---- PreviewFrame lenses (delegate to updatePreviewFrame) ----
 
-  // Update preview frame content
+  let setPreviewUrl = (task: Task.t, url: string): Task.t =>
+    updatePreviewFrame(task, pf => {...pf, url})
+
   let setPreviewFrame = (
     task: Task.t,
     ~contentDocument: option<WebAPI.DOMAPI.document>,
     ~contentWindow: option<WebAPI.DOMAPI.window>,
-  ): Task.t => {
-    switch task {
-    | Task.New(data) =>
-      Task.New({...data, previewFrame: {...data.previewFrame, contentDocument, contentWindow}})
-    | Task.Loading(data) =>
-      Task.Loading({...data, previewFrame: {...data.previewFrame, contentDocument, contentWindow}})
-    | Task.Loaded(data) =>
-      Task.Loaded({...data, previewFrame: {...data.previewFrame, contentDocument, contentWindow}})
-    | Task.Unloaded(_) =>
-      failwith("[Lens.setPreviewFrame] Cannot set preview frame on Unloaded task")
-    }
-  }
+  ): Task.t =>
+    updatePreviewFrame(task, pf => {...pf, contentDocument, contentWindow})
 
-  // Update device mode
-  let setDeviceMode = (task: Task.t, deviceMode: Client__DeviceMode.deviceMode): Task.t => {
-    switch task {
-    | Task.New(data) =>
-      Task.New({...data, previewFrame: {...data.previewFrame, deviceMode}})
-    | Task.Loading(data) =>
-      Task.Loading({...data, previewFrame: {...data.previewFrame, deviceMode}})
-    | Task.Loaded(data) =>
-      Task.Loaded({...data, previewFrame: {...data.previewFrame, deviceMode}})
-    | Task.Unloaded(_) =>
-      failwith("[Lens.setDeviceMode] Cannot set device mode on Unloaded task")
-    }
-  }
+  let setDeviceMode = (task: Task.t, deviceMode: Client__DeviceMode.deviceMode): Task.t =>
+    updatePreviewFrame(task, pf => {...pf, deviceMode})
 
-  // Update orientation
-  let setOrientation = (task: Task.t, orientation: Client__DeviceMode.orientation): Task.t => {
-    switch task {
-    | Task.New(data) =>
-      Task.New({...data, previewFrame: {...data.previewFrame, orientation}})
-    | Task.Loading(data) =>
-      Task.Loading({...data, previewFrame: {...data.previewFrame, orientation}})
-    | Task.Loaded(data) =>
-      Task.Loaded({...data, previewFrame: {...data.previewFrame, orientation}})
-    | Task.Unloaded(_) =>
-      failwith("[Lens.setOrientation] Cannot set orientation on Unloaded task")
-    }
-  }
+  let setOrientation = (task: Task.t, orientation: Client__DeviceMode.orientation): Task.t =>
+    updatePreviewFrame(task, pf => {...pf, orientation})
 
-  // Set annotation mode
-  let setAnnotationMode = (task: Task.t, mode: Annotation.annotationMode): Task.t => {
-    switch task {
-    | Task.New(data) => Task.New({...data, annotationMode: mode})
-    | Task.Loading(data) => Task.Loading({...data, annotationMode: mode})
-    | Task.Loaded(data) => Task.Loaded({...data, annotationMode: mode})
-    | Task.Unloaded(_) =>
-      failwith("[Lens.setAnnotationMode] Cannot set mode on Unloaded task")
-    }
-  }
+  // ---- Annotation / UI lenses (delegate to Task.updateLoadedData) ----
 
-  // Set annotations array
-  let setAnnotations = (task: Task.t, annotations: array<Annotation.t>): Task.t => {
-    switch task {
-    | Task.New(data) => Task.New({...data, annotations})
-    | Task.Loading(data) => Task.Loading({...data, annotations})
-    | Task.Loaded(data) => Task.Loaded({...data, annotations})
-    | Task.Unloaded(_) => failwith("[Lens.setAnnotations] Cannot set annotations on Unloaded task")
-    }
-  }
+  let setAnnotationMode = (task: Task.t, mode: Annotation.annotationMode): Task.t =>
+    Task.updateLoadedData(task, d => {...d, annotationMode: mode})
 
-  // Update a single annotation by ID
+  let setAnnotations = (task: Task.t, annotations: array<Annotation.t>): Task.t =>
+    Task.updateLoadedData(task, d => {...d, annotations})
+
   let updateAnnotation = (task: Task.t, id: string, fn: Annotation.t => Annotation.t): Task.t => {
     let annotations = Task.getAnnotations(task)
     let updated = annotations->Array.map(a => a.id == id ? fn(a) : a)
     setAnnotations(task, updated)
   }
 
-  // Set animation frozen state
-  let setAnimationFrozen = (task: Task.t, frozen: bool): Task.t => {
-    switch task {
-    | Task.New(data) => Task.New({...data, isAnimationFrozen: frozen})
-    | Task.Loading(data) => Task.Loading({...data, isAnimationFrozen: frozen})
-    | Task.Loaded(data) => Task.Loaded({...data, isAnimationFrozen: frozen})
-    | Task.Unloaded(_) => failwith("[Lens.setAnimationFrozen] Cannot set on Unloaded task")
-    }
-  }
+  let setAnimationFrozen = (task: Task.t, frozen: bool): Task.t =>
+    Task.updateLoadedData(task, d => {...d, isAnimationFrozen: frozen})
 
-  // Set active popup annotation ID
-  let setActivePopupAnnotationId = (task: Task.t, id: option<string>): Task.t => {
-    switch task {
-    | Task.New(data) => Task.New({...data, activePopupAnnotationId: id})
-    | Task.Loading(data) => Task.Loading({...data, activePopupAnnotationId: id})
-    | Task.Loaded(data) => Task.Loaded({...data, activePopupAnnotationId: id})
-    | Task.Unloaded(_) => failwith("[Lens.setActivePopupAnnotationId] Cannot set on Unloaded task")
-    }
-  }
+  let setActivePopupAnnotationId = (task: Task.t, id: option<string>): Task.t =>
+    Task.updateLoadedData(task, d => {...d, activePopupAnnotationId: id})
 
 }
 
@@ -532,6 +478,61 @@ let extractAttachmentsFromUserContent = (
 
 // Helper to get task ID for error messages
 let getTaskIdForError = (task: Task.t): string => Task.getId(task)->Option.getOr("(no id)")
+
+// ============================================================================
+// Question helpers - shared logic for question tool state mutations
+// ============================================================================
+
+// Update pendingQuestion on a Loaded task (no-op if no pending question)
+let updatePendingQuestion = (
+  task: Task.t,
+  fn: Client__Question__Types.pendingQuestion => Client__Question__Types.pendingQuestion,
+): (Task.t, array<effect>) =>
+  switch task {
+  | Task.Loaded({pendingQuestion: Some(pq)} as data) =>
+    (Task.Loaded({...data, pendingQuestion: Some(fn(pq))}), [])
+  | _ => (task, [])
+  }
+
+// Build answers array from pending question state and serialize to JSON effect
+let buildQuestionResult = (
+  pq: Client__Question__Types.pendingQuestion,
+  ~skippedAll: bool,
+  ~cancelled: bool,
+): (Client__Question__Types.toolOutput, string) => {
+  let answers = switch cancelled {
+  | true => []
+  | false =>
+    pq.questions->Array.mapWithIndex((q, i) => {
+      let key = i->Int.toString
+      let answer = switch pq.answers->Dict.get(key) {
+      | Some(Client__Question__Types.Answered(labels)) => Some(labels)
+      | Some(Client__Question__Types.CustomText(text)) => Some([text])
+      | Some(Client__Question__Types.Skipped) | None => None
+      }
+      {Client__Question__Types.question: q.question, answer}
+    })
+  }
+  let output: Client__Question__Types.toolOutput = {answers, skippedAll, cancelled}
+  let resultJson = S.reverseConvertToJsonStringOrThrow(output, Client__Question__Types.toolOutputSchema)
+  (output, resultJson)
+}
+
+// Submit a question result: clear pendingQuestion and emit SubmitQuestionResultEffect
+let submitQuestionResult = (
+  task: Task.t,
+  ~skippedAll: bool,
+  ~cancelled: bool,
+): (Task.t, array<effect>) =>
+  switch task {
+  | Task.Loaded({pendingQuestion: Some(pq)} as data) =>
+    let (_, resultJson) = buildQuestionResult(pq, ~skippedAll, ~cancelled)
+    (
+      Task.Loaded({...data, pendingQuestion: None}),
+      [SubmitQuestionResultEffect({toolCallId: pq.toolCallId, result: resultJson, isError: false})],
+    )
+  | _ => (task, [])
+  }
 
 let next = (task: Task.t, action: action): (Task.t, array<effect>) => {
   switch (task, action) {
@@ -914,12 +915,7 @@ let next = (task: Task.t, action: action): (Task.t, array<effect>) => {
       // Also dismiss any pending question — submit a cancelled result to the server
       let questionEffects = switch data.pendingQuestion {
       | Some(pq) =>
-        let output: Client__Question__Types.toolOutput = {
-          answers: [],
-          skippedAll: false,
-          cancelled: true,
-        }
-        let resultJson = S.reverseConvertToJsonStringOrThrow(output, Client__Question__Types.toolOutputSchema)
+        let (_, resultJson) = buildQuestionResult(pq, ~skippedAll=false, ~cancelled=true)
         [SubmitQuestionResultEffect({toolCallId: pq.toolCallId, result: resultJson, isError: false})]
       | None => []
       }
@@ -1055,16 +1051,11 @@ let next = (task: Task.t, action: action): (Task.t, array<effect>) => {
       [],
     )
 
-  | (Task.Loaded(data), QuestionStepChanged({step})) =>
-    switch data.pendingQuestion {
-    | Some(pq) =>
-      (Task.Loaded({...data, pendingQuestion: Some({...pq, currentStep: step})}), [])
-    | None => (task, [])
-    }
+  | (Task.Loaded(_), QuestionStepChanged({step})) =>
+    updatePendingQuestion(task, pq => {...pq, currentStep: step})
 
-  | (Task.Loaded(data), QuestionOptionToggled({questionIndex, label})) =>
-    switch data.pendingQuestion {
-    | Some(pq) =>
+  | (Task.Loaded(_), QuestionOptionToggled({questionIndex, label})) =>
+    updatePendingQuestion(task, pq => {
       let key = questionIndex->Int.toString
       let question = pq.questions->Array.get(questionIndex)
       let isMultiple = question->Option.flatMap(q => q.multiple)->Option.getOr(false)
@@ -1092,101 +1083,37 @@ let next = (task: Task.t, action: action): (Task.t, array<effect>) => {
 
       let answers = pq.answers->Dict.copy
       answers->Dict.set(key, newAnswer)
-      (Task.Loaded({...data, pendingQuestion: Some({...pq, answers})}), [])
-    | None => (task, [])
-    }
+      {...pq, answers}
+    })
 
-  | (Task.Loaded(data), QuestionCustomTextChanged({questionIndex, text})) =>
-    switch data.pendingQuestion {
-    | Some(pq) =>
+  | (Task.Loaded(_), QuestionCustomTextChanged({questionIndex, text})) =>
+    updatePendingQuestion(task, pq => {
       let key = questionIndex->Int.toString
       let answers = pq.answers->Dict.copy
       switch String.trim(text)->String.length > 0 {
       | true => answers->Dict.set(key, Client__Question__Types.CustomText(text))
       | false => answers->Dict.delete(key)
       }
-      (Task.Loaded({...data, pendingQuestion: Some({...pq, answers})}), [])
-    | None => (task, [])
-    }
+      {...pq, answers}
+    })
 
-  | (Task.Loaded(data), QuestionPerQuestionSkipped({questionIndex})) =>
-    switch data.pendingQuestion {
-    | Some(pq) =>
+  | (Task.Loaded(_), QuestionPerQuestionSkipped({questionIndex})) =>
+    updatePendingQuestion(task, pq => {
       let key = questionIndex->Int.toString
       let answers = pq.answers->Dict.copy
       answers->Dict.set(key, Client__Question__Types.Skipped)
       let nextStep = Math.Int.min(questionIndex + 1, Array.length(pq.questions) - 1)
-      (Task.Loaded({...data, pendingQuestion: Some({...pq, answers, currentStep: nextStep})}), [])
-    | None => (task, [])
-    }
+      {...pq, answers, currentStep: nextStep}
+    })
 
-  | (Task.Loaded(data), QuestionSubmitted) =>
-    switch data.pendingQuestion {
-    | Some(pq) =>
-      let questionAnswers: array<Client__Question__Types.toolQuestionAnswer> =
-        pq.questions->Array.mapWithIndex((q, i) => {
-          let key = i->Int.toString
-          let answer = switch pq.answers->Dict.get(key) {
-          | Some(Client__Question__Types.Answered(labels)) => Some(labels)
-          | Some(Client__Question__Types.CustomText(text)) => Some([text])
-          | Some(Client__Question__Types.Skipped) | None => None
-          }
-          {Client__Question__Types.question: q.question, answer}
-        })
-      let output: Client__Question__Types.toolOutput = {
-        answers: questionAnswers,
-        skippedAll: false,
-        cancelled: false,
-      }
-      let resultJson = S.reverseConvertToJsonStringOrThrow(output, Client__Question__Types.toolOutputSchema)
-      (
-        Task.Loaded({...data, pendingQuestion: None}),
-        [SubmitQuestionResultEffect({toolCallId: pq.toolCallId, result: resultJson, isError: false})],
-      )
-    | None => (task, [])
-    }
+  | (Task.Loaded(_), QuestionSubmitted) =>
+    submitQuestionResult(task, ~skippedAll=false, ~cancelled=false)
 
-  | (Task.Loaded(data), QuestionAllSkipped) =>
-    switch data.pendingQuestion {
-    | Some(pq) =>
-      let questionAnswers: array<Client__Question__Types.toolQuestionAnswer> =
-        pq.questions->Array.mapWithIndex((q, i) => {
-          let key = i->Int.toString
-          let answer = switch pq.answers->Dict.get(key) {
-          | Some(Client__Question__Types.Answered(labels)) => Some(labels)
-          | Some(Client__Question__Types.CustomText(text)) => Some([text])
-          | Some(Client__Question__Types.Skipped) | None => None
-          }
-          {Client__Question__Types.question: q.question, answer}
-        })
-      let output: Client__Question__Types.toolOutput = {
-        answers: questionAnswers,
-        skippedAll: true,
-        cancelled: false,
-      }
-      let resultJson = S.reverseConvertToJsonStringOrThrow(output, Client__Question__Types.toolOutputSchema)
-      (
-        Task.Loaded({...data, pendingQuestion: None}),
-        [SubmitQuestionResultEffect({toolCallId: pq.toolCallId, result: resultJson, isError: false})],
-      )
-    | None => (task, [])
-    }
+  | (Task.Loaded(_), QuestionAllSkipped) =>
+    submitQuestionResult(task, ~skippedAll=true, ~cancelled=false)
 
-  | (Task.Loaded(data), QuestionCancelled) =>
-    switch data.pendingQuestion {
-    | Some(pq) =>
-      let output: Client__Question__Types.toolOutput = {
-        answers: [],
-        skippedAll: false,
-        cancelled: true,
-      }
-      let resultJson = S.reverseConvertToJsonStringOrThrow(output, Client__Question__Types.toolOutputSchema)
-      (
-        Task.Loaded({...data, pendingQuestion: None}),
-        [SubmitQuestionResultEffect({toolCallId: pq.toolCallId, result: resultJson, isError: false})],
-      )
-    | None => (task, [])
-    }
+  | (Task.Loaded(_), QuestionCancelled) =>
+    submitQuestionResult(task, ~skippedAll=false, ~cancelled=true)
 
   // ============================================================================
   // Catch-all - invalid state/action combinations
