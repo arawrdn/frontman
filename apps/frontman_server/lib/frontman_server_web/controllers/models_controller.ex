@@ -93,7 +93,7 @@ defmodule FrontmanServerWeb.ModelsController do
 
   The response includes providers based on user's configuration:
   - OpenRouter: Always included
-  - Anthropic: Included when user has OAuth connected
+  - Anthropic: Included when user has OAuth connected, a stored API key, or an env key
 
   Response:
   {
@@ -112,6 +112,11 @@ defmodule FrontmanServerWeb.ModelsController do
     has_env_key = params["hasEnvKey"] == "true"
     has_openrouter_key = has_user_key or has_env_key
 
+    # Determine if user has Anthropic access via API key or env key (in addition to OAuth)
+    has_anthropic_user_key = Providers.has_api_key?(scope, "anthropic")
+    has_anthropic_env_key = params["hasAnthropicEnvKey"] == "true"
+    has_anthropic = has_anthropic_oauth or has_anthropic_user_key or has_anthropic_env_key
+
     # Show full model list when user has their own key, free tier otherwise
     openrouter = if has_openrouter_key, do: @openrouter_provider, else: @openrouter_free_provider
 
@@ -120,7 +125,7 @@ defmodule FrontmanServerWeb.ModelsController do
       []
       |> then(fn list -> if has_chatgpt_oauth, do: list ++ [@openai_provider], else: list end)
       |> then(fn list ->
-        if has_anthropic_oauth, do: list ++ [@anthropic_provider], else: list
+        if has_anthropic, do: list ++ [@anthropic_provider], else: list
       end)
       |> Kernel.++([openrouter])
 
@@ -128,7 +133,7 @@ defmodule FrontmanServerWeb.ModelsController do
     default_model =
       cond do
         has_chatgpt_oauth -> @openai_default
-        has_anthropic_oauth -> @anthropic_default
+        has_anthropic -> @anthropic_default
         true -> @openrouter_default
       end
 

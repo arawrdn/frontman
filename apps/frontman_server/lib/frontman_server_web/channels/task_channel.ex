@@ -406,12 +406,17 @@ defmodule FrontmanServerWeb.TaskChannel do
     end
   end
 
-  # Extract env API key from prompt params metadata
+  # Extract env API keys from prompt params metadata (e.g., OPENROUTER_API_KEY, ANTHROPIC_API_KEY from project env)
   defp extract_env_api_key_from_params(params) when is_map(params) do
-    case get_in(params, ["metadata", "openrouterKeyValue"]) do
-      key when is_binary(key) and key != "" -> %{"openrouter" => key}
-      _ -> %{}
-    end
+    metadata = get_in(params, ["metadata"]) || %{}
+
+    [{"openrouterKeyValue", "openrouter"}, {"anthropicKeyValue", "anthropic"}]
+    |> Enum.reduce(%{}, fn {meta_key, provider}, acc ->
+      case metadata[meta_key] do
+        key when is_binary(key) and key != "" -> Map.put(acc, provider, key)
+        _ -> acc
+      end
+    end)
   end
 
   defp extract_env_api_key_from_params(_), do: %{}

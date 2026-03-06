@@ -197,12 +197,17 @@ defmodule FrontmanServerWeb.TasksChannel do
 
   defp extract_framework(_), do: nil
 
-  # Extract env API key from clientInfo metadata (e.g., OPENROUTER_API_KEY from Next.js project)
+  # Extract env API keys from clientInfo metadata (e.g., OPENROUTER_API_KEY, ANTHROPIC_API_KEY from project env)
   defp extract_env_api_key(client_info) when is_map(client_info) do
-    case get_in(client_info, ["metadata", "openrouterKeyValue"]) do
-      key when is_binary(key) and key != "" -> %{"openrouter" => key}
-      _ -> %{}
-    end
+    metadata = get_in(client_info, ["metadata"]) || %{}
+
+    [{"openrouterKeyValue", "openrouter"}, {"anthropicKeyValue", "anthropic"}]
+    |> Enum.reduce(%{}, fn {meta_key, provider}, acc ->
+      case metadata[meta_key] do
+        key when is_binary(key) and key != "" -> Map.put(acc, provider, key)
+        _ -> acc
+      end
+    end)
   end
 
   defp extract_env_api_key(_), do: %{}
