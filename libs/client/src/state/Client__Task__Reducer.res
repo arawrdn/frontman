@@ -346,8 +346,8 @@ type action =
   | LoadError({error: string})
   // Hydration actions
   | UserMessageReceived({id: string, text: string, timestamp: string})
-  // Question tool actions
-  | QuestionAsked({questions: array<Client__Question__Types.questionItem>, toolCallId: string})
+  // Question tool actions (elicitation flow)
+  | ElicitationReceived({questions: array<Client__Question__Types.questionItem>, requestId: string})
   | QuestionStepChanged({step: int})
   | QuestionOptionToggled({questionIndex: int, label: string})
   | QuestionCustomTextChanged({questionIndex: int, text: string})
@@ -374,8 +374,8 @@ type effect =
     })
   | NotifyTurnCompleted
   | CancelPrompt
-  // Question tool effect — submit result directly to server via channel
-  | SubmitQuestionResultEffect({toolCallId: string, result: string, isError: bool})
+  // Elicitation response effect — send JSON-RPC response on ACP channel
+  | SendElicitationResponseEffect({requestId: string, action: string, content: option<JSON.t>})
 
 // Delegated effects - things the task needs from its parent
 type delegated =
@@ -386,7 +386,7 @@ type delegated =
     })
   | NeedUsageRefresh
   | NeedCancelPrompt
-  | NeedSubmitToolResult({toolCallId: string, toolName: string, result: string, isError: bool})
+  | NeedElicitationResponse({requestId: string, action: string, content: option<JSON.t>})
 
 let actionToString = (action: action): string =>
   switch action {
@@ -421,7 +421,7 @@ let actionToString = (action: action): string =>
   | LoadComplete => "LoadComplete"
   | LoadError(_) => "LoadError"
   | UserMessageReceived(_) => "UserMessageReceived"
-  | QuestionAsked(_) => "QuestionAsked"
+  | ElicitationReceived(_) => "ElicitationReceived"
   | QuestionStepChanged(_) => "QuestionStepChanged"
   | QuestionOptionToggled(_) => "QuestionOptionToggled"
   | QuestionCustomTextChanged(_) => "QuestionCustomTextChanged"
@@ -494,46 +494,57 @@ let updatePendingQuestion = (
   | _ => (task, [])
   }
 
-// Build answers array from pending question state and serialize to JSON effect
-let buildQuestionResult = (
+// Build elicitation response content from pending question state.
+// Returns (action, content) for the JSON-RPC response.
+let buildElicitationResponse = (
   pq: Client__Question__Types.pendingQuestion,
   ~skippedAll: bool,
   ~cancelled: bool,
-): (Client__Question__Types.toolOutput, string) => {
-  let answers = switch cancelled {
-  | true => []
-  | false =>
-    pq.questions->Array.mapWithIndex((q, i) => {
+): (string, option<JSON.t>) => {
+  switch (cancelled, skippedAll) {
+  | (true, _) => ("cancel", None)
+  | (_, true) => ("decline", None)
+  | (false, false) =>
+    // Build content object with q{i}_answer and optional q{i}_custom keys
+    let contentDict = Dict.make()
+    pq.questions->Array.forEachWithIndex((q, i) => {
       let key = i->Int.toString
-      let answer = switch pq.answers->Dict.get(key) {
-      | Some(Client__Question__Types.Answered(labels)) => Some(labels)
-      | Some(Client__Question__Types.CustomText(text)) => Some([text])
-      | Some(Client__Question__Types.Skipped) | None => None
+      let isMultiple = q.multiple->Option.getOr(false)
+      switch pq.answers->Dict.get(key) {
+      | Some(Client__Question__Types.Answered(labels)) =>
+        switch isMultiple {
+        | true =>
+          contentDict->Dict.set(`q${key}_answer`, JSON.Encode.array(labels->Array.map(JSON.Encode.string)))
+        | false =>
+          labels->Array.get(0)->Option.forEach(label =>
+            contentDict->Dict.set(`q${key}_answer`, JSON.Encode.string(label))
+          )
+        }
+      | Some(Client__Question__Types.CustomText(text)) =>
+        contentDict->Dict.set(`q${key}_custom`, JSON.Encode.string(text))
+      | Some(Client__Question__Types.Skipped) | None => ()
       }
-      {Client__Question__Types.question: q.question, answer}
     })
+    ("accept", Some(JSON.Encode.object(contentDict)))
   }
-  let output: Client__Question__Types.toolOutput = {answers, skippedAll, cancelled}
-  let resultJson = S.reverseConvertToJsonStringOrThrow(output, Client__Question__Types.toolOutputSchema)
-  (output, resultJson)
 }
 
-// Submit a question result: clear pendingQuestion and emit SubmitQuestionResultEffect
-let submitQuestionResult = (
+// Submit an elicitation response: clear pendingQuestion and emit SendElicitationResponseEffect
+let submitElicitationResponse = (
   task: Task.t,
   ~skippedAll: bool,
   ~cancelled: bool,
 ): (Task.t, array<effect>) =>
   switch task {
   | Task.Loaded({pendingQuestion: Some(pq)} as data) =>
-    let (_, resultJson) = buildQuestionResult(pq, ~skippedAll, ~cancelled)
+    let (action, content) = buildElicitationResponse(pq, ~skippedAll, ~cancelled)
     (
-      // Set isAgentRunning: true because submitting the tool result will resume
+      // Set isAgentRunning: true because sending the elicitation response will resume
       // the agent. Without this, the streaming guard (isAgentRunning: false drops
       // all TextDeltaReceived) would silently discard the agent's response — especially
       // after a fresh page load where isAgentRunning defaults to false.
       Task.Loaded({...data, pendingQuestion: None, isAgentRunning: true}),
-      [SubmitQuestionResultEffect({toolCallId: pq.toolCallId, result: resultJson, isError: false})],
+      [SendElicitationResponseEffect({requestId: pq.requestId, action, content})],
     )
   | _ => (task, [])
   }
@@ -922,11 +933,10 @@ let next = (task: Task.t, action: action): (Task.t, array<effect>) => {
           }
         )
       )
-      // Also dismiss any pending question — submit a cancelled result to the server
+      // Also dismiss any pending question — send a cancel elicitation response
       let questionEffects = switch data.pendingQuestion {
       | Some(pq) =>
-        let (_, resultJson) = buildQuestionResult(pq, ~skippedAll=false, ~cancelled=true)
-        [SubmitQuestionResultEffect({toolCallId: pq.toolCallId, result: resultJson, isError: false})]
+        [SendElicitationResponseEffect({requestId: pq.requestId, action: "cancel", content: None})]
       | None => []
       }
       let final = withCancelledTools->Task.updateLoadedData(d => {
@@ -969,6 +979,7 @@ let next = (task: Task.t, action: action): (Task.t, array<effect>) => {
         annotations: [],
         activePopupAnnotationId: None,
         isAnimationFrozen: false,
+        pendingQuestion: None,
       }),
       [],
     )
@@ -988,32 +999,14 @@ let next = (task: Task.t, action: action): (Task.t, array<effect>) => {
         annotations,
         activePopupAnnotationId,
         isAnimationFrozen,
+        pendingQuestion,
       }) =>
       let sortedMessages = MessageStore.toSorted(messages, (a, b) =>
         Selectors.getMessageCreatedAt(a) -. Selectors.getMessageCreatedAt(b)
       )
-      // Detect stale questions: a "question" tool call in InputAvailable state
-      // with no result means the agent suspended waiting for user input.
-      // Extract the question data and tool call ID from the tool input and show the drawer.
-      // Scan from the END so we find the most recent pending question
-      // (matches server behavior: only the last AgentResponse's tools matter).
-      let staleQuestion = MessageStore.toArray(sortedMessages)->Array.toReversed->Array.findMap(msg =>
-        switch msg {
-        | Message.ToolCall({id: toolCallId, toolName: "question", state: Message.InputAvailable, input: Some(inputJson), result: None}) =>
-          try {
-            let parsed = S.parseOrThrow(inputJson, Client__Question__Types.questionInputSchema)
-            Some({
-              Client__Question__Types.questions: parsed.questions,
-              answers: Dict.make(),
-              currentStep: 0,
-              toolCallId,
-            })
-          } catch {
-          | _ => None
-          }
-        | _ => None
-        }
-      )
+      // Carry forward pendingQuestion: the server re-sends session/elicitation
+      // during history replay (before the session/load response), so the
+      // ElicitationReceived action may fire while the task is still Loading.
       (
         Task.Loaded({
           id,
@@ -1031,7 +1024,7 @@ let next = (task: Task.t, action: action): (Task.t, array<effect>) => {
           planEntries: [],
           turnError: None,
           imageAttachments: Dict.make(),
-          pendingQuestion: staleQuestion,
+          pendingQuestion,
         }),
         [],
       )
@@ -1047,7 +1040,7 @@ let next = (task: Task.t, action: action): (Task.t, array<effect>) => {
   // Question Tool Actions
   // ============================================================================
 
-  | (Task.Loaded(data), QuestionAsked({questions, toolCallId})) =>
+  | (Task.Loaded(data), ElicitationReceived({questions, requestId})) =>
     (
       Task.Loaded({
         ...data,
@@ -1055,7 +1048,23 @@ let next = (task: Task.t, action: action): (Task.t, array<effect>) => {
           Client__Question__Types.questions,
           answers: Dict.make(),
           currentStep: 0,
-          toolCallId,
+          requestId,
+        }),
+      }),
+      [],
+    )
+
+  // Elicitation received during history replay (task still Loading).
+  // Buffer it so LoadComplete carries it forward to Loaded.
+  | (Task.Loading(data), ElicitationReceived({questions, requestId})) =>
+    (
+      Task.Loading({
+        ...data,
+        pendingQuestion: Some({
+          Client__Question__Types.questions,
+          answers: Dict.make(),
+          currentStep: 0,
+          requestId,
         }),
       }),
       [],
@@ -1117,13 +1126,13 @@ let next = (task: Task.t, action: action): (Task.t, array<effect>) => {
     })
 
   | (Task.Loaded(_), QuestionSubmitted) =>
-    submitQuestionResult(task, ~skippedAll=false, ~cancelled=false)
+    submitElicitationResponse(task, ~skippedAll=false, ~cancelled=false)
 
   | (Task.Loaded(_), QuestionAllSkipped) =>
-    submitQuestionResult(task, ~skippedAll=true, ~cancelled=false)
+    submitElicitationResponse(task, ~skippedAll=true, ~cancelled=false)
 
   | (Task.Loaded(_), QuestionCancelled) =>
-    submitQuestionResult(task, ~skippedAll=false, ~cancelled=true)
+    submitElicitationResponse(task, ~skippedAll=false, ~cancelled=true)
 
   // ============================================================================
   // Catch-all - invalid state/action combinations
@@ -1289,8 +1298,8 @@ let handleEffect = (effect: effect, ~dispatch: action => unit, ~delegate: delega
   | SendMessage({text, attachments, annotations}) => delegate(NeedSendMessage({text, attachments, annotations}))
   | NotifyTurnCompleted => delegate(NeedUsageRefresh)
   | CancelPrompt => delegate(NeedCancelPrompt)
-  // Question tool effect — submit result directly to server via channel
-  | SubmitQuestionResultEffect({toolCallId, result, isError}) =>
-    delegate(NeedSubmitToolResult({toolCallId, toolName: "question", result, isError}))
+  // Elicitation response — delegate to parent to send JSON-RPC response on ACP channel
+  | SendElicitationResponseEffect({requestId, action, content}) =>
+    delegate(NeedElicitationResponse({requestId, action, content}))
   }
 }

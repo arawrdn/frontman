@@ -7,6 +7,23 @@
  * - Cancelled/error: red-tinted card
  */
 
+// Display-only types for parsing the tool result JSON.
+// The server sends this format in tool_call_update completed notifications.
+S.enableJson()
+
+@schema
+type questionAnswerDisplay = {
+  question: string,
+  answer: option<array<string>>,
+}
+
+@schema
+type toolOutputDisplay = {
+  answers: array<questionAnswerDisplay>,
+  skippedAll: bool,
+  cancelled: bool,
+}
+
 module Card = {
   type variant = Normal | Error
 
@@ -58,7 +75,7 @@ let make = (
 
   | (OutputAvailable, Some(resultJson)) => {
       let parsed = try {
-        Some(S.parseOrThrow(resultJson, Client__Question__Types.toolOutputSchema))
+        Some(S.parseOrThrow(resultJson, toolOutputDisplaySchema))
       } catch {
       | _ => None
       }

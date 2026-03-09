@@ -10,10 +10,17 @@ defmodule FrontmanServer.Tools do
     FrontmanServer.Tools.TodoList,
     FrontmanServer.Tools.TodoAdd,
     FrontmanServer.Tools.TodoUpdate,
-    FrontmanServer.Tools.TodoRemove
+    FrontmanServer.Tools.TodoRemove,
+    FrontmanServer.Tools.Question
   ]
 
   @todo_mutations ["todo_add", "todo_update", "todo_remove"]
+
+  # Interactive backend tools suspend execution and await user input via
+  # ACP elicitation. They are defined server-side (so the LLM sees them)
+  # but never executed by ToolExecutor — the TaskChannel handles the
+  # elicitation flow instead.
+  @interactive_tools ["question"]
 
   @spec backend_tools() :: [SwarmAi.Tool.t()]
   def backend_tools do
@@ -31,33 +38,38 @@ defmodule FrontmanServer.Tools do
   @doc """
   Returns the execution target for a tool.
 
-  Backend tools are executed server-side by ToolExecutor.
-  MCP tools are routed to the browser client for execution.
+  - `:backend` — synchronous backend tools executed by ToolExecutor
+  - `:interactive` — backend tools that suspend and await user input via ACP elicitation
+  - `:mcp` — browser-side tools routed to the MCP client
   """
-  @spec execution_target(String.t()) :: :backend | :mcp
+  @spec execution_target(String.t()) :: :backend | :interactive | :mcp
   def execution_target(tool_name) do
     case find_tool(tool_name) do
-      {:ok, _module} -> :backend
-      :not_found -> :mcp
+      {:ok, _module} ->
+        if interactive?(tool_name), do: :interactive, else: :backend
+
+      :not_found ->
+        :mcp
     end
   end
+
+  @doc "Returns true if the tool is an interactive backend tool (e.g. question)."
+  @spec interactive?(String.t()) :: boolean()
+  def interactive?(tool_name), do: tool_name in @interactive_tools
 
   @spec todo_mutation?(String.t()) :: boolean()
   def todo_mutation?(tool_name), do: tool_name in @todo_mutations
 
   @doc """
-  Returns whether a tool call should be tracked in pending requests.
+  Returns whether a tool call should be tracked in pending MCP requests.
 
-  Interactive tools (e.g. question) don't get tracked because the client
-  returns no MCP response for them — the result arrives via a separate
-  channel event (`tool:submit_result`) instead.
-
-  The tool's execution mode is read from the MCP tool definitions,
-  which are populated from the wire format during MCP initialization.
+  Interactive tools (both backend and MCP) don't get tracked in the MCP
+  pending requests map because they are handled via ACP `session/elicitation`
+  instead — the response arrives as a JSON-RPC response on the ACP channel.
   """
   @spec track_pending?([MCP.t()], String.t()) :: boolean()
   def track_pending?(mcp_tool_defs, tool_name) do
-    not MCP.interactive_by_name?(mcp_tool_defs, tool_name)
+    not interactive?(tool_name) and not MCP.interactive_by_name?(mcp_tool_defs, tool_name)
   end
 
   @doc """

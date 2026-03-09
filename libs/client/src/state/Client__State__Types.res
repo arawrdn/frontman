@@ -29,7 +29,7 @@ type sendPromptFn = (
 // needsHistory: true = load full history (task not loaded), false = just activate channel (task already loaded)
 // onComplete: called when loading finishes (success or error)
 // Note: onUpdate is baked in when the callback is created (uses handleSessionUpdate)
-type loadTaskFn = (string, ~needsHistory: bool, ~onComplete: result<unit, string> => unit) => unit
+type loadTaskFn = (string, ~needsHistory: bool, ~metadata: option<JSON.t>, ~onComplete: result<unit, string> => unit) => unit
 
 // Callback for deleting a persisted session
 // taskId: the task/session to delete
@@ -40,18 +40,14 @@ type deleteSessionFn = (string, ~onComplete: result<unit, string> => unit) => un
 // Fire-and-forget: sends ACP session/cancel notification
 type cancelPromptFn = unit => unit
 
-// Callback for submitting a tool result directly via the channel.
-// Used by interactive tools (e.g. question) whose results bypass MCP.
-// toolCallId: the tool call to resolve
-// toolName: the tool name (e.g. "question")
-// result: serialized JSON result string
-// isError: whether this is an error result
-type submitToolResultFn = (
-  ~toolCallId: string,
-  ~toolName: string,
-  ~result: string,
-  ~isError: bool,
-  ~metadata: option<JSON.t>,
+// Callback for sending a session/elicitation JSON-RPC response on the ACP channel.
+// requestId: the JSON-RPC request id to echo back (equals the tool_call_id)
+// action: "accept" | "decline" | "cancel"
+// content: optional JSON content with the user's answers
+type respondToElicitationFn = (
+  ~requestId: string,
+  ~action: string,
+  ~content: option<JSON.t>,
 ) => unit
 
 // ACP session state - stores callbacks for API operations when session is active
@@ -65,7 +61,7 @@ type acpSession =
       cancelPrompt: cancelPromptFn,
       loadTask: loadTaskFn,
       deleteSession: deleteSessionFn,
-      submitToolResult: submitToolResultFn,
+      respondToElicitation: respondToElicitationFn,
       apiBaseUrl: string,
     })
 

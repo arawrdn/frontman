@@ -208,6 +208,46 @@ defmodule FrontmanServerWeb.ChannelCase do
   end
 
   # ---------------------------------------------------------------------------
+  # Reconnect & Cleanup Helpers
+  # ---------------------------------------------------------------------------
+
+  @doc """
+  Joins an *existing* task's channel (simulates a page reload / reconnect).
+
+  Unlike `join_task_channel/2`, this does NOT create a new task — the task must
+  already exist in the DB. Returns the new socket.
+  """
+  def rejoin_task_channel(scope, task_id) do
+    sock =
+      Phoenix.ChannelTest.__socket__(
+        UserSocket,
+        "user_id",
+        %{scope: scope},
+        FrontmanServerWeb.Endpoint,
+        []
+      )
+
+    {:ok, _reply, socket} =
+      Phoenix.ChannelTest.subscribe_and_join(sock, "task:#{task_id}", %{})
+
+    socket
+  end
+
+  @doc """
+  Drains all messages from the calling process's mailbox.
+
+  Useful after closing a channel to discard stale pushes before making
+  assertions on a fresh socket.
+  """
+  def flush_mailbox do
+    receive do
+      _ -> flush_mailbox()
+    after
+      0 -> :ok
+    end
+  end
+
+  # ---------------------------------------------------------------------------
   # Fixture Builders
   # ---------------------------------------------------------------------------
 

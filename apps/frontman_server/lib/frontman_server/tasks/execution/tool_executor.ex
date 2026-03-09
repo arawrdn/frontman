@@ -67,46 +67,66 @@ defmodule FrontmanServer.Tasks.Execution.ToolExecutor do
       # Tools expect missing keys, not null values.
       tool_call = strip_null_arguments(tool_call)
 
-      is_mcp_tool = register_if_mcp_tool(tool_call)
-
-      # For MCP tools, publish interaction so TaskChannel can route to client.
-      # This must happen AFTER registration to prevent race conditions.
-      if is_mcp_tool do
-        publish_mcp_tool_call(scope, task_id, tool_call)
-      end
-
-      result =
-        execute(scope, tool_call, task_id,
-          mcp_tools: mcp_tools,
-          mcp_tool_defs: mcp_tool_defs,
-          llm_opts: llm_opts
-        )
-
-      case result do
-        :suspended ->
-          :suspended
-
-        _ ->
-          # Convert tool results containing image data (e.g. screenshots) to multimodal
-          # content parts so the LLM receives proper image content instead of base64 text.
-          maybe_enrich_with_images(tool_call.name, result)
-      end
+      execute_tool_call(scope, task_id, tool_call,
+        mcp_tools: mcp_tools,
+        mcp_tool_defs: mcp_tool_defs,
+        llm_opts: llm_opts
+      )
     end
   end
 
-  # Returns true if this is an MCP tool (registered for response), false for backend tools
-  defp register_if_mcp_tool(tool_call) do
-    case Tools.execution_target(tool_call.name) do
-      :backend ->
-        false
+  defp execute_tool_call(scope, task_id, tool_call, opts) do
+    target = Tools.execution_target(tool_call.name)
+
+    # Interactive and MCP tools both publish their interaction so
+    # TaskChannel can route them to the UI.
+    if target in [:mcp, :interactive] do
+      publish_mcp_tool_call(scope, task_id, tool_call)
+    end
+
+    case target do
+      :interactive ->
+        Logger.info(
+          "ToolExecutor: Interactive backend tool #{tool_call.name} (#{tool_call.id}) returning :suspended"
+        )
+
+        :suspended
 
       :mcp ->
-        Registry.register(FrontmanServer.ToolCallRegistry, {:tool_call, tool_call.id}, %{
-          caller_pid: self()
-        })
+        # Register MCP tools for response routing (must happen after publish)
+        register_mcp_tool(tool_call)
+        execute_and_enrich(scope, tool_call, task_id, opts)
 
-        true
+      :backend ->
+        execute_and_enrich(scope, tool_call, task_id, opts)
     end
+  end
+
+  defp execute_and_enrich(scope, tool_call, task_id, opts) do
+    result =
+      execute(scope, tool_call, task_id,
+        mcp_tools: Keyword.get(opts, :mcp_tools, []),
+        mcp_tool_defs: Keyword.get(opts, :mcp_tool_defs, []),
+        llm_opts: Keyword.fetch!(opts, :llm_opts)
+      )
+
+    case result do
+      :suspended ->
+        :suspended
+
+      _ ->
+        # Convert tool results containing image data (e.g. screenshots) to multimodal
+        # content parts so the LLM receives proper image content instead of base64 text.
+        maybe_enrich_with_images(tool_call.name, result)
+    end
+  end
+
+  # Registers an MCP tool call in the ToolCallRegistry so the executor process
+  # can receive the result when the browser client responds.
+  defp register_mcp_tool(tool_call) do
+    Registry.register(FrontmanServer.ToolCallRegistry, {:tool_call, tool_call.id}, %{
+      caller_pid: self()
+    })
   end
 
   defp publish_mcp_tool_call(%Scope{} = scope, task_id, tool_call) do

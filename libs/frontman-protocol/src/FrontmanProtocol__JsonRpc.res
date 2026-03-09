@@ -13,6 +13,8 @@ module ErrorCode = {
   let internalError = -32603
   // -32000 to -32099: reserved for server errors (used by task_channel for agent errors)
   let serverError = -32000
+  // ACP elicitation: URL mode elicitation is required before the request can proceed
+  let urlElicitationRequired = -32042
 }
 
 // JSON-RPC Error

@@ -53,12 +53,17 @@ defmodule FrontmanServer.ToolsTest do
   end
 
   describe "execution_target/1" do
-    test "returns :backend for all registered backend tools" do
+    test "returns :backend for non-interactive backend tools" do
       Tools.backend_tools()
+      |> Enum.reject(fn tool -> Tools.interactive?(tool.name) end)
       |> Enum.each(fn tool ->
         assert Tools.execution_target(tool.name) == :backend,
                "Expected #{tool.name} to target :backend"
       end)
+    end
+
+    test "returns :interactive for interactive backend tools" do
+      assert Tools.execution_target("question") == :interactive
     end
 
     test "returns :mcp for non-backend tools" do

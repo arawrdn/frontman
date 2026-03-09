@@ -98,7 +98,7 @@ let handleToolsList = (handler: mcpHandler<'server>, id: int): unit => {
 // Handle tools/call request.
 // Synchronous tools return Completed — we send an MCP response.
 // Interactive tools return Suspended — no MCP response; the result
-// arrives later via the tool:submit_result channel event.
+// is delivered via a separate mechanism (e.g. session/elicitation).
 let handleToolsCall = async (
   handler: mcpHandler<'server>,
   id: int,

@@ -41,7 +41,7 @@ type action =
       cancelPrompt: Client__State__Types.cancelPromptFn,
       loadTask: Client__State__Types.loadTaskFn,
       deleteSession: Client__State__Types.deleteSessionFn,
-      submitToolResult: Client__State__Types.submitToolResultFn,
+      respondToElicitation: Client__State__Types.respondToElicitationFn,
       apiBaseUrl: string,
     })
   | ClearAcpSession
@@ -679,30 +679,12 @@ let handleEffect = (effect, state: state, dispatch) => {
           | AcpSessionActive({cancelPrompt}) => cancelPrompt()
           | NoAcpSession => Log.error("Cannot cancel prompt: no active ACP session")
           }
-        | NeedSubmitToolResult({toolCallId, toolName, result, isError}) =>
+        | NeedElicitationResponse({requestId, action, content}) =>
           switch state.acpSession {
-          | AcpSessionActive({submitToolResult}) =>
-            // Build metadata (env API key + model) so the server can resume
-            // execution with the correct provider credentials.
-            let runtimeConfig = Client__RuntimeConfig.read()
-            let baseMetadata = Client__RuntimeConfig.toMetadata(runtimeConfig)
-            let metadata = switch state.selectedModel {
-            | Some(model) =>
-              let modelJson: JSON.t = %raw(`(function(provider, value) {
-                return { provider: provider, value: value };
-              })`)(model.provider, model.value)
-              switch baseMetadata->JSON.Decode.object {
-              | Some(dict) =>
-                let newDict = dict->Dict.copy
-                newDict->Dict.set("model", modelJson)
-                Some(newDict->Obj.magic)
-              | None => Some(baseMetadata)
-              }
-            | None => Some(baseMetadata)
-            }
-            submitToolResult(~toolCallId, ~toolName, ~result, ~isError, ~metadata)
+          | AcpSessionActive({respondToElicitation}) =>
+            respondToElicitation(~requestId, ~action, ~content)
           | NoAcpSession =>
-            Log.error("Cannot submit tool result: no active ACP session")
+            Log.error("Cannot send elicitation response: no active ACP session")
           }
         }
       }
@@ -1124,7 +1106,25 @@ let handleEffect = (effect, state: state, dispatch) => {
       | Some(task) => !Task.isLoaded(task)
       | None => true
       }
-      loadTask(taskId, ~needsHistory, ~onComplete=result => {
+      // Build metadata (env API key + model) so the server can populate
+      // execution context on reconnect — same pattern as sendMessageToAPIImpl.
+      let runtimeConfig = Client__RuntimeConfig.read()
+      let baseMetadata = Client__RuntimeConfig.toMetadata(runtimeConfig)
+      let metadata = switch state.selectedModel {
+      | Some(model) =>
+        let modelJson: JSON.t = %raw(`(function(provider, value) {
+          return { provider: provider, value: value };
+        })`)(model.provider, model.value)
+        switch baseMetadata->JSON.Decode.object {
+        | Some(dict) =>
+          let newDict = dict->Dict.copy
+          newDict->Dict.set("model", modelJson)
+          Some(newDict->Obj.magic)
+        | None => Some(baseMetadata)
+        }
+      | None => Some(baseMetadata)
+      }
+      loadTask(taskId, ~needsHistory, ~metadata, ~onComplete=result => {
         switch result {
         | Ok() =>
           // Flush any buffered text deltas before completing the load.
@@ -1332,13 +1332,13 @@ let next = (state: state, action) => {
   // ACP session actions
   // ============================================================================
 
-  | SetAcpSession({sendPrompt, cancelPrompt, loadTask, deleteSession, submitToolResult, apiBaseUrl}) =>
+  | SetAcpSession({sendPrompt, cancelPrompt, loadTask, deleteSession, respondToElicitation, apiBaseUrl}) =>
     // Just set up session callbacks - task creation happens in AddUserMessage
     // when user sends their first message (lazy session creation)
     // apiBaseUrl is co-located in AcpSessionActive to make illegal state unrepresentable
     {
       ...state,
-      acpSession: AcpSessionActive({sendPrompt, cancelPrompt, loadTask, deleteSession, submitToolResult, apiBaseUrl}),
+      acpSession: AcpSessionActive({sendPrompt, cancelPrompt, loadTask, deleteSession, respondToElicitation, apiBaseUrl}),
       sessionInitialized: true,
     }->StateReducer.update(
       ~sideEffects=[

@@ -132,11 +132,44 @@ let getMethod = (payload: JSON.t): option<string> => {
   ->Option.flatMap(JSON.Decode.string)
 }
 
+// Extract id from JSON-RPC message (requests have id + method, responses have id only)
+// Returns the raw JSON value since server elicitation requests use string IDs (tool_call_id)
+// while client-originated requests use int IDs.
+let getId = (payload: JSON.t): option<JSON.t> => {
+  payload
+  ->JSON.Decode.object
+  ->Option.flatMap(obj => obj->Dict.get("id"))
+}
+
+// Send an elicitation response (JSON-RPC response) on the ACP channel.
+// The id is the raw JSON value from the incoming request (string tool_call_id).
+let sendElicitationResponse = (
+  ~channel: Channel.t,
+  ~id: JSON.t,
+  ~action: string,
+  ~content: option<JSON.t>,
+): unit => {
+  let resultDict = Dict.make()
+  resultDict->Dict.set("action", JSON.Encode.string(action))
+  content->Option.forEach(c => resultDict->Dict.set("content", c))
+  let result = JSON.Encode.object(resultDict)
+
+  let responseDict = Dict.fromArray([
+    ("jsonrpc", JSON.Encode.string("2.0")),
+    ("id", id),
+    ("result", result),
+  ])
+  let payload = JSON.Encode.object(responseDict)
+  channel->Channel.push(~event=Constants.acpMessageEvent, ~payload)->ignore
+}
+
 // Message handler with proper error reporting (no silent swallowing)
 // onUpdate receives (sessionId, update) per ACP session/update notification params
+// onRequest receives (id, method, payload) for incoming JSON-RPC requests (e.g. session/elicitation)
 let handleIncomingMessage = (
   ~state: ref<Client.state>,
   ~onUpdate: option<(string, Types.sessionUpdate) => unit>,
+  ~onRequest: option<(JSON.t, string, JSON.t) => unit>,
   ~onMessage: option<(messageDirection, JSON.t) => unit>,
   ~onParseError: option<string => unit>,
   payload: JSON.t,
@@ -152,8 +185,16 @@ let handleIncomingMessage = (
       onUpdate->Option.forEach(cb => cb(notification.params.sessionId, notification.params.update))
     | Error(parseError) => onParseError->Option.forEach(cb => cb(parseError))
     }
-  | Some(_) => // Other notification types (e.g., mcp_initialization_complete) - no action needed
-    ()
+  | Some(method) =>
+    // Has method field — check if it also has an id (request vs notification)
+    switch getId(payload) {
+    | Some(id) =>
+      // Has both method and id — incoming request (e.g. session/elicitation)
+      onRequest->Option.forEach(cb => cb(id, method, payload))
+    | None =>
+      // Has method but no id — notification (e.g. mcp_initialization_complete)
+      ()
+    }
   | None =>
     // No method field - must be a response
     state := Client.handleResponse(state.contents, payload)
@@ -165,10 +206,11 @@ let attachMessageHandler = (
   ~channel: Channel.t,
   ~state: ref<Client.state>,
   ~onUpdate: option<(string, Types.sessionUpdate) => unit>,
+  ~onRequest: option<(JSON.t, string, JSON.t) => unit>,
   ~onMessage: option<(messageDirection, JSON.t) => unit>,
   ~onParseError: option<string => unit>,
 ): unit => {
   channel->Channel.on(~event=Constants.acpMessageEvent, ~callback=payload =>
-    handleIncomingMessage(~state, ~onUpdate, ~onMessage, ~onParseError, payload)
+    handleIncomingMessage(~state, ~onUpdate, ~onRequest, ~onMessage, ~onParseError, payload)
   )
 }

@@ -102,9 +102,9 @@ module Actions = {
   let cancelTurn = () => Client__State__Store.dispatch(CancelTurn)
 
   // ACP session action creators
-  let setAcpSession = (~sendPrompt, ~cancelPrompt, ~loadTask, ~deleteSession, ~submitToolResult, ~apiBaseUrl) =>
+  let setAcpSession = (~sendPrompt, ~cancelPrompt, ~loadTask, ~deleteSession, ~respondToElicitation, ~apiBaseUrl) =>
     Client__State__Store.dispatch(
-      SetAcpSession({sendPrompt, cancelPrompt, loadTask, deleteSession, submitToolResult, apiBaseUrl}),
+      SetAcpSession({sendPrompt, cancelPrompt, loadTask, deleteSession, respondToElicitation, apiBaseUrl}),
     )
 
   let clearAcpSession = () => Client__State__Store.dispatch(ClearAcpSession)
@@ -179,7 +179,11 @@ module Actions = {
 
   let dismissUpdateBanner = () => Client__State__Store.dispatch(DismissUpdateBanner)
 
-  // Question tool action creators — dispatched as TaskAction to the task sub-reducer
+  // Elicitation action creators — dispatched as TaskAction to the task sub-reducer
+  let elicitationReceived = (~taskId, ~questions, ~requestId) =>
+    Client__State__Store.dispatch(TaskAction({target: ForTask(taskId), action: ElicitationReceived({questions, requestId})}))
+
+  // Question UI action creators — dispatched as TaskAction to the task sub-reducer
   let questionStepChanged = (~taskId, ~step) =>
     Client__State__Store.dispatch(TaskAction({target: ForTask(taskId), action: QuestionStepChanged({step: step})}))
 

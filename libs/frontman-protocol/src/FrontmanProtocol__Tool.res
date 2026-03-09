@@ -39,7 +39,7 @@ module ToolNames = {
 // How a tool delivers its result back to the caller.
 // Synchronous tools return a result inline via MCP response.
 // Interactive tools suspend execution and deliver results via a separate
-// channel event (tool:submit_result) — e.g. the question tool.
+// mechanism (e.g. session/elicitation) — no MCP response is sent.
 type executionMode =
   | Synchronous
   | Interactive

@@ -26,11 +26,19 @@ type fileSystemCapability = {
   writeTextFile: option<bool>,
 }
 
+// Elicitation capability (what form types the client supports)
+@schema
+type elicitationCapability = {
+  form: option<JSON.t>,
+  url: option<JSON.t>,
+}
+
 // Client capabilities
 @schema
 type clientCapabilities = {
   fs: option<fileSystemCapability>,
   terminal: option<bool>,
+  elicitation: option<elicitationCapability>,
 }
 
 // Prompt capabilities (what content types agent supports)
@@ -108,6 +116,9 @@ type sessionLoadParams = {
   cwd: string,
   @as("mcpServers")
   mcpServers: array<JSON.t>,
+  // Runtime config metadata (env_api_key, model) so the server can resume
+  // a suspended agent after reconnect. Same fields as session/prompt metadata.
+  metadata: option<JSON.t>,
 }
 
 // delete_session request params (non-ACP channel event)
@@ -391,6 +402,66 @@ let sessionUpdateNotificationSchema = S.object(s => {
   params: s.field("params", sessionUpdateParamsSchema),
 })
 
+// Elicitation mode (form = in-band JSON Schema, url = out-of-band browser flow)
+type elicitationMode =
+  | @as("form") Form
+  | @as("url") Url
+
+let elicitationModeSchema = S.union([
+  S.literal(Form),
+  S.literal(Url),
+])
+
+// session/elicitation request params (server → client)
+// Supports both form mode (requestedSchema) and url mode (elicitationId + url)
+// per ACP elicitation RFD.
+@schema
+type elicitationRequestParams = {
+  @as("sessionId")
+  sessionId: string,
+  mode: elicitationMode,
+  message: string,
+  // Form mode: restricted JSON Schema describing the requested input
+  @as("requestedSchema")
+  requestedSchema: option<JSON.t>,
+  // URL mode: unique identifier for correlating completion notifications
+  @as("elicitationId")
+  elicitationId: option<string>,
+  // URL mode: URL to open for out-of-band flows (OAuth, payments, etc.)
+  url: option<string>,
+}
+
+// Elicitation action (client → server)
+type elicitationAction =
+  | @as("accept") Accept
+  | @as("decline") Decline
+  | @as("cancel") Cancel
+
+let elicitationActionSchema = S.union([
+  S.literal(Accept),
+  S.literal(Decline),
+  S.literal(Cancel),
+])
+
+// session/elicitation response result (client → server)
+type elicitationResponseResult = {
+  action: elicitationAction,
+  content: option<JSON.t>,
+}
+
+let elicitationResponseResultSchema = S.object(s => {
+  action: s.field("action", elicitationActionSchema),
+  content: s.field("content", S.option(S.json)),
+})
+
+// notifications/elicitation/complete params (server → client)
+// Sent when an out-of-band URL mode interaction completes.
+@schema
+type elicitationCompleteParams = {
+  @as("elicitationId")
+  elicitationId: string,
+}
+
 // Session summary for list_sessions response
 type sessionSummary = {
   sessionId: string,
@@ -412,14 +483,4 @@ let listSessionsResultSchema = S.object(s => {
   sessions: s.field("sessions", S.array(sessionSummarySchema)),
 })
 
-// Payload for the tool:submit_result Phoenix channel event.
-// Sent by the client when an interactive tool (e.g. question) completes
-// outside the MCP request/response flow.
-@schema
-type toolSubmitResult = {
-  @as("tool_call_id") toolCallId: string,
-  @as("tool_name") toolName: string,
-  result: string,
-  @as("is_error") isError: bool,
-  metadata: option<JSON.t>,
-}
+

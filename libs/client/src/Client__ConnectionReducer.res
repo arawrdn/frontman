@@ -84,6 +84,7 @@ type action =
   | SessionCreateError(string)
   | CreateSession({
       onUpdate: (string, FrontmanAiFrontmanProtocol.FrontmanProtocol__ACP.sessionUpdate) => unit,
+      onRequest: option<(JSON.t, string, JSON.t) => unit>,
       onMcpMessage: (FrontmanAiFrontmanClient.FrontmanClient__MCP.messageDirection, JSON.t) => unit,
       onComplete: result<string, string> => unit,
     })
@@ -98,7 +99,9 @@ type action =
   | LoadTask({
       taskId: string,
       needsHistory: bool,
+      metadata: option<JSON.t>,
       onUpdate: (string, FrontmanAiFrontmanProtocol.FrontmanProtocol__ACP.sessionUpdate) => unit,
+      onRequest: option<(JSON.t, string, JSON.t) => unit>,
       onMcpMessage: (FrontmanAiFrontmanClient.FrontmanClient__MCP.messageDirection, JSON.t) => unit,
       onComplete: result<unit, string> => unit,
     })
@@ -119,6 +122,7 @@ type effect =
       connection: ACP.connection,
       mcpServer: MCPServer.t,
       onUpdate: (string, FrontmanAiFrontmanProtocol.FrontmanProtocol__ACP.sessionUpdate) => unit,
+      onRequest: option<(JSON.t, string, JSON.t) => unit>,
       onMcpMessage: (FrontmanAiFrontmanClient.FrontmanClient__MCP.messageDirection, JSON.t) => unit,
       onComplete: result<string, string> => unit,
     })
@@ -136,7 +140,9 @@ type effect =
       mcpServer: MCPServer.t,
       taskId: string,
       needsHistory: bool,
+      metadata: option<JSON.t>,
       onUpdate: (string, FrontmanAiFrontmanProtocol.FrontmanProtocol__ACP.sessionUpdate) => unit,
+      onRequest: option<(JSON.t, string, JSON.t) => unit>,
       onMcpMessage: (FrontmanAiFrontmanClient.FrontmanClient__MCP.messageDirection, JSON.t) => unit,
       onComplete: result<unit, string> => unit,
     })
@@ -341,10 +347,10 @@ let reduce = (state: state, action: action): (state, array<effect>) => {
 
   | (
       {acp: ACPConnected(conn), relay: RelayConnected, mcpServer: Some(mcpServer), session: NoSession},
-      CreateSession({onUpdate, onMcpMessage, onComplete}),
+      CreateSession({onUpdate, onRequest, onMcpMessage, onComplete}),
     ) => (
       {...state, session: SessionCreating},
-      [CreateSessionEffect({connection: conn, mcpServer, onUpdate, onMcpMessage, onComplete})],
+      [CreateSessionEffect({connection: conn, mcpServer, onUpdate, onRequest, onMcpMessage, onComplete})],
     )
 
   | ({session: SessionActive(session), isSendingPrompt: false}, SendPrompt({text, additionalBlocks, onComplete, metadata})) =>
@@ -387,9 +393,9 @@ let reduce = (state: state, action: action): (state, array<effect>) => {
     )
 
   // Load a persisted task (calls ACP.loadSession or joinSession based on needsHistory)
-  | ({acp: ACPConnected(conn), mcpServer: Some(mcpServer)}, LoadTask({taskId, needsHistory, onUpdate, onMcpMessage, onComplete})) => (
+  | ({acp: ACPConnected(conn), mcpServer: Some(mcpServer)}, LoadTask({taskId, needsHistory, metadata, onUpdate, onRequest, onMcpMessage, onComplete})) => (
       state,
-      [LoadTaskEffect({connection: conn, mcpServer, taskId, needsHistory, onUpdate, onMcpMessage, onComplete})],
+      [LoadTaskEffect({connection: conn, mcpServer, taskId, needsHistory, metadata, onUpdate, onRequest, onMcpMessage, onComplete})],
     )
 
   | (_, LoadTask(_)) => (
@@ -553,7 +559,7 @@ let handleEffect = (effect: effect, state: state, dispatch: action => unit) => {
       }
     }
     connect()->ignore
-  | CreateSessionEffect({connection, mcpServer, onUpdate, onMcpMessage, onComplete}) =>
+  | CreateSessionEffect({connection, mcpServer, onUpdate, onRequest, onMcpMessage, onComplete}) =>
     let create = async () => {
       let mcpServerInterface = MCPServer.toInterface(mcpServer)
       let sessionId = WebAPI.Global.crypto->WebAPI.Crypto.randomUUID
@@ -561,6 +567,7 @@ let handleEffect = (effect: effect, state: state, dispatch: action => unit) => {
         connection,
         ~sessionId,
         ~onUpdate,
+        ~onRequest?,
         ~mcpServerInterface,
         ~onMcpMessage,
       )
@@ -606,13 +613,13 @@ let handleEffect = (effect: effect, state: state, dispatch: action => unit) => {
     }
     fetch()->ignore
 
-  | LoadTaskEffect({connection, mcpServer, taskId, needsHistory, onUpdate, onMcpMessage, onComplete}) =>
+  | LoadTaskEffect({connection, mcpServer, taskId, needsHistory, metadata, onUpdate, onRequest, onMcpMessage, onComplete}) =>
     let activateSession = async () => {
       let mcpServerInterface = MCPServer.toInterface(mcpServer)
       let result = if needsHistory {
-        await ACP.loadSession(connection, taskId, ~onUpdate, ~mcpServerInterface, ~onMcpMessage)
+        await ACP.loadSession(connection, taskId, ~onUpdate, ~onRequest?, ~mcpServerInterface, ~onMcpMessage, ~metadata?)
       } else {
-        await ACP.joinSession(connection, taskId, ~onUpdate, ~mcpServerInterface, ~onMcpMessage)
+        await ACP.joinSession(connection, taskId, ~onUpdate, ~onRequest?, ~mcpServerInterface, ~onMcpMessage)
       }
       switch result {
       | Ok(session) =>

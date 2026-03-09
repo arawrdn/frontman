@@ -24,6 +24,8 @@ let () = Client__TextDeltaBuffer.active := Some(textDeltaBuffer)
 type connectionState = Reducer.Selectors.connectionStatus
 type mcpState = Reducer.Selectors.mcpStatus
 
+module Protocol = FrontmanAiFrontmanClient.FrontmanClient__ACP__Protocol
+
 // Context value type
 type contextValue = {
   connectionState: connectionState,
@@ -41,8 +43,8 @@ type contextValue = {
     ~metadata: option<JSON.t>,
   ) => unit,
   cancelPrompt: unit => unit,
-  submitToolResult: Client__State__Types.submitToolResultFn,
-  loadTask: (string, ~needsHistory: bool, ~onComplete: result<unit, string> => unit) => unit,
+  respondToElicitation: Client__State__Types.respondToElicitationFn,
+  loadTask: (string, ~needsHistory: bool, ~metadata: option<JSON.t>, ~onComplete: result<unit, string> => unit) => unit,
   deleteSession: (string, ~onComplete: result<unit, string> => unit) => unit,
 }
 
@@ -58,8 +60,8 @@ let defaultContextValue: contextValue = {
   clearSession: () => (),
   sendPrompt: (_, ~additionalBlocks as _, ~onComplete as _, ~metadata as _) => (),
   cancelPrompt: () => (),
-  submitToolResult: (~toolCallId as _, ~toolName as _, ~result as _, ~isError as _, ~metadata as _) => (),
-  loadTask: (_, ~needsHistory as _, ~onComplete as _) => (),
+  respondToElicitation: (~requestId as _, ~action as _, ~content as _) => (),
+  loadTask: (_, ~needsHistory as _, ~metadata as _, ~onComplete as _) => (),
   deleteSession: (_, ~onComplete as _) => (),
 }
 
@@ -208,7 +210,7 @@ module Provider = {
       | Plan({entries}) =>
         Client__State.Actions.planReceived(~taskId, ~entries)
       | AgentTurnComplete(_) =>
-        // The agent finished a turn that was resumed via tool:submit_result
+        // The agent finished a turn that was resumed after an elicitation response
         // (no pending session/prompt request). Flush buffered text and finalize
         // the streaming message, same as the normal onComplete path.
         textDeltaBuffer.flush()
@@ -219,9 +221,136 @@ module Provider = {
       }
     })
 
+    // Handle incoming session/elicitation requests from the server.
+    // Parses the requestedSchema properties back into questionItem array and dispatches
+    // ElicitationReceived to the state store.
+    let handleElicitationRequest = React.useCallback0((id: JSON.t, _method: string, payload: JSON.t) => {
+      // Extract params from the JSON-RPC request
+      let params =
+        payload
+        ->JSON.Decode.object
+        ->Option.flatMap(obj => obj->Dict.get("params"))
+        ->Option.flatMap(JSON.Decode.object)
+
+      switch params {
+      | None => Log.error("session/elicitation: missing params")
+      | Some(paramsObj) =>
+        let sessionId =
+          paramsObj
+          ->Dict.get("sessionId")
+          ->Option.flatMap(JSON.Decode.string)
+          ->Option.getOr("")
+        let requestId = switch id->JSON.Decode.string {
+        | Some(s) => s
+        | None =>
+          // Fallback: use float id as string
+          switch id->JSON.Decode.float {
+          | Some(f) => Float.toString(f)
+          | None => ""
+          }
+        }
+
+        // Parse requestedSchema.properties into questionItem array
+        let schema =
+          paramsObj
+          ->Dict.get("requestedSchema")
+          ->Option.flatMap(JSON.Decode.object)
+
+        let properties =
+          schema
+          ->Option.flatMap(s => s->Dict.get("properties"))
+          ->Option.flatMap(JSON.Decode.object)
+
+        let questions: array<Client__Question__Types.questionItem> = switch properties {
+        | None => []
+        | Some(props) =>
+          // Collect q{i}_answer entries, sorted by index
+          let answerKeys =
+            props
+            ->Dict.keysToArray
+            ->Array.filter(k => k->String.endsWith("_answer"))
+          answerKeys->Array.toSorted((a, b) => String.compare(a, b))
+          ->Array.filterMap(key => {
+            let prop = props->Dict.get(key)->Option.flatMap(JSON.Decode.object)
+            switch prop {
+            | None => None
+            | Some(propObj) =>
+              let header = propObj->Dict.get("title")->Option.flatMap(JSON.Decode.string)->Option.getOr("")
+              let question = propObj->Dict.get("description")->Option.flatMap(JSON.Decode.string)->Option.getOr("")
+              let propType = propObj->Dict.get("type")->Option.flatMap(JSON.Decode.string)->Option.getOr("string")
+
+              // Extract options from oneOf (single select) or items.anyOf (multi select)
+              let optionEntries = switch propType {
+              | "array" =>
+                // Multi-select: items.anyOf
+                propObj
+                ->Dict.get("items")
+                ->Option.flatMap(JSON.Decode.object)
+                ->Option.flatMap(items => items->Dict.get("anyOf"))
+                ->Option.flatMap(JSON.Decode.array)
+                ->Option.getOr([])
+              | _ =>
+                // Single-select: oneOf
+                propObj
+                ->Dict.get("oneOf")
+                ->Option.flatMap(JSON.Decode.array)
+                ->Option.getOr([])
+              }
+
+              let options: array<Client__Question__Types.questionOption> =
+                optionEntries->Array.filterMap(entry => {
+                  let entryObj = entry->JSON.Decode.object
+                  switch entryObj {
+                  | None => None
+                  | Some(obj) =>
+                    let label = obj->Dict.get("const")->Option.flatMap(JSON.Decode.string)->Option.getOr("")
+                    // title format is "Label - Description"
+                    let titleStr = obj->Dict.get("title")->Option.flatMap(JSON.Decode.string)->Option.getOr("")
+                    let description = switch titleStr->String.indexOf(" - ") {
+                    | -1 => ""
+                    | idx => titleStr->String.slice(~start=idx + 3, ~end=String.length(titleStr))
+                    }
+                    Some({Client__Question__Types.label, description})
+                  }
+                })
+
+              let multiple = switch propType {
+              | "array" => Some(true)
+              | _ => None
+              }
+
+              Some({Client__Question__Types.question, header, options, multiple})
+            }
+          })
+        }
+
+        Client__State.Actions.elicitationReceived(~taskId=sessionId, ~questions, ~requestId)
+      }
+    })
+
+    // Send an elicitation response via the ACP channel.
+    // Called by the state reducer's NeedElicitationResponse effect.
+    let currentSession = Reducer.Selectors.getSession(state)
+    let respondToElicitation = React.useCallback1(
+      (~requestId: string, ~action: string, ~content: option<JSON.t>) => {
+        switch currentSession {
+        | Some(session) =>
+          Protocol.sendElicitationResponse(
+            ~channel=session.channel,
+            ~id=JSON.Encode.string(requestId),
+            ~action,
+            ~content,
+          )
+        | None =>
+          Log.error("Cannot send elicitation response: no active session")
+        }
+      },
+      [currentSession],
+    )
+
     let createSession = React.useCallback1(
       (~onComplete: result<string, string> => unit) => {
-        dispatch(CreateSession({onUpdate: handleSessionUpdate, onMcpMessage: logMCPMessage, onComplete}))
+        dispatch(CreateSession({onUpdate: handleSessionUpdate, onRequest: Some(handleElicitationRequest), onMcpMessage: logMCPMessage, onComplete}))
       },
       [dispatch],
     )
@@ -239,27 +368,9 @@ module Provider = {
       dispatch(CancelPrompt)
     }, [dispatch])
 
-    // Submit a tool result directly via the Phoenix channel.
-    // Used by interactive tools (e.g. question) whose results bypass MCP.
-    // Fire-and-forget: the server handles persistence and re-execution.
-    let currentSession = Reducer.Selectors.getSession(state)
-    let submitToolResult = React.useCallback1(
-      (~toolCallId, ~toolName, ~result, ~isError, ~metadata) => {
-        switch currentSession {
-        | Some(session) =>
-          let payload: Types.toolSubmitResult = {toolCallId, toolName, result, isError, metadata}
-          let json = S.reverseConvertToJsonOrThrow(payload, Types.toolSubmitResultSchema)
-          session.channel->Channel.push(~event=#"tool:submit_result", ~payload=json)->ignore
-        | None =>
-          Log.error("Cannot submit tool result: no active session")
-        }
-      },
-      [currentSession],
-    )
-
     let loadTask = React.useCallback1(
-      (taskId: string, ~needsHistory, ~onComplete) => {
-        dispatch(LoadTask({taskId, needsHistory, onUpdate: handleSessionUpdate, onMcpMessage: logMCPMessage, onComplete}))
+      (taskId: string, ~needsHistory, ~metadata, ~onComplete) => {
+        dispatch(LoadTask({taskId, needsHistory, metadata, onUpdate: handleSessionUpdate, onRequest: Some(handleElicitationRequest), onMcpMessage: logMCPMessage, onComplete}))
       },
       [dispatch],
     )
@@ -292,7 +403,7 @@ module Provider = {
       clearSession,
       sendPrompt,
       cancelPrompt,
-      submitToolResult,
+      respondToElicitation,
       loadTask,
       deleteSession,
     }

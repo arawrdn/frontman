@@ -6,9 +6,9 @@ module Types = Client__State__Types
 // Dummy callbacks for AcpSessionActive (reducer only checks the variant, not the callbacks)
 let _dummySendPrompt: Types.sendPromptFn = (_, ~additionalBlocks as _, ~onComplete as _, ~metadata as _) => ()
 let _dummyCancelPrompt: Types.cancelPromptFn = () => ()
-let _dummyLoadTask: Types.loadTaskFn = (_, ~needsHistory as _, ~onComplete as _) => ()
+let _dummyLoadTask: Types.loadTaskFn = (_, ~needsHistory as _, ~metadata as _, ~onComplete as _) => ()
 let _dummyDeleteSession: Types.deleteSessionFn = (_, ~onComplete as _) => ()
-let _dummySubmitToolResult: Types.submitToolResultFn = (~toolCallId as _, ~toolName as _, ~result as _, ~isError as _, ~metadata as _) => ()
+let _dummyRespondToElicitation: Types.respondToElicitationFn = (~requestId as _, ~action as _, ~content as _) => ()
 
 let _apiBaseUrl = "http://localhost:4000"
 
@@ -22,7 +22,7 @@ let _makeState = (~anthropicOAuthStatus=Types.NotConnected, ~chatgptOAuthStatus=
       cancelPrompt: _dummyCancelPrompt,
       loadTask: _dummyLoadTask,
       deleteSession: _dummyDeleteSession,
-      submitToolResult: _dummySubmitToolResult,
+      respondToElicitation: _dummyRespondToElicitation,
       apiBaseUrl: _apiBaseUrl,
     }),
     sessionInitialized: true,

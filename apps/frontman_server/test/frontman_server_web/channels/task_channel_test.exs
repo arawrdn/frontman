@@ -347,6 +347,8 @@ defmodule FrontmanServerWeb.TaskChannelTest do
       push(socket, "mcp:message", JsonRpc.success_response(mcp_request_id, mcp_tool_result))
       :sys.get_state(socket.channel_pid)
 
+      alias AgentClientProtocol.Content.{ContentItem, TextBlock}
+
       assert_push("acp:message", %{
         "jsonrpc" => "2.0",
         "method" => "session/update",
@@ -356,7 +358,7 @@ defmodule FrontmanServerWeb.TaskChannelTest do
             "sessionUpdate" => "tool_call_update",
             "toolCallId" => "call_123",
             "status" => "completed",
-            "content" => [%{"content" => %{"text" => "Logged: hello"}}]
+            "content" => [%ContentItem{content: %TextBlock{text: "Logged: hello"}}]
           }
         }
       })
@@ -1016,7 +1018,7 @@ defmodule FrontmanServerWeb.TaskChannelTest do
       refute_push("acp:message", %{"id" => 42, "result" => _})
     end
 
-    test "interactive tool call does not get added to pending_requests", %{
+    test "interactive tool call sends elicitation and does not get added to pending_requests", %{
       socket: socket,
       task_id: task_id
     } do
@@ -1028,10 +1030,12 @@ defmodule FrontmanServerWeb.TaskChannelTest do
         {:interaction, tool_call}
       )
 
-      assert_push("mcp:message", %{
-        "method" => "tools/call",
-        "id" => _mcp_request_id,
-        "params" => %{"name" => "question"}
+      # Interactive backend tools send a session/elicitation request (not mcp:message tools/call)
+      assert_push("acp:message", %{
+        "jsonrpc" => "2.0",
+        "method" => "session/elicitation",
+        "id" => _elicitation_id,
+        "params" => %{"mode" => "form"}
       })
 
       state = :sys.get_state(socket.channel_pid)
@@ -1062,200 +1066,236 @@ defmodule FrontmanServerWeb.TaskChannelTest do
       assert map_size(pending) == 1
     end
 
-    test "tool:submit_result persists tool result interaction", %{
+    test "session/load re-sends pending elicitation for unanswered question tool call", %{
       socket: socket,
       task_id: task_id,
       scope: scope
     } do
-      tool_call_id = "call_question_submit_#{:rand.uniform(1_000_000)}"
+      # Simulate an unanswered question: add a ToolCall with no matching ToolResult
+      tool_call_id = "call_question_resend_#{:rand.uniform(1_000_000)}"
 
-      # First, add a ToolCall interaction so the ToolResult has a parent
-      reqllm_tc = ReqLLM.ToolCall.new(tool_call_id, "question", "{}")
+      reqllm_tc =
+        ReqLLM.ToolCall.new(
+          tool_call_id,
+          "question",
+          Jason.encode!(%{
+            "questions" => [
+              %{
+                "question" => "Which color?",
+                "header" => "Color choice",
+                "options" => [
+                  %{"label" => "Red", "description" => "A warm color"},
+                  %{"label" => "Blue", "description" => "A cool color"}
+                ]
+              }
+            ]
+          })
+        )
+
       {:ok, _interaction} = Tasks.add_tool_call(scope, task_id, reqllm_tc)
 
-      push(socket, "tool:submit_result", %{
-        "tool_call_id" => tool_call_id,
-        "tool_name" => "question",
-        "result" => Jason.encode!(%{"answers" => [%{"answer" => "yes"}]}),
-        "is_error" => false,
-        "metadata" => %{}
+      # Close the original channel so its PubSub handler doesn't leak
+      # elicitation pushes into our test process mailbox.
+      old_pid = socket.channel_pid
+      Process.unlink(old_pid)
+      ref = Process.monitor(old_pid)
+      :ok = close(socket)
+      assert_receive {:DOWN, ^ref, :process, ^old_pid, _}, 1000
+      # Drain any messages the old channel pushed before closing
+      flush_mailbox()
+
+      # Reconnect: join a fresh socket for the same task (simulates page reload)
+      fresh_socket = rejoin_task_channel(scope, task_id)
+      complete_mcp_handshake_with_tools(fresh_socket, @interactive_tools)
+
+      # Trigger session/load (simulates what the client does after reconnect)
+      push(fresh_socket, "acp:message", %{
+        "jsonrpc" => "2.0",
+        "id" => 99,
+        "method" => "session/load",
+        "params" => %{"sessionId" => task_id}
       })
 
-      # Wait for processing (handler triggers maybe_resume_after_tool_result)
-      Process.sleep(200)
-      :sys.get_state(socket.channel_pid)
+      :sys.get_state(fresh_socket.channel_pid)
 
-      {:ok, task} = Tasks.get_task(scope, task_id)
-
-      tool_results =
-        task.interactions
-        |> Enum.filter(&match?(%Interaction.ToolResult{}, &1))
-
-      assert tool_results != []
-
-      matching =
-        Enum.find(tool_results, fn tr -> tr.tool_call_id == tool_call_id end)
-
-      assert matching != nil
-      assert matching.tool_name == "question"
-    end
-
-    test "tool:submit_result sends ACP completion notification", %{
-      socket: socket,
-      task_id: task_id,
-      scope: scope
-    } do
-      tool_call_id = "call_question_notify_#{:rand.uniform(1_000_000)}"
-
-      reqllm_tc = ReqLLM.ToolCall.new(tool_call_id, "question", "{}")
-      {:ok, _interaction} = Tasks.add_tool_call(scope, task_id, reqllm_tc)
-
-      push(socket, "tool:submit_result", %{
-        "tool_call_id" => tool_call_id,
-        "tool_name" => "question",
-        "result" => "answered",
-        "is_error" => false,
-        "metadata" => %{}
-      })
-
-      :sys.get_state(socket.channel_pid)
-
+      # Should receive the session/elicitation request for the unanswered question
       assert_push("acp:message", %{
-        "method" => "session/update",
+        "jsonrpc" => "2.0",
+        "method" => "session/elicitation",
+        "id" => ^tool_call_id,
         "params" => %{
-          "update" => %{
-            "sessionUpdate" => "tool_call_update",
-            "toolCallId" => ^tool_call_id,
-            "status" => "completed"
-          }
+          "mode" => "form",
+          "sessionId" => ^task_id
         }
       })
     end
 
-    test "tool:submit_result with is_error sends ACP failed notification", %{
-      socket: socket,
-      task_id: task_id,
-      scope: scope
-    } do
-      tool_call_id = "call_question_error_#{:rand.uniform(1_000_000)}"
+    test "answering a pending elicitation after reconnect populates execution context from session/load metadata",
+         %{
+           socket: socket,
+           task_id: task_id,
+           scope: scope
+         } do
+      # After page refresh, session/load should carry runtime config metadata
+      # (env_api_key, model) so persist_and_resume has valid execution context.
+      # Without this, the channel's last_execution_opts is [] and the agent
+      # resumes with the wrong model or missing API key.
 
-      reqllm_tc = ReqLLM.ToolCall.new(tool_call_id, "question", "{}")
-      {:ok, _interaction} = Tasks.add_tool_call(scope, task_id, reqllm_tc)
+      tool_call_id = "call_question_reconnect_#{:rand.uniform(1_000_000)}"
 
-      push(socket, "tool:submit_result", %{
-        "tool_call_id" => tool_call_id,
-        "tool_name" => "question",
-        "result" => "User cancelled the question",
-        "is_error" => true,
-        "metadata" => %{}
-      })
+      question_args = %{
+        "questions" => [
+          %{
+            "question" => "Which framework?",
+            "header" => "Framework",
+            "options" => [
+              %{"label" => "React", "description" => "A UI library"},
+              %{"label" => "Vue", "description" => "A progressive framework"}
+            ]
+          }
+        ]
+      }
 
-      :sys.get_state(socket.channel_pid)
+      # Build task history: UserMessage → AgentResponse (with tool_calls) → ToolCall
+      {:ok, _} =
+        Tasks.add_user_message(scope, task_id, [%{"type" => "text", "text" => "Help me"}], [], [])
 
-      assert_push("acp:message", %{
-        "method" => "session/update",
+      {:ok, _} =
+        Tasks.add_agent_response(scope, task_id, "Let me ask you a question.", %{
+          "tool_calls" => [
+            %{
+              "id" => tool_call_id,
+              "type" => "function",
+              "function" => %{
+                "name" => "question",
+                "arguments" => Jason.encode!(question_args)
+              }
+            }
+          ]
+        })
+
+      reqllm_tc =
+        ReqLLM.ToolCall.new(tool_call_id, "question", Jason.encode!(question_args))
+
+      {:ok, _} = Tasks.add_tool_call(scope, task_id, reqllm_tc)
+
+      # --- Reconnect: close old channel, join fresh one ---
+      old_pid = socket.channel_pid
+      Process.unlink(old_pid)
+      ref = Process.monitor(old_pid)
+      :ok = close(socket)
+      assert_receive {:DOWN, ^ref, :process, ^old_pid, _}, 1000
+      flush_mailbox()
+
+      fresh_socket = rejoin_task_channel(scope, task_id)
+      complete_mcp_handshake_with_tools(fresh_socket, @interactive_tools)
+
+      # Verify last_execution_opts is empty before session/load
+      state_before = :sys.get_state(fresh_socket.channel_pid)
+      assert state_before.assigns.last_execution_opts == []
+      assert state_before.assigns.last_execution_tools == []
+
+      # Send session/load WITH metadata — same fields the client sends on prompts
+      push(fresh_socket, "acp:message", %{
+        "jsonrpc" => "2.0",
+        "id" => 200,
+        "method" => "session/load",
         "params" => %{
-          "update" => %{
-            "sessionUpdate" => "tool_call_update",
-            "toolCallId" => ^tool_call_id,
-            "status" => "failed"
+          "sessionId" => task_id,
+          "metadata" => %{
+            "openrouterKeyValue" => "sk-or-test-reconnect-key",
+            "model" => %{
+              "provider" => "anthropic",
+              "value" => "claude-sonnet-4-20250514"
+            }
           }
         }
       })
 
-      # Verify the error result is persisted
-      Process.sleep(100)
-      {:ok, task} = Tasks.get_task(scope, task_id)
+      :sys.get_state(fresh_socket.channel_pid)
 
-      error_result =
-        task.interactions
-        |> Enum.find(fn
-          %Interaction.ToolResult{tool_call_id: ^tool_call_id} -> true
-          _ -> false
-        end)
+      # Verify last_execution_opts is now populated from session/load metadata
+      state_after = :sys.get_state(fresh_socket.channel_pid)
+      opts = state_after.assigns.last_execution_opts
 
-      assert error_result != nil
-      assert error_result.is_error == true
+      assert Keyword.get(opts, :env_api_key) == %{"openrouter" => "sk-or-test-reconnect-key"}
+
+      assert Keyword.get(opts, :model) == %{
+               provider: "anthropic",
+               value: "claude-sonnet-4-20250514"
+             }
+
+      # Verify tools are also populated (backend + MCP tools)
+      tools = state_after.assigns.last_execution_tools
+      assert is_list(tools)
+      assert tools != []
+    end
+
+    test "session/load does NOT re-send elicitation for answered question tool call", %{
+      socket: socket,
+      task_id: task_id,
+      scope: scope
+    } do
+      # Add a question ToolCall AND a matching ToolResult
+      tool_call_id = "call_question_answered_#{:rand.uniform(1_000_000)}"
+
+      reqllm_tc =
+        ReqLLM.ToolCall.new(
+          tool_call_id,
+          "question",
+          Jason.encode!(%{
+            "questions" => [
+              %{
+                "question" => "Pick one",
+                "header" => "Choice",
+                "options" => [%{"label" => "A", "description" => "Option A"}]
+              }
+            ]
+          })
+        )
+
+      {:ok, _} = Tasks.add_tool_call(scope, task_id, reqllm_tc)
+
+      {:ok, _} =
+        Tasks.add_tool_result(
+          scope,
+          task_id,
+          %{id: tool_call_id, name: "question"},
+          Jason.encode!(%{"answers" => [%{"question" => "Pick one", "answer" => ["A"]}]}),
+          false
+        )
+
+      # Close the original channel to prevent PubSub handler leaking messages
+      old_pid = socket.channel_pid
+      Process.unlink(old_pid)
+      ref = Process.monitor(old_pid)
+      :ok = close(socket)
+      assert_receive {:DOWN, ^ref, :process, ^old_pid, _}, 1000
+      flush_mailbox()
+
+      # Reconnect
+      fresh_socket = rejoin_task_channel(scope, task_id)
+      complete_mcp_handshake_with_tools(fresh_socket, @interactive_tools)
+
+      push(fresh_socket, "acp:message", %{
+        "jsonrpc" => "2.0",
+        "id" => 100,
+        "method" => "session/load",
+        "params" => %{"sessionId" => task_id}
+      })
+
+      :sys.get_state(fresh_socket.channel_pid)
+
+      # Should NOT receive any elicitation — the question was already answered
+      refute_push("acp:message", %{"method" => "session/elicitation"}, 200)
     end
   end
 
   # ---------------------------------------------------------------------------
-  # CRITICAL: tool:submit_result when MCP initialization is pending
+  # MCP initialization state before handshake completes
   # ---------------------------------------------------------------------------
 
-  describe "tool:submit_result with MCP pending (server restart scenario)" do
-    # These tests simulate a client reconnecting after a server restart and
-    # submitting a pending tool result before MCP initialization completes.
-    # The channel must NOT attempt to resume execution with empty tools.
-
-    test "persists tool result even when MCP is still initializing", %{scope: scope} do
-      {socket, task_id} = join_task_channel(scope)
-
-      # Drain the MCP initialize request but do NOT complete the handshake
-      assert_push("mcp:message", %{"id" => _init_request_id, "method" => "initialize"})
-
-      # Verify MCP is still pending
-      channel_state = :sys.get_state(socket.channel_pid)
-      assert channel_state.assigns.mcp_status == :pending
-
-      tool_call_id = "call_pending_mcp_#{:rand.uniform(1_000_000)}"
-      reqllm_tc = ReqLLM.ToolCall.new(tool_call_id, "question", "{}")
-      {:ok, _interaction} = Tasks.add_tool_call(scope, task_id, reqllm_tc)
-
-      push(socket, "tool:submit_result", %{
-        "tool_call_id" => tool_call_id,
-        "tool_name" => "question",
-        "result" => Jason.encode!(%{"answers" => [%{"answer" => "yes"}]}),
-        "is_error" => false,
-        "metadata" => %{}
-      })
-
-      Process.sleep(200)
-      :sys.get_state(socket.channel_pid)
-
-      # The tool result should still be persisted in DB regardless of MCP status
-      {:ok, task} = Tasks.get_task(scope, task_id)
-
-      matching =
-        Enum.find(task.interactions, fn
-          %Interaction.ToolResult{tool_call_id: ^tool_call_id} -> true
-          _ -> false
-        end)
-
-      assert matching != nil
-      assert matching.tool_name == "question"
-    end
-
-    test "sends ACP notification even when MCP is still initializing", %{scope: scope} do
-      {socket, task_id} = join_task_channel(scope)
-      assert_push("mcp:message", %{"id" => _init_request_id, "method" => "initialize"})
-
-      tool_call_id = "call_pending_acp_#{:rand.uniform(1_000_000)}"
-      reqllm_tc = ReqLLM.ToolCall.new(tool_call_id, "question", "{}")
-      {:ok, _interaction} = Tasks.add_tool_call(scope, task_id, reqllm_tc)
-
-      push(socket, "tool:submit_result", %{
-        "tool_call_id" => tool_call_id,
-        "tool_name" => "question",
-        "result" => "answered",
-        "is_error" => false,
-        "metadata" => %{}
-      })
-
-      :sys.get_state(socket.channel_pid)
-
-      assert_push("acp:message", %{
-        "method" => "session/update",
-        "params" => %{
-          "update" => %{
-            "sessionUpdate" => "tool_call_update",
-            "toolCallId" => ^tool_call_id,
-            "status" => "completed"
-          }
-        }
-      })
-    end
-
+  describe "MCP state before handshake completes" do
     test "mcp_tools is empty when MCP is still initializing", %{scope: scope} do
       {socket, _task_id} = join_task_channel(scope)
       assert_push("mcp:message", %{"id" => _init_request_id, "method" => "initialize"})
@@ -1354,12 +1394,12 @@ defmodule FrontmanServerWeb.TaskChannelTest do
       {:ok, socket: socket, task_id: task_id, scope: scope}
     end
 
-    test "last_execution_tools and last_execution_opts are nil before any prompt", %{
+    test "last_execution_tools and last_execution_opts are empty before any prompt", %{
       socket: socket
     } do
       channel_state = :sys.get_state(socket.channel_pid)
-      assert channel_state.assigns[:last_execution_tools] == nil
-      assert channel_state.assigns[:last_execution_opts] == nil
+      assert channel_state.assigns[:last_execution_tools] == []
+      assert channel_state.assigns[:last_execution_opts] == []
     end
 
     test "tool call response persists result even when last_execution state is nil", %{

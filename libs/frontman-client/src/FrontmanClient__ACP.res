@@ -47,6 +47,7 @@ let makeConfig = (
   clientCapabilities: {
     fs: Some({readTextFile: Some(true), writeTextFile: Some(true)}),
     terminal: Some(false),
+    elicitation: Some({form: Some(%raw("{}")), url: None}),
   },
   onMessage,
 }
@@ -187,6 +188,7 @@ let connect = async (config: config, ~signal: option<WebAPI.EventAPI.abortSignal
       ~channel,
       ~state,
       ~onUpdate=None,
+      ~onRequest=None,
       ~onMessage=config.onMessage,
       ~onParseError=None,
     )
@@ -273,6 +275,7 @@ let joinSession = async (
   conn: connection,
   sessionId: string,
   ~onUpdate: (string, Types.sessionUpdate) => unit,
+  ~onRequest: option<(JSON.t, string, JSON.t) => unit>=?,
   ~mcpServerInterface: option<MCPTypes.serverInterface<'server>>=?,
   ~onMcpMessage: option<(MCP.messageDirection, JSON.t) => unit>=?,
 ): result<session, string> => {
@@ -283,6 +286,7 @@ let joinSession = async (
     ~channel=sessionChannel,
     ~state=conn.state,
     ~onUpdate=Some(onUpdate),
+    ~onRequest,
     ~onMessage=conn.onMessage,
     ~onParseError=Some(err => Log.warning(`Session message parse error: ${err}`)),
   )
@@ -334,6 +338,7 @@ let createSession = async (
   conn: connection,
   ~sessionId: string,
   ~onUpdate: (string, Types.sessionUpdate) => unit,
+  ~onRequest: option<(JSON.t, string, JSON.t) => unit>=?,
   ~mcpServerInterface: option<MCPTypes.serverInterface<'server>>=?,
   ~onMcpMessage: option<(MCP.messageDirection, JSON.t) => unit>=?,
 ): result<session, string> => {
@@ -348,7 +353,7 @@ let createSession = async (
 
   switch sessionNewResult {
   | Ok(result) =>
-    await joinSession(conn, result.sessionId, ~onUpdate, ~mcpServerInterface?, ~onMcpMessage?)
+    await joinSession(conn, result.sessionId, ~onUpdate, ~onRequest?, ~mcpServerInterface?, ~onMcpMessage?)
   | Error(err) =>
     Sentry.captureProtocolError(
       `Session creation failed: ${err}`,
@@ -438,14 +443,17 @@ let loadSession = async (
   conn: connection,
   sessionId: string,
   ~onUpdate: (string, Types.sessionUpdate) => unit,
+  ~onRequest: option<(JSON.t, string, JSON.t) => unit>=?,
   ~mcpServerInterface: option<MCPTypes.serverInterface<'server>>=?,
   ~onMcpMessage: option<(MCP.messageDirection, JSON.t) => unit>=?,
+  ~metadata: option<JSON.t>=?,
 ): result<session, string> => {
   // First join the session channel to receive history updates
   let joinResult = await joinSession(
     conn,
     sessionId,
     ~onUpdate,
+    ~onRequest?,
     ~mcpServerInterface?,
     ~onMcpMessage?,
   )
@@ -460,6 +468,7 @@ let loadSession = async (
       sessionId,
       cwd: "/",
       mcpServers: [],
+      metadata,
     }
     let loadResult = await Protocol.sendRequest(
       ~channel=session.channel,

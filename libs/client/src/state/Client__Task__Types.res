@@ -128,6 +128,8 @@ module Task = {
         annotations: array<Annotation.t>,
         activePopupAnnotationId: option<string>,
         isAnimationFrozen: bool,
+        // Elicitation received during history replay (before LoadComplete)
+        pendingQuestion: option<Client__Question__Types.pendingQuestion>,
       })
     // Loaded: fully interactive
     // clientId is preserved from New state during promotion to maintain iframe identity
@@ -344,6 +346,7 @@ module Task = {
         annotations: [],
         activePopupAnnotationId: None,
         isAnimationFrozen: false,
+        pendingQuestion: None,
       })
     | New(_) => failwith("[Task.startLoading] Cannot load a New task - it has no server session")
     | Loading(_) | Loaded(_) => task
@@ -463,8 +466,8 @@ module Task = {
     switch task {
     | Loaded({messages, annotationMode, annotations, activePopupAnnotationId, isAnimationFrozen, isAgentRunning, planEntries, turnError, pendingQuestion}) =>
       Some({messages: Client__MessageStore.toArray(messages), annotationMode, annotations, activePopupAnnotationId, isAnimationFrozen, isAgentRunning, planEntries, turnError, pendingQuestion})
-    | Loading({messages, annotationMode, annotations, activePopupAnnotationId, isAnimationFrozen}) =>
-      Some({messages: Client__MessageStore.toArray(messages), annotationMode, annotations, activePopupAnnotationId, isAnimationFrozen, isAgentRunning: false, planEntries: [], turnError: None, pendingQuestion: None})
+    | Loading({messages, annotationMode, annotations, activePopupAnnotationId, isAnimationFrozen, pendingQuestion}) =>
+      Some({messages: Client__MessageStore.toArray(messages), annotationMode, annotations, activePopupAnnotationId, isAnimationFrozen, isAgentRunning: false, planEntries: [], turnError: None, pendingQuestion})
     | New({annotationMode, annotations, activePopupAnnotationId, isAnimationFrozen}) =>
       Some({messages: [], annotationMode, annotations, activePopupAnnotationId, isAnimationFrozen, isAgentRunning: false, planEntries: [], turnError: None, pendingQuestion: None})
     | Unloaded(_) => None
@@ -495,8 +498,8 @@ module Task = {
           pendingQuestion: updated.pendingQuestion,
         })
       }
-    | Loading({id, title, createdAt, updatedAt, messages, previewFrame, annotationMode, annotations, activePopupAnnotationId, isAnimationFrozen}) => {
-        let data = {messages: Client__MessageStore.toArray(messages), annotationMode, annotations, activePopupAnnotationId, isAnimationFrozen, isAgentRunning: false, planEntries: [], turnError: None, pendingQuestion: None}
+    | Loading({id, title, createdAt, updatedAt, messages, previewFrame, annotationMode, annotations, activePopupAnnotationId, isAnimationFrozen, pendingQuestion}) => {
+        let data = {messages: Client__MessageStore.toArray(messages), annotationMode, annotations, activePopupAnnotationId, isAnimationFrozen, isAgentRunning: false, planEntries: [], turnError: None, pendingQuestion}
         let updated = fn(data)
         Loading({
           id,
@@ -509,6 +512,7 @@ module Task = {
           annotations: updated.annotations,
           activePopupAnnotationId: updated.activePopupAnnotationId,
           isAnimationFrozen: updated.isAnimationFrozen,
+          pendingQuestion: updated.pendingQuestion,
         })
       }
     | New({clientId, previewFrame, annotationMode, annotations, activePopupAnnotationId, isAnimationFrozen}) => {

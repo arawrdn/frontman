@@ -333,6 +333,7 @@ describe("Connection Reducer", () => {
         state,
         CreateSession({
           onUpdate: (_, _) => (),
+          onRequest: None,
           onMcpMessage: (_, _) => (),
           onComplete: _ => (),
         }),

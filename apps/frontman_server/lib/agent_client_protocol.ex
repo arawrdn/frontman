@@ -115,7 +115,7 @@ defmodule AgentClientProtocol do
   @doc """
   Builds an agent_turn_complete session/update notification.
 
-  Sent when the agent finishes a turn that was resumed via tool:submit_result
+  Sent when the agent finishes a turn that was resumed via elicitation response
   (not via session/prompt), so there is no pending JSON-RPC request to respond to.
   The client uses this to finalize the streaming message and reset the agent-running state.
   """
@@ -311,44 +311,6 @@ defmodule AgentClientProtocol do
         "status must be one of: #{Enum.join(@plan_statuses, ", ")}, got: #{inspect(status)}"
       )
 
-  # Deprecated - use tool_call_create/6 instead
-  def build_tool_call_notification(session_id, tool_call, status, opts \\ [])
-      when status in @tool_call_statuses do
-    tool_call_create(
-      session_id,
-      tool_call.tool_call_id,
-      tool_call.tool_name,
-      "other",
-      status,
-      opts
-    )
-  end
-
-  # Deprecated - use tool_call_update/4 instead
-  def build_tool_call_update_notification(session_id, tool_call_id, status, content \\ nil)
-      when status in @tool_call_statuses do
-    formatted_content =
-      if content do
-        [%{"type" => "content", "content" => %{"type" => "text", "text" => content}}]
-      else
-        nil
-      end
-
-    tool_call_update(session_id, tool_call_id, status, formatted_content)
-  end
-
-  # Deprecated - use tool_call_update/4 instead
-  def build_tool_call_update_notification_with_structured_content(
-        session_id,
-        tool_call_id,
-        status,
-        structured_content
-      )
-      when status in @tool_call_statuses do
-    content = [%{"type" => "content", "content" => structured_content}]
-    tool_call_update(session_id, tool_call_id, status, content)
-  end
-
   @doc """
   Extracts text content from ACP prompt content blocks.
 
@@ -459,4 +421,203 @@ defmodule AgentClientProtocol do
   end
 
   def extract_model(_), do: nil
+
+  # ---------------------------------------------------------------------------
+  # Elicitation (session/elicitation)
+  # ---------------------------------------------------------------------------
+
+  @doc """
+  Builds a form-mode `session/elicitation` JSON-RPC request.
+
+  The server sends this to the client when an interactive tool (e.g. `question`)
+  needs user input. The client renders a form from `requested_schema` and responds
+  with a standard JSON-RPC response containing `{action, content}`.
+  """
+  def build_form_elicitation_request(id, session_id, message, requested_schema) do
+    JsonRpc.request(id, "session/elicitation", %{
+      "sessionId" => session_id,
+      "mode" => "form",
+      "message" => message,
+      "requestedSchema" => requested_schema
+    })
+  end
+
+  @doc """
+  Builds a URL-mode `session/elicitation` JSON-RPC request.
+
+  Used for out-of-band flows (OAuth, payments, credential collection) where
+  sensitive data must bypass the agent. The client opens the URL in a secure
+  browser context; the user's interaction happens entirely out-of-band.
+
+  `elicitation_id` correlates with a later `notifications/elicitation/complete`
+  notification so the client knows when the flow finished.
+  """
+  def build_url_elicitation_request(id, session_id, message, elicitation_id, url) do
+    JsonRpc.request(id, "session/elicitation", %{
+      "sessionId" => session_id,
+      "mode" => "url",
+      "message" => message,
+      "elicitationId" => elicitation_id,
+      "url" => url
+    })
+  end
+
+  @doc """
+  Builds a `notifications/elicitation/complete` notification.
+
+  Sent by the agent when an out-of-band URL-mode interaction has completed.
+  The client may use this to retry a previously failed request or update the UI.
+  """
+  def build_elicitation_complete_notification(elicitation_id) do
+    JsonRpc.notification("notifications/elicitation/complete", %{
+      "elicitationId" => elicitation_id
+    })
+  end
+
+  @doc """
+  Converts question tool arguments into a flat JSON Schema object suitable
+  for `session/elicitation`'s `requestedSchema`.
+
+  Each question `i` produces two schema properties:
+  - `q{i}_answer` — an enum (single-select) or array-of-enums (multi-select)
+  - `q{i}_custom` — a free-text string for "Type your own answer"
+
+  ## Examples
+
+      questions = [
+        %{"header" => "Framework", "question" => "Which?", "multiple" => false,
+          "options" => [%{"label" => "React", "description" => "A UI library"}]}
+      ]
+      ACP.question_to_elicitation_schema(questions)
+      #=> %{"type" => "object", "properties" => %{...}, "required" => []}
+  """
+  def question_to_elicitation_schema(questions) when is_list(questions) do
+    properties =
+      questions
+      |> Enum.with_index()
+      |> Enum.reduce(%{}, fn {question, i}, acc ->
+        header = Map.get(question, "header", "Question #{i + 1}")
+        description = Map.get(question, "question", "")
+        options = Map.get(question, "options", [])
+        multiple = Map.get(question, "multiple", false)
+
+        one_of_entries =
+          Enum.map(options, fn opt ->
+            label = Map.get(opt, "label", "")
+            desc = Map.get(opt, "description", "")
+
+            title =
+              if desc != "" do
+                "#{label} - #{desc}"
+              else
+                label
+              end
+
+            %{"const" => label, "title" => title}
+          end)
+
+        answer_prop =
+          if multiple do
+            %{
+              "type" => "array",
+              "title" => header,
+              "description" => description,
+              "items" => %{"anyOf" => one_of_entries}
+            }
+          else
+            %{
+              "type" => "string",
+              "title" => header,
+              "description" => description,
+              "oneOf" => one_of_entries
+            }
+          end
+
+        custom_prop = %{
+          "type" => "string",
+          "title" => "Type your own answer"
+        }
+
+        acc
+        |> Map.put("q#{i}_answer", answer_prop)
+        |> Map.put("q#{i}_custom", custom_prop)
+      end)
+
+    %{
+      "type" => "object",
+      "properties" => properties,
+      "required" => []
+    }
+  end
+
+  @doc """
+  Parses the `result` field from a `session/elicitation` JSON-RPC response.
+
+  Returns `{action, content}` where action is `"accept"`, `"decline"`, or `"cancel"`,
+  and content is the form data map (or `nil` for decline/cancel).
+  """
+  def parse_elicitation_response(result) when is_map(result) do
+    action = Map.get(result, "action", "cancel")
+    content = Map.get(result, "content")
+    {action, content}
+  end
+
+  @doc """
+  Maps flat elicitation answer properties back to the `toolOutput` format
+  expected by the LLM.
+
+  Given the `content` map from the client response (e.g. `%{"q0_answer" => "React"}`)
+  and the original questions list, produces:
+
+      %{
+        "answers" => [%{"question" => "...", "answer" => [...]}],
+        "skippedAll" => false,
+        "cancelled" => false
+      }
+
+  Crashes on unknown actions or malformed input (missing `"question"` key,
+  nil content on accept) — callers must ensure valid data reaches this boundary.
+  """
+  def elicitation_content_to_tool_output("accept", content, questions)
+      when is_map(content) and is_list(questions) do
+    answers =
+      questions
+      |> Enum.with_index()
+      |> Enum.map(fn {%{"question" => question_text}, i} ->
+        raw_answer = Map.get(content, "q#{i}_answer")
+        custom_answer = Map.get(content, "q#{i}_custom")
+
+        answer_values =
+          case raw_answer do
+            list when is_list(list) -> list
+            val when is_binary(val) and val != "" -> [val]
+            _ -> []
+          end
+
+        # Append custom answer if provided
+        answer_values =
+          case custom_answer do
+            val when is_binary(val) and val != "" -> answer_values ++ [val]
+            _ -> answer_values
+          end
+
+        %{"question" => question_text, "answer" => answer_values}
+      end)
+
+    %{"answers" => answers, "skippedAll" => false, "cancelled" => false}
+  end
+
+  def elicitation_content_to_tool_output(action, _content, questions)
+      when action in ["decline", "cancel"] and is_list(questions) do
+    null_answers =
+      Enum.map(questions, fn %{"question" => question_text} ->
+        %{"question" => question_text, "answer" => nil}
+      end)
+
+    %{
+      "answers" => null_answers,
+      "skippedAll" => action == "decline",
+      "cancelled" => action == "cancel"
+    }
+  end
 end

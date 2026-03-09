@@ -448,6 +448,33 @@ defmodule FrontmanServer.Tasks do
     end
   end
 
+  @doc """
+  Finds a ToolCall interaction by tool_call_id within a task.
+
+  Used by the elicitation response handler to recover the tool context
+  (tool_name, arguments) from the persisted interaction.
+  """
+  @spec find_tool_call(String.t(), String.t()) ::
+          {:ok, Interaction.ToolCall.t()} | {:error, :not_found}
+  def find_tool_call(task_id, tool_call_id) do
+    import Ecto.Query
+
+    result =
+      from(i in InteractionSchema,
+        where:
+          i.task_id == ^task_id and
+            i.type == "tool_call" and
+            fragment("?->>'tool_call_id' = ?", i.data, ^tool_call_id),
+        limit: 1
+      )
+      |> Repo.one()
+
+    case result do
+      %InteractionSchema{} = schema -> {:ok, InteractionSchema.to_struct(schema)}
+      nil -> {:error, :not_found}
+    end
+  end
+
   # Checks if a tool_result interaction already exists for the given tool_call_id.
   # Prevents duplicate tool_results when the client re-submits the same answer.
   @spec tool_result_exists?(String.t(), String.t()) :: boolean()
