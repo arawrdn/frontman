@@ -104,39 +104,43 @@ defmodule FrontmanServerWeb.ModelsController do
   def index(conn, params) do
     scope = conn.assigns.current_scope
 
-    has_anthropic_oauth = Providers.has_oauth_token?(scope, "anthropic")
     has_chatgpt_oauth = Providers.has_oauth_token?(scope, "chatgpt")
+    has_anthropic = has_anthropic_access?(scope, params)
+    has_openrouter_key = has_openrouter_access?(scope, params)
 
-    # Determine if user has their own OpenRouter key (user-stored or from env)
-    has_user_key = Providers.has_api_key?(scope, "openrouter")
-    has_env_key = params["hasEnvKey"] == "true"
-    has_openrouter_key = has_user_key or has_env_key
-
-    # Determine if user has Anthropic access via API key or env key (in addition to OAuth)
-    has_anthropic_user_key = Providers.has_api_key?(scope, "anthropic")
-    has_anthropic_env_key = params["hasAnthropicEnvKey"] == "true"
-    has_anthropic = has_anthropic_oauth or has_anthropic_user_key or has_anthropic_env_key
-
-    # Show full model list when user has their own key, free tier otherwise
     openrouter = if has_openrouter_key, do: @openrouter_provider, else: @openrouter_free_provider
-
-    # Build providers list: OAuth providers first (if available), then OpenRouter
-    providers =
-      []
-      |> then(fn list -> if has_chatgpt_oauth, do: list ++ [@openai_provider], else: list end)
-      |> then(fn list ->
-        if has_anthropic, do: list ++ [@anthropic_provider], else: list
-      end)
-      |> Kernel.++([openrouter])
-
-    # Default model priority: ChatGPT > Anthropic > OpenRouter
-    default_model =
-      cond do
-        has_chatgpt_oauth -> @openai_default
-        has_anthropic -> @anthropic_default
-        true -> @openrouter_default
-      end
+    providers = build_providers(has_chatgpt_oauth, has_anthropic, openrouter)
+    default_model = pick_default(has_chatgpt_oauth, has_anthropic)
 
     json(conn, %{providers: providers, defaultModel: default_model})
+  end
+
+  # Anthropic access: OAuth, user-stored API key, or env key
+  defp has_anthropic_access?(scope, params) do
+    Providers.has_oauth_token?(scope, "anthropic") or
+      Providers.has_api_key?(scope, "anthropic") or
+      params["hasAnthropicEnvKey"] == "true"
+  end
+
+  # OpenRouter access: user-stored API key or env key
+  defp has_openrouter_access?(scope, params) do
+    Providers.has_api_key?(scope, "openrouter") or params["hasEnvKey"] == "true"
+  end
+
+  # Build ordered providers list: ChatGPT > Anthropic > OpenRouter
+  defp build_providers(has_chatgpt_oauth, has_anthropic, openrouter) do
+    []
+    |> then(fn list -> if has_chatgpt_oauth, do: list ++ [@openai_provider], else: list end)
+    |> then(fn list -> if has_anthropic, do: list ++ [@anthropic_provider], else: list end)
+    |> Kernel.++([openrouter])
+  end
+
+  # Default model priority: ChatGPT > Anthropic > OpenRouter
+  defp pick_default(has_chatgpt_oauth, has_anthropic) do
+    cond do
+      has_chatgpt_oauth -> @openai_default
+      has_anthropic -> @anthropic_default
+      true -> @openrouter_default
+    end
   end
 end

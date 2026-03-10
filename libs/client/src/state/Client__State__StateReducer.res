@@ -507,7 +507,7 @@ module Selectors = {
   }
 
   // Whether the user has any API provider configured via state-tracked sources
-  // (DB-stored OpenRouter key or Anthropic OAuth).
+  // (DB-stored OpenRouter key, Anthropic API key, or OAuth).
   // Env-injected keys (window.__frontmanRuntime) live outside state — check RuntimeConfig separately.
   let hasAnyProviderConfigured = (state: state): bool => {
     switch state.usageInfo {
@@ -518,7 +518,11 @@ module Selectors = {
       | _ =>
         switch state.chatgptOAuthStatus {
         | ChatGPTConnected(_) => true
-        | _ => false
+        | _ =>
+          switch state.anthropicKeySettings.source {
+          | Client__State__Types.UserOverride | Client__State__Types.FromEnv => true
+          | _ => false
+          }
         }
       }
     }
