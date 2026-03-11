@@ -10,6 +10,7 @@ defmodule FrontmanServerWeb.TaskChannel do
   require Logger
 
   alias AgentClientProtocol, as: ACP
+  alias FrontmanServer.Providers.{Model, Registry}
   alias FrontmanServer.Tasks
   alias FrontmanServer.Tasks.TitleGenerator
   alias FrontmanServer.Tasks.Todos
@@ -365,6 +366,7 @@ defmodule FrontmanServerWeb.TaskChannel do
 
     # Extract model selection from prompt metadata
     model = extract_model_from_params(params)
+    # model is either a %Model{} struct or nil
 
     # Parse ACP prompt (protocol layer)
     prompt = ACP.parse_prompt_params(params)
@@ -377,7 +379,7 @@ defmodule FrontmanServerWeb.TaskChannel do
     end
 
     if model do
-      Logger.info("Using model: #{model.provider}:#{model.value}")
+      Logger.info("Using model: #{model}")
     end
 
     # Prepare tools (domain service)
@@ -408,29 +410,17 @@ defmodule FrontmanServerWeb.TaskChannel do
 
   # Extract env API keys from prompt params metadata (e.g., OPENROUTER_API_KEY, ANTHROPIC_API_KEY from project env)
   defp extract_env_api_key_from_params(params) when is_map(params) do
-    metadata = get_in(params, ["metadata"]) || %{}
-
-    [{"openrouterKeyValue", "openrouter"}, {"anthropicKeyValue", "anthropic"}]
-    |> Enum.reduce(%{}, fn {meta_key, provider}, acc ->
-      case metadata[meta_key] do
-        key when is_binary(key) and key != "" -> Map.put(acc, provider, key)
-        _ -> acc
-      end
-    end)
+    params |> get_in(["metadata"]) |> Registry.extract_env_keys()
   end
 
   defp extract_env_api_key_from_params(_), do: %{}
 
-  # Extract model selection from prompt params metadata
-  # Expected format: %{"provider" => "openrouter", "value" => "google/gemini-3-flash-preview"}
+  # Extract model selection from prompt params metadata.
+  # Returns a %Model{} struct or nil.
   defp extract_model_from_params(params) when is_map(params) do
-    case get_in(params, ["metadata", "model"]) do
-      %{"provider" => provider, "value" => value}
-      when is_binary(provider) and is_binary(value) and provider != "" and value != "" ->
-        %{provider: provider, value: value}
-
-      _ ->
-        nil
+    case Model.from_client_params(get_in(params, ["metadata", "model"])) do
+      {:ok, model} -> model
+      :error -> nil
     end
   end
 

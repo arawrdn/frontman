@@ -1,0 +1,149 @@
+defmodule FrontmanServer.Providers.Model do
+  @moduledoc """
+  Typed model reference: provider + model name.
+
+  Replaces the ad-hoc "provider:model" string joining/splitting scattered
+  across the codebase. Every place that constructs, parses, or inspects
+  a model string should use this struct.
+
+  ## Examples
+
+      iex> model = Model.new("openrouter", "openai/gpt-5.1-codex")
+      iex> Model.to_string(model)
+      "openrouter:openai/gpt-5.1-codex"
+
+      iex> Model.parse("anthropic:claude-sonnet-4-5")
+      {:ok, %Model{provider: "anthropic", name: "claude-sonnet-4-5"}}
+
+      iex> Model.from_client_params(%{"provider" => "openai", "value" => "gpt-5.4"})
+      {:ok, %Model{provider: "openai", name: "gpt-5.4"}}
+  """
+
+  @type t :: %__MODULE__{
+          provider: String.t(),
+          name: String.t()
+        }
+
+  @enforce_keys [:provider, :name]
+  defstruct [:provider, :name]
+
+  @doc """
+  Creates a new Model struct.
+  """
+  @spec new(String.t(), String.t()) :: t()
+  def new(provider, name) when is_binary(provider) and is_binary(name) do
+    %__MODULE__{provider: provider, name: name}
+  end
+
+  @doc """
+  Formats a Model as a "provider:name" string for use with ReqLLM/LLMDB.
+  """
+  @spec to_string(t()) :: String.t()
+  def to_string(%__MODULE__{provider: provider, name: name}) do
+    "#{provider}:#{name}"
+  end
+
+  @doc """
+  Parses a "provider:name" string into a Model struct.
+
+  Returns `{:ok, model}` on success, `:error` on invalid input.
+
+  ## Examples
+
+      iex> Model.parse("openrouter:openai/gpt-5.1-codex")
+      {:ok, %Model{provider: "openrouter", name: "openai/gpt-5.1-codex"}}
+
+      iex> Model.parse("invalid")
+      :error
+  """
+  @spec parse(String.t()) :: {:ok, t()} | :error
+  def parse(string) when is_binary(string) do
+    case String.split(string, ":", parts: 2) do
+      [provider, name] when provider != "" and name != "" ->
+        {:ok, new(provider, name)}
+
+      _ ->
+        :error
+    end
+  end
+
+  def parse(_), do: :error
+
+  @doc """
+  Parses a "provider:name" string, raising on invalid input.
+  """
+  @spec parse!(String.t()) :: t()
+  def parse!(string) when is_binary(string) do
+    case parse(string) do
+      {:ok, model} -> model
+      :error -> raise ArgumentError, "invalid model string: #{inspect(string)}"
+    end
+  end
+
+  @doc """
+  Extracts the provider from a model string without building a full struct.
+
+  This is the canonical way to determine which provider a model belongs to.
+  Falls back to "openrouter" for unprefixed model strings (legacy behaviour).
+
+  ## Examples
+
+      iex> Model.provider_from_string("openrouter:openai/gpt-5.1-codex")
+      "openrouter"
+
+      iex> Model.provider_from_string("anthropic:claude-sonnet-4-5")
+      "anthropic"
+
+      iex> Model.provider_from_string("some-model-without-prefix")
+      "openrouter"
+  """
+  @spec provider_from_string(String.t()) :: String.t()
+  def provider_from_string(string) when is_binary(string) do
+    case parse(string) do
+      {:ok, model} -> model.provider
+      :error -> "openrouter"
+    end
+  end
+
+  @doc """
+  Converts a client-sent model selection map to a Model struct.
+
+  Accepts both string-keyed maps (from JSON/client wire format) and
+  atom-keyed maps (from internal Elixir code):
+
+      %{"provider" => "openrouter", "value" => "openai/gpt-5.1-codex"}
+      %{provider: "openrouter", value: "openai/gpt-5.1-codex"}
+
+  Returns `{:ok, model}` or `:error`.
+  """
+  @spec from_client_params(map() | nil) :: {:ok, t()} | :error
+  def from_client_params(%{"provider" => provider, "value" => value})
+      when is_binary(provider) and is_binary(value) and provider != "" and value != "" do
+    {:ok, new(provider, value)}
+  end
+
+  def from_client_params(%{provider: provider, value: value})
+      when is_binary(provider) and is_binary(value) and provider != "" and value != "" do
+    {:ok, new(provider, value)}
+  end
+
+  def from_client_params(_), do: :error
+
+  @doc """
+  Converts a Model to the client-facing map format.
+  """
+  @spec to_client_params(t()) :: %{provider: String.t(), value: String.t()}
+  def to_client_params(%__MODULE__{provider: provider, name: name}) do
+    %{provider: provider, value: name}
+  end
+end
+
+defimpl String.Chars, for: FrontmanServer.Providers.Model do
+  def to_string(model), do: FrontmanServer.Providers.Model.to_string(model)
+end
+
+defimpl Inspect, for: FrontmanServer.Providers.Model do
+  def inspect(model, _opts) do
+    "#Model<#{FrontmanServer.Providers.Model.to_string(model)}>"
+  end
+end

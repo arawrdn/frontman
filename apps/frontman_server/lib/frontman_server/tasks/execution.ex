@@ -20,7 +20,7 @@ defmodule FrontmanServer.Tasks.Execution do
   alias FrontmanServer.Image
   alias FrontmanServer.Observability.TelemetryEvents
   alias FrontmanServer.Providers
-  alias FrontmanServer.Providers.ResolvedKey
+  alias FrontmanServer.Providers.{Codex, Model, ResolvedKey}
   alias FrontmanServer.Tasks
   alias FrontmanServer.Tasks.Execution.{Framework, RootAgent, ToolExecutor}
   alias FrontmanServer.Tasks.{Interaction, Task}
@@ -68,7 +68,7 @@ defmodule FrontmanServer.Tasks.Execution do
   def run(%Scope{} = scope, %Task{} = task, opts \\ []) do
     tools = Keyword.get(opts, :tools, [])
     env_api_key = Keyword.get(opts, :env_api_key, %{})
-    model = Keyword.get(opts, :model) |> build_model_string()
+    model = opts |> Keyword.get(:model) |> model_to_string()
 
     # Resolve API key at the domain layer (earliest point)
     case Providers.prepare_api_key(scope, model, env_api_key) do
@@ -410,12 +410,18 @@ defmodule FrontmanServer.Tasks.Execution do
 
   # --- Model String Helpers ---
 
-  defp build_model_string(%{provider: provider, value: value})
-       when is_binary(provider) and is_binary(value) do
-    "#{provider}:#{value}"
+  # Convert a model selection (Model struct, client params map, or nil) to a
+  # "provider:name" string for use with ReqLLM/LLMDB.
+  defp model_to_string(%Model{} = model), do: Model.to_string(model)
+
+  defp model_to_string(params) when is_map(params) do
+    case Model.from_client_params(params) do
+      {:ok, model} -> Model.to_string(model)
+      :error -> nil
+    end
   end
 
-  defp build_model_string(_), do: nil
+  defp model_to_string(_), do: nil
 
   # --- Codex Helpers ---
 
@@ -425,60 +431,14 @@ defmodule FrontmanServer.Tasks.Execution do
          model: model_string
        })
        when is_binary(endpoint) do
-    model_string = normalize_chatgpt_codex_model(model_string)
-
-    base_url = String.replace_suffix(endpoint, "/responses", "")
-
-    extra_headers =
-      if is_binary(account_id) and account_id != "" do
-        [{"ChatGPT-Account-Id", account_id}]
-      else
-        []
-      end
-
-    updated_opts =
-      llm_opts
-      |> Keyword.put(:base_url, base_url)
-      |> Keyword.put(:extra_headers, extra_headers)
-      |> Keyword.delete(:max_tokens)
-      |> Keyword.update(:provider_options, [store: false], &Keyword.put(&1, :store, false))
-
-    model_spec =
-      case ReqLLM.model(model_string) do
-        {:ok, model} -> force_responses_protocol(model)
-        {:error, _} -> synthesize_codex_model(model_string)
-      end
+    model_string = Codex.normalize_model(model_string)
+    updated_opts = Codex.patch_llm_opts(llm_opts, endpoint, account_id)
+    model_spec = Codex.resolve_model(model_string)
 
     {updated_opts, model_spec}
   end
 
   defp maybe_add_codex_opts(llm_opts, %ResolvedKey{model: model}), do: {llm_opts, model}
-
-  defp normalize_chatgpt_codex_model("openai:codex-5.3") do
-    Logger.debug("Normalizing openai:codex-5.3 → openai:gpt-5.3-codex for Codex endpoint")
-    "openai:gpt-5.3-codex"
-  end
-
-  defp normalize_chatgpt_codex_model(model), do: model
-
-  defp force_responses_protocol(model) do
-    extra = model.extra || %{}
-    wire = Map.get(extra, :wire, %{})
-    patched_extra = Map.put(extra, :wire, Map.put(wire, :protocol, "openai_responses"))
-    %{model | extra: patched_extra}
-  end
-
-  defp synthesize_codex_model("openai:gpt-5.3-codex") do
-    case ReqLLM.model("openai:gpt-5.2-codex") do
-      {:ok, base} ->
-        %{force_responses_protocol(base) | id: "gpt-5.3-codex", model: "gpt-5.3-codex"}
-
-      {:error, _} ->
-        "openai:gpt-5.3-codex"
-    end
-  end
-
-  defp synthesize_codex_model(model_string), do: model_string
 
   @doc false
   def error_message(%Scope{}, :usage_limit_exceeded),

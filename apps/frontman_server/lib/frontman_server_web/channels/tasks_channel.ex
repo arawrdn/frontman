@@ -11,6 +11,7 @@ defmodule FrontmanServerWeb.TasksChannel do
   require Logger
 
   alias AgentClientProtocol, as: ACP
+  alias FrontmanServer.Providers.Registry
   alias FrontmanServer.Tasks
   alias FrontmanServer.Tasks.Execution.Framework
   alias FrontmanServer.Tasks.TitleGenerator
@@ -199,15 +200,7 @@ defmodule FrontmanServerWeb.TasksChannel do
 
   # Extract env API keys from clientInfo metadata (e.g., OPENROUTER_API_KEY, ANTHROPIC_API_KEY from project env)
   defp extract_env_api_key(client_info) when is_map(client_info) do
-    metadata = get_in(client_info, ["metadata"]) || %{}
-
-    [{"openrouterKeyValue", "openrouter"}, {"anthropicKeyValue", "anthropic"}]
-    |> Enum.reduce(%{}, fn {meta_key, provider}, acc ->
-      case metadata[meta_key] do
-        key when is_binary(key) and key != "" -> Map.put(acc, provider, key)
-        _ -> acc
-      end
-    end)
+    client_info |> get_in(["metadata"]) |> Registry.extract_env_keys()
   end
 
   defp extract_env_api_key(_), do: %{}

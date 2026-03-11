@@ -15,6 +15,7 @@ defmodule FrontmanServer.Tasks.TitleGenerator do
 
   alias FrontmanServer.Accounts.Scope
   alias FrontmanServer.Providers
+  alias FrontmanServer.Providers.{Codex, Model}
   alias FrontmanServer.Tasks
   alias FrontmanServer.Tasks.StreamCleanup
   alias ReqLLM.Message.ContentPart
@@ -126,10 +127,15 @@ defmodule FrontmanServer.Tasks.TitleGenerator do
     end
   end
 
-  # Convert the model selection map to a "provider:value" string
-  defp model_to_string(%{provider: provider, value: value})
-       when is_binary(provider) and is_binary(value) and provider != "" and value != "" do
-    "#{provider}:#{value}"
+  # Convert a model selection (Model struct, client params map, or nil) to a
+  # "provider:name" string. Falls back to @fallback_model for nil/invalid input.
+  defp model_to_string(%Model{} = model), do: Model.to_string(model)
+
+  defp model_to_string(params) when is_map(params) do
+    case Model.from_client_params(params) do
+      {:ok, model} -> Model.to_string(model)
+      :error -> @fallback_model
+    end
   end
 
   defp model_to_string(_), do: @fallback_model
@@ -181,65 +187,16 @@ defmodule FrontmanServer.Tasks.TitleGenerator do
 
     case Keyword.get(key_opts, :codex_endpoint) do
       endpoint when is_binary(endpoint) ->
-        normalized_model = normalize_chatgpt_codex_model(model_string)
-        base_url = String.replace_suffix(endpoint, "/responses", "")
-
-        extra_headers =
-          case Keyword.get(key_opts, :chatgpt_account_id) do
-            account_id when is_binary(account_id) and account_id != "" ->
-              [{"ChatGPT-Account-Id", account_id}]
-
-            _ ->
-              []
-          end
-
-        opts =
-          base_opts
-          |> Keyword.put(:base_url, base_url)
-          |> Keyword.put(:extra_headers, extra_headers)
-          |> Keyword.delete(:max_tokens)
-          |> Keyword.update(:provider_options, [store: false], &Keyword.put(&1, :store, false))
-
-        model_spec = resolve_or_synthesize_codex_model(normalized_model)
+        normalized_model = Codex.normalize_model(model_string)
+        account_id = Keyword.get(key_opts, :chatgpt_account_id)
+        opts = Codex.patch_llm_opts(base_opts, endpoint, account_id)
+        model_spec = Codex.resolve_model(normalized_model)
         {model_spec, opts}
 
       _ ->
         {model_string, base_opts}
     end
   end
-
-  defp normalize_chatgpt_codex_model("openai:codex-5.3"), do: "openai:gpt-5.3-codex"
-  defp normalize_chatgpt_codex_model(model), do: model
-
-  # Resolve a model from LLMDB and force wire.protocol to openai_responses,
-  # or synthesize a spec from gpt-5.2-codex when the model isn't cataloged yet.
-  defp resolve_or_synthesize_codex_model(model_string) do
-    case ReqLLM.model(model_string) do
-      {:ok, model} -> force_responses_protocol(model)
-      {:error, _} -> synthesize_codex_model(model_string)
-    end
-  end
-
-  defp force_responses_protocol(model) do
-    extra = model.extra || %{}
-    wire = Map.get(extra, :wire, %{})
-    patched_extra = Map.put(extra, :wire, Map.put(wire, :protocol, "openai_responses"))
-    %{model | extra: patched_extra}
-  end
-
-  # Build a temporary model spec for ChatGPT Codex models not yet in LLMDB.
-  # Clones gpt-5.2-codex and swaps the wire model id.
-  defp synthesize_codex_model("openai:gpt-5.3-codex") do
-    case ReqLLM.model("openai:gpt-5.2-codex") do
-      {:ok, base} ->
-        %{force_responses_protocol(base) | id: "gpt-5.3-codex", model: "gpt-5.3-codex"}
-
-      {:error, _} ->
-        "openai:gpt-5.3-codex"
-    end
-  end
-
-  defp synthesize_codex_model(model_string), do: model_string
 
   defp broadcast_title_update(scope, task_id, title) do
     Phoenix.PubSub.broadcast(

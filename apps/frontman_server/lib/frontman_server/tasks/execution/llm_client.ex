@@ -9,23 +9,17 @@ defmodule FrontmanServer.Tasks.Execution.LLMClient do
   this client is created. The resolved key is passed via `llm_opts[:api_key]`.
   """
 
-  @default_model "openrouter:openai/gpt-5.1-codex"
-
   use TypedStruct
 
+  alias FrontmanServer.Providers
   alias SwarmAi.SchemaTransformer
 
   typedstruct do
-    field(:model, String.t(), default: @default_model)
+    field(:model, String.t(), default: Providers.default_model())
     field(:tools, [SwarmAi.Tool.t()], default: [])
     # llm_opts must include :api_key (resolved at domain layer)
     field(:llm_opts, keyword(), default: [])
   end
-
-  @doc """
-  Returns the default model.
-  """
-  def default_model, do: @default_model
 
   @doc """
   Creates a new LLMClient.

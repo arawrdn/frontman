@@ -24,7 +24,9 @@ defmodule FrontmanServer.Providers do
     AnthropicOAuth,
     ApiKey,
     ChatGPTOAuth,
+    Model,
     OAuthToken,
+    Registry,
     ResolvedKey,
     UserKeyUsage
   }
@@ -115,16 +117,13 @@ defmodule FrontmanServer.Providers do
 
   @doc """
   Extracts provider name from model string.
+
+  Delegates to `Model.provider_from_string/1` which parses the "provider:name"
+  format. Falls back to "openrouter" for unprefixed strings.
   """
   @spec provider_from_model(String.t()) :: String.t()
   def provider_from_model(model) when is_binary(model) do
-    cond do
-      String.starts_with?(model, "openrouter:") -> "openrouter"
-      String.starts_with?(model, "anthropic:") -> "anthropic"
-      String.starts_with?(model, "google:") -> "google"
-      String.starts_with?(model, "openai:") -> "openai"
-      true -> "openrouter"
-    end
+    Model.provider_from_string(model)
   end
 
   ## API Key Management
@@ -343,17 +342,11 @@ defmodule FrontmanServer.Providers do
 
   @doc """
   Fetches a server API key for the provider from environment config.
+
+  Delegates to `Registry.get_server_api_key/1`.
   """
   def get_server_api_key(provider) when is_binary(provider) do
-    provider = String.downcase(provider)
-
-    case provider do
-      "openrouter" -> Application.get_env(:frontman_server, :openrouter_api_key)
-      "anthropic" -> Application.get_env(:frontman_server, :anthropic_api_key)
-      "google" -> Application.get_env(:frontman_server, :google_api_key)
-      "openai" -> Application.get_env(:frontman_server, :openai_api_key)
-      _ -> nil
-    end
+    Registry.get_server_api_key(provider)
   end
 
   ## OAuth Token Management

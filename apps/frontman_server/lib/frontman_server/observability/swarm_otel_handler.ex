@@ -34,6 +34,8 @@ defmodule FrontmanServer.Observability.SwarmOtelHandler do
 
   require Logger
 
+  alias FrontmanServer.Providers.Model
+
   @tables [
     :frontman_spans_loop,
     :frontman_spans_swarm_step,
@@ -645,30 +647,33 @@ defmodule FrontmanServer.Observability.SwarmOtelHandler do
   defp format_model_name(nil), do: "unknown"
   defp format_model_name(model), do: inspect(model)
 
+  # Extract the LLM system (vendor) from a model reference.
+  # For "provider:name" strings, parses the provider prefix.
+  # For LLMDB.Model structs, uses the :provider atom field directly.
   defp llm_system_from_model(model) when is_binary(model) do
-    cond do
-      String.contains?(model, "claude") -> "anthropic"
-      String.contains?(model, "gpt") -> "openai"
-      String.contains?(model, "gemini") -> "google"
-      String.contains?(model, "grok") -> "xai"
-      true -> "unknown"
+    case Model.parse(model) do
+      {:ok, parsed} -> parsed.provider
+      :error -> "unknown"
     end
   end
 
-  defp llm_system_from_model(%{id: id}) when is_binary(id), do: llm_system_from_model(id)
+  defp llm_system_from_model(%{provider: provider}) when is_atom(provider),
+    do: Atom.to_string(provider)
+
   defp llm_system_from_model(_), do: "unknown"
 
+  # Extract the LLM provider from a model reference.
+  # Same logic as llm_system_from_model.
   defp llm_provider_from_model(model) when is_binary(model) do
-    cond do
-      String.contains?(model, "claude") -> "anthropic"
-      String.contains?(model, "gpt") -> "openai"
-      String.contains?(model, "gemini") -> "google"
-      String.contains?(model, "grok") -> "xai"
-      true -> "unknown"
+    case Model.parse(model) do
+      {:ok, parsed} -> parsed.provider
+      :error -> "unknown"
     end
   end
 
-  defp llm_provider_from_model(%{id: id}) when is_binary(id), do: llm_provider_from_model(id)
+  defp llm_provider_from_model(%{provider: provider}) when is_atom(provider),
+    do: Atom.to_string(provider)
+
   defp llm_provider_from_model(_), do: "unknown"
 
   defp truncate(string, max_length) when is_binary(string) do
