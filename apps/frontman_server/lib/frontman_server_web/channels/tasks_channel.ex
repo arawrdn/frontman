@@ -14,7 +14,6 @@ defmodule FrontmanServerWeb.TasksChannel do
   alias FrontmanServer.Providers.Registry
   alias FrontmanServer.Tasks
   alias FrontmanServer.Tasks.Execution.Framework
-  alias FrontmanServer.Tasks.TitleGenerator
   alias FrontmanServerWeb.ACPHistory
 
   @acp_protocol_version ACP.protocol_version()
@@ -27,7 +26,7 @@ defmodule FrontmanServerWeb.TasksChannel do
       # Subscribe to title updates for this user
       Phoenix.PubSub.subscribe(
         FrontmanServer.PubSub,
-        TitleGenerator.pubsub_topic(socket.assigns.scope.user.id)
+        Tasks.title_pubsub_topic(socket.assigns.scope.user.id)
       )
 
       socket = assign(socket, :acp_initialized, false)

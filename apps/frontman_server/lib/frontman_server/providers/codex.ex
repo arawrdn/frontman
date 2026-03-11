@@ -1,6 +1,6 @@
 defmodule FrontmanServer.Providers.Codex do
   @moduledoc """
-  Shared helpers for ChatGPT Codex endpoint wiring.
+  ChatGPT Codex endpoint wiring.
 
   When a user authenticates via ChatGPT OAuth, the resolved key carries a
   `codex_endpoint` URL (e.g. `"https://chatgpt.com/backend-api/codex/responses"`).
@@ -14,8 +14,8 @@ defmodule FrontmanServer.Providers.Codex do
     * Model alias normalisation (`codex-5.3` → `gpt-5.3-codex`)
     * Model synthesis for entries not yet in LLMDB
 
-  Both `Execution` and `TitleGenerator` need this logic — it lives here
-  so it's defined exactly once.
+  Used by `ResolvedKey.to_llm_args/2` to transform connection config when
+  the resolved key carries a Codex endpoint.
   """
 
   require Logger

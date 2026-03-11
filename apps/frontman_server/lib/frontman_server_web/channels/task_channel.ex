@@ -12,7 +12,6 @@ defmodule FrontmanServerWeb.TaskChannel do
   alias AgentClientProtocol, as: ACP
   alias FrontmanServer.Providers.{Model, Registry}
   alias FrontmanServer.Tasks
-  alias FrontmanServer.Tasks.TitleGenerator
   alias FrontmanServer.Tasks.Todos
   alias FrontmanServer.Tools
   alias FrontmanServerWeb.ACPHistory
@@ -436,7 +435,7 @@ defmodule FrontmanServerWeb.TaskChannel do
     else
       case Tasks.get_short_desc(scope, task_id) do
         {:ok, "New Task"} ->
-          TitleGenerator.generate_async(scope, task_id, text_summary, model, env_api_key)
+          Tasks.generate_title(scope, task_id, text_summary, model, env_api_key)
           assign(socket, :title_generation_started, true)
 
         _ ->

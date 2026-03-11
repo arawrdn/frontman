@@ -15,18 +15,18 @@ defmodule FrontmanServer.Providers.ModelCatalogTest do
       free = ModelCatalog.models("openrouter", :free)
       full = ModelCatalog.models("openrouter", :full)
       assert length(free) < length(full)
-      assert length(free) > 0
+      assert free != []
     end
 
     test "returns full model list for anthropic" do
       models = ModelCatalog.models("anthropic", :full)
-      assert length(models) > 0
+      assert models != []
       assert Enum.any?(models, &(&1.value == "claude-sonnet-4-5"))
     end
 
     test "returns full model list for openai" do
       models = ModelCatalog.models("openai", :full)
-      assert length(models) > 0
+      assert models != []
       assert Enum.any?(models, &String.contains?(&1.value, "codex"))
     end
 
@@ -77,7 +77,7 @@ defmodule FrontmanServer.Providers.ModelCatalogTest do
       assert is_binary(entry.name)
       assert entry.name != ""
       assert is_list(entry.models)
-      assert length(entry.models) > 0
+      assert entry.models != []
     end
 
     test "uses display name from Registry" do

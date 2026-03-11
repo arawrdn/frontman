@@ -52,14 +52,20 @@ defmodule FrontmanServer.Providers do
     - model: The model string (e.g., "openrouter:openai/gpt-4"), or nil for default
     - env_api_key: Map of provider => api_key from client's environment
 
+  ## Options
+
+    - `:skip_quota` - When `true`, bypasses usage quota checks on server keys.
+      Use for cheap internal operations (e.g., title generation) that should
+      always succeed regardless of the user's free-tier usage.
+
   ## Returns
     - `{:ok, ResolvedKey.t()}` - Ready to use for LLM calls
     - `{:error, :no_api_key}` - No API key available
     - `{:error, :usage_limit_exceeded}` - Server key quota exhausted
   """
-  @spec prepare_api_key(Scope.t() | nil, String.t() | nil, map()) ::
+  @spec prepare_api_key(Scope.t() | nil, String.t() | nil, map(), keyword()) ::
           {:ok, ResolvedKey.t()} | {:error, :no_api_key | :usage_limit_exceeded}
-  def prepare_api_key(scope, model, env_api_key \\ %{}) do
+  def prepare_api_key(scope, model, env_api_key \\ %{}, opts \\ []) do
     model = model || @default_model
     provider = provider_from_model(model)
 
@@ -74,20 +80,21 @@ defmodule FrontmanServer.Providers do
         {:ok, ResolvedKey.new(provider, key, :env_key, model)}
 
       {:server_key, key} ->
-        prepare_server_key(scope, provider, key, model)
+        prepare_server_key(scope, provider, key, model, opts)
     end
   end
 
-  defp prepare_server_key(_scope, _provider, key, _model) when not is_binary(key) or key == "" do
+  defp prepare_server_key(_scope, _provider, key, _model, _opts)
+       when not is_binary(key) or key == "" do
     {:error, :no_api_key}
   end
 
-  defp prepare_server_key(nil, provider, key, model) do
+  defp prepare_server_key(nil, provider, key, model, _opts) do
     {:ok, ResolvedKey.new(provider, key, :server_key, model)}
   end
 
-  defp prepare_server_key(scope, provider, key, model) do
-    if has_remaining_usage?(scope, provider) do
+  defp prepare_server_key(scope, provider, key, model, opts) do
+    if opts[:skip_quota] || has_remaining_usage?(scope, provider) do
       {:ok, ResolvedKey.new(provider, key, :server_key, model)}
     else
       {:error, :usage_limit_exceeded}

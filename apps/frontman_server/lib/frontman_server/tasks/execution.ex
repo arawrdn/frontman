@@ -20,7 +20,7 @@ defmodule FrontmanServer.Tasks.Execution do
   alias FrontmanServer.Image
   alias FrontmanServer.Observability.TelemetryEvents
   alias FrontmanServer.Providers
-  alias FrontmanServer.Providers.{Codex, Model, Registry, ResolvedKey}
+  alias FrontmanServer.Providers.{Model, Registry, ResolvedKey}
   alias FrontmanServer.Tasks
   alias FrontmanServer.Tasks.Execution.{Framework, RootAgent, ToolExecutor}
   alias FrontmanServer.Tasks.{Interaction, Task}
@@ -230,16 +230,7 @@ defmodule FrontmanServer.Tasks.Execution do
             struct -> struct.summary
           end
 
-        # Build llm_opts with resolved key info
-        base_llm_opts = [
-          api_key: resolved_key.api_key,
-          requires_mcp_prefix: resolved_key.requires_mcp_prefix,
-          identity_override: resolved_key.identity_override,
-          oauth_mode: resolved_key.oauth_mode,
-          max_tokens: 16_384
-        ]
-
-        {llm_opts, model_spec} = maybe_add_codex_opts(base_llm_opts, resolved_key)
+        {model_spec, llm_opts} = ResolvedKey.to_llm_args(resolved_key, max_tokens: 16_384)
 
         RootAgent.new(
           tools: tools,
@@ -409,23 +400,6 @@ defmodule FrontmanServer.Tasks.Execution do
       }
     end)
   end
-
-  # --- Codex Helpers ---
-
-  defp maybe_add_codex_opts(llm_opts, %ResolvedKey{
-         codex_endpoint: endpoint,
-         chatgpt_account_id: account_id,
-         model: model_string
-       })
-       when is_binary(endpoint) do
-    model_string = Codex.normalize_model(model_string)
-    updated_opts = Codex.patch_llm_opts(llm_opts, endpoint, account_id)
-    model_spec = Codex.resolve_model(model_string)
-
-    {updated_opts, model_spec}
-  end
-
-  defp maybe_add_codex_opts(llm_opts, %ResolvedKey{model: model}), do: {llm_opts, model}
 
   @doc false
   def error_message(%Scope{}, :usage_limit_exceeded),
