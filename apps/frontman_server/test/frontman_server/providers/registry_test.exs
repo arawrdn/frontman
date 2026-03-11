@@ -21,7 +21,8 @@ defmodule FrontmanServer.Providers.RegistryTest do
         :display_name,
         :priority,
         :oauth_provider,
-        :env_key_param
+        :env_key_param,
+        :max_image_dimension
       ]
 
       for {_provider, entry} <- Registry.all() do
@@ -185,6 +186,27 @@ defmodule FrontmanServer.Providers.RegistryTest do
 
     test "returns nil for unknown provider" do
       assert Registry.priority("fake") == nil
+    end
+  end
+
+  describe "max_image_dimension/1" do
+    test "returns dimension limit for anthropic" do
+      assert Registry.max_image_dimension("anthropic") == 7680
+    end
+
+    test "returns nil for providers without a hard limit" do
+      assert Registry.max_image_dimension("openai") == nil
+      assert Registry.max_image_dimension("openrouter") == nil
+      assert Registry.max_image_dimension("google") == nil
+      assert Registry.max_image_dimension("xai") == nil
+    end
+
+    test "returns nil for unknown provider" do
+      assert Registry.max_image_dimension("fake") == nil
+    end
+
+    test "is case-insensitive" do
+      assert Registry.max_image_dimension("Anthropic") == 7680
     end
   end
 

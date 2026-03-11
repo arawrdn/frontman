@@ -28,7 +28,8 @@ defmodule FrontmanServer.Providers.Registry do
           display_name: String.t(),
           priority: non_neg_integer(),
           oauth_provider: String.t() | nil,
-          env_key_param: String.t() | nil
+          env_key_param: String.t() | nil,
+          max_image_dimension: pos_integer() | nil
         }
 
   @providers %{
@@ -38,7 +39,8 @@ defmodule FrontmanServer.Providers.Registry do
       display_name: "ChatGPT Pro/Plus",
       priority: 10,
       oauth_provider: "chatgpt",
-      env_key_param: nil
+      env_key_param: nil,
+      max_image_dimension: nil
     },
     "anthropic" => %{
       config_key: :anthropic_api_key,
@@ -46,7 +48,9 @@ defmodule FrontmanServer.Providers.Registry do
       display_name: "Anthropic (Claude Pro/Max)",
       priority: 20,
       oauth_provider: "anthropic",
-      env_key_param: "hasAnthropicEnvKey"
+      env_key_param: "hasAnthropicEnvKey",
+      # Anthropic hard-rejects images > 8000px per side; 7680 leaves margin.
+      max_image_dimension: 7680
     },
     "openrouter" => %{
       config_key: :openrouter_api_key,
@@ -54,7 +58,8 @@ defmodule FrontmanServer.Providers.Registry do
       display_name: "OpenRouter",
       priority: 30,
       oauth_provider: nil,
-      env_key_param: "hasEnvKey"
+      env_key_param: "hasEnvKey",
+      max_image_dimension: nil
     },
     "google" => %{
       config_key: :google_api_key,
@@ -62,7 +67,8 @@ defmodule FrontmanServer.Providers.Registry do
       display_name: "Google",
       priority: 40,
       oauth_provider: nil,
-      env_key_param: nil
+      env_key_param: nil,
+      max_image_dimension: nil
     },
     "xai" => %{
       config_key: :xai_api_key,
@@ -70,7 +76,8 @@ defmodule FrontmanServer.Providers.Registry do
       display_name: "xAI",
       priority: 50,
       oauth_provider: nil,
-      env_key_param: nil
+      env_key_param: nil,
+      max_image_dimension: nil
     }
   }
 
@@ -141,6 +148,17 @@ defmodule FrontmanServer.Providers.Registry do
   @spec priority(String.t()) :: non_neg_integer() | nil
   def priority(provider) when is_binary(provider) do
     get_field(provider, :priority)
+  end
+
+  @doc """
+  Returns the maximum allowed image dimension (pixels per side) for a provider,
+  or `nil` if the provider does not enforce a hard limit.
+
+  Providers that return `nil` are assumed to auto-resize images.
+  """
+  @spec max_image_dimension(String.t()) :: pos_integer() | nil
+  def max_image_dimension(provider) when is_binary(provider) do
+    get_field(provider, :max_image_dimension)
   end
 
   # ── Env key helpers ────────────────────────────────────────────────

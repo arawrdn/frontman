@@ -20,7 +20,7 @@ defmodule FrontmanServer.Tasks.Execution do
   alias FrontmanServer.Image
   alias FrontmanServer.Observability.TelemetryEvents
   alias FrontmanServer.Providers
-  alias FrontmanServer.Providers.{Codex, Model, ResolvedKey}
+  alias FrontmanServer.Providers.{Codex, Model, Registry, ResolvedKey}
   alias FrontmanServer.Tasks
   alias FrontmanServer.Tasks.Execution.{Framework, RootAgent, ToolExecutor}
   alias FrontmanServer.Tasks.{Interaction, Task}
@@ -98,7 +98,7 @@ defmodule FrontmanServer.Tasks.Execution do
   """
   @spec notify_tool_result(Scope.t(), String.t(), term(), boolean()) :: :ok
   def notify_tool_result(%Scope{}, tool_call_id, result, is_error) do
-    case Registry.lookup(FrontmanServer.ToolCallRegistry, {:tool_call, tool_call_id}) do
+    case Elixir.Registry.lookup(FrontmanServer.ToolCallRegistry, {:tool_call, tool_call_id}) do
       [{_pid, %{caller_pid: caller}}] ->
         # MCP tool - send result to waiting executor
         encoded = encode_result_for_swarm(result)
@@ -257,23 +257,25 @@ defmodule FrontmanServer.Tasks.Execution do
     end
   end
 
-  # Anthropic hard-rejects images > 8000px per side. Other providers auto-resize.
-  defp maybe_constrain_images(messages, "anthropic") do
-    Enum.map(messages, fn msg ->
-      %{msg | content: Enum.map(msg.content, &constrain_image_part/1)}
-    end)
+  # Providers that declare a max_image_dimension hard-reject images exceeding
+  # that limit (e.g. Anthropic at 7680px). Others auto-resize so we skip.
+  defp maybe_constrain_images(messages, provider) do
+    case Registry.max_image_dimension(provider) do
+      nil -> messages
+      max -> Enum.map(messages, &constrain_message_images(&1, max))
+    end
   end
 
-  defp maybe_constrain_images(messages, _provider), do: messages
+  defp constrain_message_images(msg, max) do
+    %{msg | content: Enum.map(msg.content, &constrain_image_part(&1, max))}
+  end
 
-  defp constrain_image_part(%Message.ContentPart{type: :image, data: data} = part) do
-    case Image.check_dimensions(data) do
+  defp constrain_image_part(%Message.ContentPart{type: :image, data: data} = part, max) do
+    case Image.check_dimensions(data, max) do
       :ok ->
         part
 
       {:too_large, width, height} ->
-        max = Image.max_dimension()
-
         Sentry.capture_message("Image exceeded provider dimension limit",
           level: :warning,
           extra: %{width: width, height: height, max_dimension: max}
@@ -287,7 +289,7 @@ defmodule FrontmanServer.Tasks.Execution do
     end
   end
 
-  defp constrain_image_part(part), do: part
+  defp constrain_image_part(part, _max), do: part
 
   defp broadcast(topic, message) do
     Phoenix.PubSub.broadcast(FrontmanServer.PubSub, topic, message)
