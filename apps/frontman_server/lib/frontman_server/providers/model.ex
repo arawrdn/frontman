@@ -130,6 +130,37 @@ defmodule FrontmanServer.Providers.Model do
   def from_client_params(_), do: :error
 
   @doc """
+  Tries to extract a "provider:name" string from a model selection.
+
+  Accepts a Model struct, a client params map (string or atom keys),
+  or nil/other. Returns the formatted string on success, `nil` otherwise.
+
+  Callers apply their own fallback policy (e.g. `|| @fallback_model`).
+
+  ## Examples
+
+      iex> Model.resolve_string(Model.new("openai", "gpt-5"))
+      "openai:gpt-5"
+
+      iex> Model.resolve_string(%{"provider" => "openai", "value" => "gpt-5"})
+      "openai:gpt-5"
+
+      iex> Model.resolve_string(nil)
+      nil
+  """
+  @spec resolve_string(t() | map() | nil) :: String.t() | nil
+  def resolve_string(%__MODULE__{} = model), do: __MODULE__.to_string(model)
+
+  def resolve_string(params) when is_map(params) do
+    case from_client_params(params) do
+      {:ok, model} -> __MODULE__.to_string(model)
+      :error -> nil
+    end
+  end
+
+  def resolve_string(_), do: nil
+
+  @doc """
   Converts a Model to the client-facing map format.
   """
   @spec to_client_params(t()) :: %{provider: String.t(), value: String.t()}

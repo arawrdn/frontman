@@ -166,6 +166,36 @@ defmodule FrontmanServer.Providers.ModelTest do
     end
   end
 
+  describe "resolve_string/1" do
+    test "formats a Model struct" do
+      model = Model.new("openai", "gpt-5")
+      assert Model.resolve_string(model) == "openai:gpt-5"
+    end
+
+    test "parses valid string-keyed client params" do
+      params = %{"provider" => "openai", "value" => "gpt-5"}
+      assert Model.resolve_string(params) == "openai:gpt-5"
+    end
+
+    test "parses valid atom-keyed client params" do
+      params = %{provider: "anthropic", value: "claude-sonnet-4-5"}
+      assert Model.resolve_string(params) == "anthropic:claude-sonnet-4-5"
+    end
+
+    test "returns nil for invalid map" do
+      assert Model.resolve_string(%{"foo" => "bar"}) == nil
+    end
+
+    test "returns nil for nil" do
+      assert Model.resolve_string(nil) == nil
+    end
+
+    test "returns nil for non-map, non-struct values" do
+      assert Model.resolve_string(42) == nil
+      assert Model.resolve_string("just a string") == nil
+    end
+  end
+
   describe "Inspect protocol" do
     test "formats with #Model<...> prefix" do
       model = Model.new("openrouter", "openai/gpt-5.1-codex")

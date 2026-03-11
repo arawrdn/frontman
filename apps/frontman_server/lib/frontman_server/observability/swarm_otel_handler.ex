@@ -647,34 +647,26 @@ defmodule FrontmanServer.Observability.SwarmOtelHandler do
   defp format_model_name(nil), do: "unknown"
   defp format_model_name(model), do: inspect(model)
 
-  # Extract the LLM system (vendor) from a model reference.
+  # Extract the provider string from a model reference.
   # For "provider:name" strings, parses the provider prefix.
   # For LLMDB.Model structs, uses the :provider atom field directly.
-  defp llm_system_from_model(model) when is_binary(model) do
+  defp provider_string_from_model(model) when is_binary(model) do
     case Model.parse(model) do
       {:ok, parsed} -> parsed.provider
       :error -> "unknown"
     end
   end
 
-  defp llm_system_from_model(%{provider: provider}) when is_atom(provider),
+  defp provider_string_from_model(%{provider: provider}) when is_atom(provider),
     do: Atom.to_string(provider)
 
-  defp llm_system_from_model(_), do: "unknown"
+  defp provider_string_from_model(_), do: "unknown"
 
-  # Extract the LLM provider from a model reference.
-  # Same logic as llm_system_from_model.
-  defp llm_provider_from_model(model) when is_binary(model) do
-    case Model.parse(model) do
-      {:ok, parsed} -> parsed.provider
-      :error -> "unknown"
-    end
-  end
-
-  defp llm_provider_from_model(%{provider: provider}) when is_atom(provider),
-    do: Atom.to_string(provider)
-
-  defp llm_provider_from_model(_), do: "unknown"
+  # Both attributes use the same extraction logic — OpenInference uses
+  # "llm.system" for the vendor and "llm.provider" for the hosting provider,
+  # which are identical in our case.
+  defp llm_system_from_model(model), do: provider_string_from_model(model)
+  defp llm_provider_from_model(model), do: provider_string_from_model(model)
 
   defp truncate(string, max_length) when is_binary(string) do
     if String.length(string) > max_length do

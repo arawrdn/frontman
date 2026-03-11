@@ -68,7 +68,7 @@ defmodule FrontmanServer.Tasks.Execution do
   def run(%Scope{} = scope, %Task{} = task, opts \\ []) do
     tools = Keyword.get(opts, :tools, [])
     env_api_key = Keyword.get(opts, :env_api_key, %{})
-    model = opts |> Keyword.get(:model) |> model_to_string()
+    model = opts |> Keyword.get(:model) |> Model.resolve_string()
 
     # Resolve API key at the domain layer (earliest point)
     case Providers.prepare_api_key(scope, model, env_api_key) do
@@ -409,21 +409,6 @@ defmodule FrontmanServer.Tasks.Execution do
       }
     end)
   end
-
-  # --- Model String Helpers ---
-
-  # Convert a model selection (Model struct, client params map, or nil) to a
-  # "provider:name" string for use with ReqLLM/LLMDB.
-  defp model_to_string(%Model{} = model), do: Model.to_string(model)
-
-  defp model_to_string(params) when is_map(params) do
-    case Model.from_client_params(params) do
-      {:ok, model} -> Model.to_string(model)
-      :error -> nil
-    end
-  end
-
-  defp model_to_string(_), do: nil
 
   # --- Codex Helpers ---
 

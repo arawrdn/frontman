@@ -24,13 +24,6 @@ defmodule FrontmanServer.Image do
   # ── Public API ──────────────────────────────────────────────────────
 
   @doc """
-  Returns the maximum allowed image dimension (pixels per side) for
-  providers that enforce hard limits (currently Anthropic only).
-  """
-  @spec max_dimension() :: pos_integer()
-  def max_dimension, do: @max_dimension
-
-  @doc """
   Returns the image extraction config for a tool, or `nil` if the tool
   does not produce images.
 

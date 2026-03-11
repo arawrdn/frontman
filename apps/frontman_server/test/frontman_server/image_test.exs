@@ -173,12 +173,10 @@ defmodule FrontmanServer.ImageTest do
       assert :ok = Image.check_dimensions("not an image")
     end
 
-    test "returns :ok at exactly max_dimension boundary" do
-      max = Image.max_dimension()
-
+    test "returns :ok at exactly default boundary (7680px)" do
       png =
         <<0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A>> <>
-          <<0::32>> <> "IHDR" <> <<max::32, max::32>> <> <<0::8>>
+          <<0::32>> <> "IHDR" <> <<7680::32, 7680::32>> <> <<0::8>>
 
       assert :ok = Image.check_dimensions(png)
     end
@@ -279,14 +277,6 @@ defmodule FrontmanServer.ImageTest do
 
     test "returns nil for unknown mcp_ tool" do
       assert nil == Image.image_tool_config("mcp_read_file")
-    end
-  end
-
-  # ── max_dimension/0 ─────────────────────────────────────────────────
-
-  describe "max_dimension/0" do
-    test "returns 7680" do
-      assert 7680 = Image.max_dimension()
     end
   end
 end

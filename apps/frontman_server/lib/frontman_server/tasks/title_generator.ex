@@ -88,7 +88,7 @@ defmodule FrontmanServer.Tasks.TitleGenerator do
   end
 
   defp generate(scope, task_id, user_prompt_text, model, env_api_key) do
-    model_string = model_to_string(model)
+    model_string = Model.resolve_string(model) || @fallback_model
 
     with {:ok, api_key, key_opts} <- resolve_api_key(scope, model_string, env_api_key),
          {:ok, title} <- call_llm(api_key, model_string, user_prompt_text, key_opts) do
@@ -126,19 +126,6 @@ defmodule FrontmanServer.Tasks.TitleGenerator do
       {:server_key, _} -> {:error, :no_key, :no_api_key}
     end
   end
-
-  # Convert a model selection (Model struct, client params map, or nil) to a
-  # "provider:name" string. Falls back to @fallback_model for nil/invalid input.
-  defp model_to_string(%Model{} = model), do: Model.to_string(model)
-
-  defp model_to_string(params) when is_map(params) do
-    case Model.from_client_params(params) do
-      {:ok, model} -> Model.to_string(model)
-      :error -> @fallback_model
-    end
-  end
-
-  defp model_to_string(_), do: @fallback_model
 
   defp save_and_broadcast(scope, task_id, title) do
     case Tasks.update_short_desc(scope, task_id, title) do
