@@ -2,28 +2,17 @@ defmodule FrontmanServer.Providers.Registry do
   @moduledoc """
   Centralised provider registry.
 
-  Every supported provider is declared exactly once in `@providers`.
-  Adding a new provider means adding a single entry here instead of
-  touching 10+ files.
+  Provider definitions live in `config/config.exs` under the
+  `:frontman_server, :providers` key.  This module reads them at
+  compile time via `Application.compile_env!/2` so adding a new
+  provider is a single config entry — no code changes needed.
 
-  ## Fields per provider
-
-    * `:config_key` – the `Application.get_env(:frontman_server, key)` atom
-      used to fetch the server-side API key from runtime config.
-    * `:env_key_name` – the metadata key the client sends when forwarding a
-      project-level API key (e.g. `"openrouterKeyValue"`).  `nil` means the
-      client never sends a key for this provider.
-    * `:display_name` – human-readable label shown in the UI.
-    * `:priority` – integer for display ordering (lower = shown first).
-    * `:oauth_provider` – the provider string used for OAuth token lookup.
-      Usually matches the provider id, but `"openai"` uses `"chatgpt"`.
-      `nil` means OAuth is not available.
-    * `:env_key_param` – the query parameter name the client sends to signal
-      it has a project-level env key for this provider. `nil` if not applicable.
+  See `config/config.exs` for the full field documentation.
   """
 
   @type provider_entry :: %{
           config_key: atom(),
+          env_var: String.t(),
           env_key_name: String.t() | nil,
           display_name: String.t(),
           priority: non_neg_integer(),
@@ -32,54 +21,7 @@ defmodule FrontmanServer.Providers.Registry do
           max_image_dimension: pos_integer() | nil
         }
 
-  @providers %{
-    "openai" => %{
-      config_key: :openai_api_key,
-      env_key_name: nil,
-      display_name: "ChatGPT Pro/Plus",
-      priority: 10,
-      oauth_provider: "chatgpt",
-      env_key_param: nil,
-      max_image_dimension: nil
-    },
-    "anthropic" => %{
-      config_key: :anthropic_api_key,
-      env_key_name: "anthropicKeyValue",
-      display_name: "Anthropic (Claude Pro/Max)",
-      priority: 20,
-      oauth_provider: "anthropic",
-      env_key_param: "hasAnthropicEnvKey",
-      # Anthropic hard-rejects images > 8000px per side; 7680 leaves margin.
-      max_image_dimension: 7680
-    },
-    "openrouter" => %{
-      config_key: :openrouter_api_key,
-      env_key_name: "openrouterKeyValue",
-      display_name: "OpenRouter",
-      priority: 30,
-      oauth_provider: nil,
-      env_key_param: "hasEnvKey",
-      max_image_dimension: nil
-    },
-    "google" => %{
-      config_key: :google_api_key,
-      env_key_name: nil,
-      display_name: "Google",
-      priority: 40,
-      oauth_provider: nil,
-      env_key_param: nil,
-      max_image_dimension: nil
-    },
-    "xai" => %{
-      config_key: :xai_api_key,
-      env_key_name: nil,
-      display_name: "xAI",
-      priority: 50,
-      oauth_provider: nil,
-      env_key_param: nil,
-      max_image_dimension: nil
-    }
-  }
+  @providers Application.compile_env!(:frontman_server, :providers)
 
   @doc """
   Returns the full provider map.  Mostly useful for enumeration / debugging.

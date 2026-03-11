@@ -17,6 +17,7 @@ defmodule FrontmanServer.Providers.RegistryTest do
     test "each entry has all required fields" do
       required_keys = [
         :config_key,
+        :env_var,
         :env_key_name,
         :display_name,
         :priority,
@@ -31,6 +32,7 @@ defmodule FrontmanServer.Providers.RegistryTest do
         end
 
         assert is_atom(entry.config_key)
+        assert is_binary(entry.env_var)
         assert is_binary(entry.display_name)
         assert is_integer(entry.priority)
       end
