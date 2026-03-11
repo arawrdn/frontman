@@ -106,6 +106,61 @@ defmodule FrontmanServer.Providers.Model do
   end
 
   @doc """
+  Returns a human-readable display name for any model reference.
+
+  Handles Model structs, plain `"provider:name"` strings, structs with an
+  `:id` field (e.g. LLMDB.Model), and nil. Used for span names, log lines,
+  and anywhere a model needs to be shown as text.
+
+  ## Examples
+
+      iex> Model.display_name(Model.new("openai", "gpt-5"))
+      "openai:gpt-5"
+
+      iex> Model.display_name("anthropic:claude-sonnet-4-5")
+      "anthropic:claude-sonnet-4-5"
+
+      iex> Model.display_name(nil)
+      "unknown"
+  """
+  @spec display_name(t() | String.t() | map() | nil) :: String.t()
+  def display_name(%__MODULE__{} = model), do: __MODULE__.to_string(model)
+  def display_name(model) when is_binary(model), do: model
+  def display_name(%{id: id}) when is_binary(id), do: id
+  def display_name(nil), do: "unknown"
+  def display_name(other), do: inspect(other)
+
+  @doc """
+  Extracts the provider name from any model reference.
+
+  Accepts Model structs, `"provider:name"` strings, and structs with an
+  atom `:provider` field. Falls back to `"unknown"` for unrecognised shapes.
+
+  ## Examples
+
+      iex> Model.provider_name(Model.new("openai", "gpt-5"))
+      "openai"
+
+      iex> Model.provider_name("anthropic:claude-sonnet-4-5")
+      "anthropic"
+
+      iex> Model.provider_name(nil)
+      "unknown"
+  """
+  @spec provider_name(t() | String.t() | map() | nil) :: String.t()
+  def provider_name(%__MODULE__{provider: p}), do: p
+
+  def provider_name(model) when is_binary(model) do
+    case parse(model) do
+      {:ok, parsed} -> parsed.provider
+      :error -> "unknown"
+    end
+  end
+
+  def provider_name(%{provider: provider}) when is_atom(provider), do: Atom.to_string(provider)
+  def provider_name(_), do: "unknown"
+
+  @doc """
   Converts a client-sent model selection map to a Model struct.
 
   Accepts both string-keyed maps (from JSON/client wire format) and

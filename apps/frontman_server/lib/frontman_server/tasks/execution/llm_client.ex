@@ -179,12 +179,7 @@ defimpl SwarmAi.LLM, for: FrontmanServer.Tasks.Execution.LLMClient do
   # :meta with usage - token usage statistics
   defp to_swarm_chunk(%{type: :meta, metadata: %{usage: usage}}, _requires_mcp_prefix?)
        when is_map(usage) do
-    Chunk.usage(%Usage{
-      input_tokens: Map.get(usage, :input_tokens, 0),
-      output_tokens: Map.get(usage, :output_tokens, 0),
-      reasoning_tokens: Map.get(usage, :reasoning_tokens, 0),
-      cached_tokens: Map.get(usage, :cached_tokens, 0)
-    })
+    Chunk.usage(Usage.from_map(usage))
   end
 
   # :meta with finish_reason - stream complete with reason
