@@ -150,6 +150,29 @@ defmodule SwarmAi.RuntimeTest do
     end
   end
 
+  describe "sys.get_state barrier prevents dispatch race" do
+    test "slow dispatcher completes before :sys.get_state returns" do
+      runtime = start_runtime_with_slow_dispatch!()
+      agent = test_agent(%StreamErrorLLM{error_message: "barrier boom"})
+
+      {:ok, pid} =
+        SwarmAi.Runtime.run(runtime, "task-barrier", agent, "Hello", default_opts())
+
+      # Step 1: execution process is dead, :DOWN is queued in the monitor
+      await_exit(pid)
+
+      # Step 2: slow dispatch (200ms) hasn't finished yet — race window is open
+      refute_received {:slow_event, "task-barrier", {:crashed, _}}
+
+      # Step 3: sync barrier — blocks until the monitor processes the :DOWN message
+      monitor = SwarmAi.Runtime.monitor_name(runtime)
+      :sys.get_state(monitor)
+
+      # Step 4: dispatch has completed after the barrier
+      assert_received {:slow_event, "task-barrier", {:crashed, _}}
+    end
+  end
+
   # --- Test Dispatchers ---
 
   defmodule TestDispatcher do
@@ -161,6 +184,13 @@ defmodule SwarmAi.RuntimeTest do
   defmodule MetadataTestDispatcher do
     def dispatch(test_pid, key, event, metadata) do
       send(test_pid, {:test_event_with_meta, key, event, metadata})
+    end
+  end
+
+  defmodule SlowDispatcher do
+    def dispatch(test_pid, key, event, _metadata) do
+      Process.sleep(200)
+      send(test_pid, {:slow_event, key, event})
     end
   end
 
@@ -185,6 +215,18 @@ defmodule SwarmAi.RuntimeTest do
     start_supervised!(
       {SwarmAi.Runtime,
        name: name, event_dispatcher: {__MODULE__.MetadataTestDispatcher, :dispatch, [test_pid]}}
+    )
+
+    name
+  end
+
+  defp start_runtime_with_slow_dispatch! do
+    name = :"TestRuntime_#{:erlang.unique_integer([:positive])}"
+    test_pid = self()
+
+    start_supervised!(
+      {SwarmAi.Runtime,
+       name: name, event_dispatcher: {__MODULE__.SlowDispatcher, :dispatch, [test_pid]}}
     )
 
     name

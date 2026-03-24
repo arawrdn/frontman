@@ -20,8 +20,13 @@ defmodule FrontmanServer.Tasks.Execution.ErrorPropagationTest do
 
   describe "LLM stream error propagation" do
     setup do
-      pid = Sandbox.start_owner!(FrontmanServer.Repo, shared: true)
-      on_exit(fn -> Sandbox.stop_owner(pid) end)
+      db_pid = Sandbox.start_owner!(FrontmanServer.Repo, shared: true)
+
+      on_exit(fn ->
+        monitor = SwarmAi.Runtime.monitor_name(FrontmanServer.AgentRuntime)
+        if pid = Process.whereis(monitor), do: :sys.get_state(pid)
+        Sandbox.stop_owner(db_pid)
+      end)
 
       {:ok, user} =
         Accounts.register_user(%{
