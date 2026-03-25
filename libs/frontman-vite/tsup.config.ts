@@ -38,13 +38,19 @@ const nodeBuiltins = [
   'node:module',
 ];
 
-const internalDeps = [
+const externalDeps = [
+  // Workspace dependencies (resolved at runtime via frontman-core)
   '@frontman-ai/frontman-core',
   '@frontman-ai/frontman-protocol',
   '@frontman/bindings',
   '@rescript/runtime',
   'sury',
   'dom-element-to-component-source',
+  // Peer / optional dependencies
+  'vite',
+  'lighthouse',
+  'chrome-launcher',
+  ...nodeBuiltins,
 ];
 
 export default defineConfig([
@@ -55,8 +61,8 @@ export default defineConfig([
     outDir: 'dist',
     clean: true,
     dts: true,
-    noExternal: [...internalDeps, /vite-plugin-vue-source/],
-    external: ['vite', 'lighthouse', 'chrome-launcher', ...nodeBuiltins],
+    noExternal: [/vite-plugin-vue-source/],
+    external: externalDeps,
     platform: 'node',
     target: 'node18',
     treeshake: true,
@@ -68,8 +74,7 @@ export default defineConfig([
     format: ['esm'],
     outDir: 'dist',
     clean: false,
-    noExternal: internalDeps,
-    external: ['vite', 'lighthouse', 'chrome-launcher', ...nodeBuiltins],
+    external: externalDeps,
     platform: 'node',
     target: 'node18',
     treeshake: true,

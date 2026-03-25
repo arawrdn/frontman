@@ -2645,15 +2645,13 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@frontman-ai/astro@workspace:libs/frontman-astro"
   dependencies:
-    "@frontman-ai/frontman-core": "npm:*"
+    "@frontman-ai/frontman-core": "npm:0.5.3"
     "@frontman-ai/frontman-protocol": "npm:*"
     "@frontman/bindings": "npm:*"
     "@rescript/runtime": "npm:12.0.0-beta.14"
     "@rescript/webapi": "npm:*"
     "@vitest/ui": "catalog:"
-    chrome-launcher: "npm:^1.1.2"
     dom-element-to-component-source: "npm:0.5.0"
-    lighthouse: "npm:^12.5.1"
     rescript: "catalog:"
     rescript-vitest: "catalog:"
     sury: "catalog:"
@@ -2759,7 +2757,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@frontman-ai/frontman-core@npm:*, @frontman-ai/frontman-core@workspace:libs/frontman-core":
+"@frontman-ai/frontman-core@npm:0.5.3, @frontman-ai/frontman-core@workspace:libs/frontman-core":
   version: 0.0.0-use.local
   resolution: "@frontman-ai/frontman-core@workspace:libs/frontman-core"
   dependencies:
@@ -2796,15 +2794,13 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@frontman-ai/nextjs@workspace:libs/frontman-nextjs"
   dependencies:
-    "@frontman-ai/frontman-core": "npm:*"
+    "@frontman-ai/frontman-core": "npm:0.5.3"
     "@frontman-ai/frontman-protocol": "npm:*"
     "@rescript/runtime": "npm:12.0.0-beta.14"
     "@rescript/webapi": "npm:*"
     "@sentry/nextjs": "npm:^9.0.0"
     "@vitest/ui": "catalog:"
-    chrome-launcher: "npm:^1.1.2"
     dom-element-to-component-source: "npm:0.5.0"
-    lighthouse: "npm:^12.5.1"
     next: "npm:^15.5.14"
     rescript: "catalog:"
     rescript-vitest: "catalog:"
@@ -2859,14 +2855,12 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@frontman-ai/vite@workspace:libs/frontman-vite"
   dependencies:
-    "@frontman-ai/frontman-core": "npm:*"
+    "@frontman-ai/frontman-core": "npm:0.5.3"
     "@frontman-ai/frontman-protocol": "npm:*"
     "@rescript/runtime": "npm:12.0.0-beta.14"
     "@rescript/webapi": "npm:*"
     "@vitest/ui": "catalog:"
-    chrome-launcher: "npm:^1.1.2"
     dom-element-to-component-source: "npm:0.5.0"
-    lighthouse: "npm:^12.5.1"
     rescript: "catalog:"
     rescript-vitest: "catalog:"
     sury: "npm:11.0.0-alpha.4"

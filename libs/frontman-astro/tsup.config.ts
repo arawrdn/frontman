@@ -3,16 +3,15 @@ import { readFileSync } from 'fs';
 
 const pkg = JSON.parse(readFileSync('./package.json', 'utf-8'));
 
-const sharedNoExternal = [
+const sharedExternal = [
+  // Workspace dependencies (resolved at runtime via frontman-core)
   '@frontman-ai/frontman-core',
   '@frontman-ai/frontman-protocol',
   '@frontman/bindings',
   '@rescript/runtime',
   'sury',
   'dom-element-to-component-source',
-];
-
-const sharedExternal = [
+  // Peer / optional dependencies
   'astro',
   'astro/toolbar',
   'astro/config',
@@ -50,7 +49,6 @@ export default defineConfig([
     outDir: 'dist',
     clean: true,
     define: { '__PACKAGE_VERSION__': JSON.stringify(pkg.version) },
-    noExternal: sharedNoExternal,
     external: sharedExternal,
     platform: 'node',
     target: 'node18',
@@ -63,7 +61,6 @@ export default defineConfig([
     outDir: 'dist',
     clean: false,
     define: { '__PACKAGE_VERSION__': JSON.stringify(pkg.version) },
-    noExternal: sharedNoExternal,
     external: sharedExternal,
     platform: 'node',
     target: 'node18',
@@ -76,7 +73,6 @@ export default defineConfig([
     outDir: 'dist',
     clean: false,
     define: { '__PACKAGE_VERSION__': JSON.stringify(pkg.version) },
-    noExternal: sharedNoExternal,
     external: sharedExternal,
     platform: 'browser',
     target: 'es2020',

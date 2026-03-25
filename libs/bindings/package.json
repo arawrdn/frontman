@@ -1,12 +1,28 @@
 {
 	"name": "@frontman/bindings",
 	"version": "0.3.1",
+	"description": "Shared ReScript bindings for Frontman",
 	"license": "Apache-2.0",
-	"private": true,
+	"author": "Frontman AI",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/frontman-ai/frontman.git",
+		"directory": "libs/bindings"
+	},
+	"homepage": "https://frontman.sh",
+	"bugs": {
+		"url": "https://github.com/frontman-ai/frontman/issues"
+	},
+	"publishConfig": {
+		"access": "public"
+	},
 	"type": "module",
 	"exports": {
 		"./src/*.res.mjs": "./src/*.res.mjs"
 	},
+	"files": [
+		"src"
+	],
 	"dependencies": {
 		"@rescript/runtime": "12.0.0-beta.14",
 		"dom-element-to-component-source": "^0.5.0",

@@ -54,14 +54,12 @@
 		"build": "yarn build:rescript && yarn build:bundle"
 	},
 	"dependencies": {
-		"chrome-launcher": "^1.1.2",
-		"lighthouse": "^12.5.1"
+		"@frontman-ai/frontman-core": "0.5.3"
 	},
 	"peerDependencies": {
 		"vite": ">=5.0.0"
 	},
 	"devDependencies": {
-		"@frontman-ai/frontman-core": "*",
 		"@frontman-ai/frontman-protocol": "*",
 		"@rescript/runtime": "12.0.0-beta.14",
 		"@rescript/webapi": "*",
