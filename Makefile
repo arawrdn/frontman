@@ -405,9 +405,22 @@ worktree-registry:
 # Release
 # ============================================================================
 ## REL_START
-.PHONY: publish publish-astro publish-vite publish-nextjs publish-react-statestore publish-swarm-ai release package-wordpress-plugin test-wordpress-core-tools
+.PHONY: publish publish-deps publish-protocol publish-bindings publish-core \
+       publish-astro publish-vite publish-nextjs publish-react-statestore publish-swarm-ai release \
+       package-wordpress-plugin test-wordpress-core-tools
 
-publish: publish-astro publish-vite publish-nextjs publish-react-statestore ## Publish all npm packages (pass OTP=<code> for 2FA)
+publish-protocol: ## Publish @frontman-ai/frontman-protocol to npm
+	cd libs/frontman-protocol && $(MAKE) publish OTP=$(OTP)
+
+publish-bindings: ## Publish @frontman/bindings to npm
+	cd libs/bindings && $(MAKE) publish OTP=$(OTP)
+
+publish-core: ## Publish @frontman-ai/frontman-core to npm
+	cd libs/frontman-core && $(MAKE) publish OTP=$(OTP)
+
+publish-deps: publish-protocol publish-bindings publish-core ## Publish core deps in order (protocol → bindings → core)
+
+publish: publish-deps publish-astro publish-vite publish-nextjs publish-react-statestore ## Publish all npm packages (pass OTP=<code> for 2FA)
 
 publish-astro: ## Publish @frontman-ai/astro to npm (pass OTP=<code> for 2FA)
 	cd libs/frontman-astro && $(MAKE) publish OTP=$(OTP)
