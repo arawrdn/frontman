@@ -16,6 +16,10 @@
 	"publishConfig": {
 		"access": "public"
 	},
+	"scripts": {
+		"build": "rescript build",
+		"prepublishOnly": "yarn build"
+	},
 	"type": "module",
 	"exports": {
 		"./src/*.res.mjs": "./src/*.res.mjs"
