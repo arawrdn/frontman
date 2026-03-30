@@ -410,6 +410,30 @@ defmodule FrontmanServer.Tasks do
     Execution.cancel(scope, task_id)
   end
 
+  @doc """
+  Signal that the MCP server is available for the given task.
+  Cancels any pending disconnect grace period.
+  """
+  @spec mcp_server_available(Scope.t(), String.t()) :: :ok
+  def mcp_server_available(%Scope{} = _scope, task_id) do
+    Execution.MCPAvailability.mcp_server_available(FrontmanServer.MCPAvailability, task_id)
+  end
+
+  @doc """
+  Signal that the MCP server is no longer available for the given task.
+  Starts a grace period — if no MCP server reconnects, the execution is cancelled.
+  """
+  @spec mcp_server_unavailable(Scope.t(), String.t()) :: :ok
+  def mcp_server_unavailable(%Scope{} = scope, task_id) do
+    cancel_fn = fn -> cancel_execution(scope, task_id) end
+
+    Execution.MCPAvailability.mcp_server_unavailable(
+      FrontmanServer.MCPAvailability,
+      task_id,
+      cancel_fn
+    )
+  end
+
   # --- Title Generation ---
 
   @doc """

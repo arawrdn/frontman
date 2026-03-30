@@ -15,6 +15,8 @@ defmodule FrontmanServer.Application do
   alias FrontmanServer.Observability.OtelHandler
   alias FrontmanServer.Observability.SwarmOtelHandler
 
+  alias FrontmanServer.Tasks.Execution
+
   @impl true
   def start(_type, _args) do
     # Setup telemetry -> OTEL span translation
@@ -50,6 +52,8 @@ defmodule FrontmanServer.Application do
        event_dispatcher: {FrontmanServer.Tasks.SwarmDispatcher, :dispatch, []}},
       # Registry for MCP tool call result routing (separate from agent execution tracking)
       {Registry, keys: :unique, name: FrontmanServer.ToolCallRegistry},
+      # Grace period for MCP server disconnects before killing executions
+      {Execution.MCPAvailability, name: FrontmanServer.MCPAvailability},
       # Oban background job processing (email delivery, contact sync, etc.)
       {Oban, Application.fetch_env!(:frontman_server, Oban)},
       # Start to serve requests, typically the last entry
