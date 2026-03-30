@@ -910,7 +910,10 @@ defmodule FrontmanServerWeb.TaskChannel do
 
         {:initialization_complete, data} ->
           task_id = socket.assigns.task_id
+          scope = socket.assigns.scope
           Logger.info("MCP initialization complete for task #{task_id}")
+
+          Tasks.mcp_server_available(scope, task_id)
 
           socket
           |> assign(:mcp_status, :ready)
@@ -1009,31 +1012,18 @@ defmodule FrontmanServerWeb.TaskChannel do
   end
 
   @impl true
-  def terminate(reason, socket) do
+  def terminate(_reason, socket) do
     task_id = socket.assigns[:task_id]
-    Logger.info("Client disconnected from task #{task_id}: #{inspect(reason)}")
+    scope = socket.assigns[:scope]
+    Logger.info("Client disconnected from task #{task_id}")
 
-    scope = socket.assigns.scope
-
-    # Notify any interactive tool executors waiting on this task's pending
-    # tool calls. Without this, executors block until the 24h safety-net
-    # timeout. On reconnect, reexecute_unresolved_tool_calls re-sends
-    # tools/call to the new client, which provides a fresh tool result.
     RetryCoordinator.clear(socket.assigns[:retry_state])
 
-    pending_requests = socket.assigns[:pending_requests] || %{}
-
-    for {_request_id, {:tool_call, tc}} <- pending_requests do
-      Execution.notify_tool_result(scope, tc.tool_call_id, "Client disconnected", true)
-    end
-
-    # Cancel any running execution. Without the channel, MCP tool results
-    # can never arrive — the executor processes would hang until their
-    # safety-net timeout. Cancellation is persisted by SwarmDispatcher so
-    # the user sees the interrupted state on reconnect.
-    case Tasks.cancel_execution(scope, task_id) do
-      :ok -> Logger.info("Cancelled execution for task #{task_id} on channel termination")
-      {:error, :not_running} -> :ok
+    # Signal MCP unavailability instead of killing the execution immediately.
+    # The MCPAvailability GenServer enforces a grace period — if the client
+    # reconnects before it expires, the execution continues uninterrupted.
+    if socket.assigns[:mcp_status] == :ready do
+      Tasks.mcp_server_unavailable(scope, task_id)
     end
 
     :ok
