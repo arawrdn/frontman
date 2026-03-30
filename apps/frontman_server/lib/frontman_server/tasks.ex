@@ -11,6 +11,7 @@ defmodule FrontmanServer.Tasks do
   require Logger
 
   alias FrontmanServer.Accounts.Scope
+  alias FrontmanServer.Providers.Model
   alias FrontmanServer.Repo
 
   alias FrontmanServer.Tasks.{
@@ -355,10 +356,13 @@ defmodule FrontmanServer.Tasks do
   @doc """
   Enqueues an Oban job to generate a title for a task from the user's prompt.
   """
-  @spec enqueue_title_generation(Scope.t(), String.t(), String.t()) ::
+  @spec enqueue_title_generation(Scope.t(), String.t(), String.t(), keyword()) ::
           {:ok, Oban.Job.t()} | {:error, Oban.Job.changeset()}
-  def enqueue_title_generation(%Scope{} = scope, task_id, user_prompt_text) do
-    GenerateTitle.new_job(scope.user.id, task_id, user_prompt_text)
+  def enqueue_title_generation(%Scope{} = scope, task_id, user_prompt_text, opts \\ []) do
+    env_api_key = Keyword.get(opts, :env_api_key, %{})
+    model = opts |> Keyword.get(:model) |> Model.resolve_string()
+
+    GenerateTitle.new_job(scope.user.id, task_id, user_prompt_text, env_api_key, model)
     |> Oban.insert()
   end
 

@@ -522,7 +522,10 @@ defmodule FrontmanServerWeb.TaskChannel do
       {:ok, _interaction} ->
         Logger.info("User message added, agent spawned for task #{task_id}")
 
-        Tasks.enqueue_title_generation(scope, task_id, prompt.text_summary)
+        Tasks.enqueue_title_generation(scope, task_id, prompt.text_summary,
+          env_api_key: env_api_key,
+          model: model
+        )
 
         {:noreply, socket}
 

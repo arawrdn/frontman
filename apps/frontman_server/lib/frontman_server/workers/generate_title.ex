@@ -37,33 +37,44 @@ defmodule FrontmanServer.Workers.GenerateTitle do
   @type job_args :: %{
           user_id: String.t(),
           task_id: String.t(),
-          user_prompt_text: String.t()
+          user_prompt_text: String.t(),
+          env_api_key: %{optional(String.t()) => String.t()},
+          model: String.t() | nil
         }
 
   @doc """
   Builds an Oban job changeset for title generation.
   """
-  @spec new_job(String.t(), String.t(), String.t()) :: Oban.Job.changeset()
-  def new_job(user_id, task_id, user_prompt_text) do
+  @spec new_job(String.t(), String.t(), String.t(), map(), String.t() | nil) ::
+          Oban.Job.changeset()
+  def new_job(user_id, task_id, user_prompt_text, env_api_key \\ %{}, model \\ nil) do
     new(%{
       user_id: user_id,
       task_id: task_id,
-      user_prompt_text: user_prompt_text
+      user_prompt_text: user_prompt_text,
+      env_api_key: env_api_key,
+      model: model
     })
   end
 
   @impl Oban.Worker
-  def perform(%Oban.Job{
-        args: %{
-          "user_id" => user_id,
-          "task_id" => task_id,
-          "user_prompt_text" => user_prompt_text
-        }
-      }) do
+  def perform(%Oban.Job{args: args}) do
+    user_id = Map.fetch!(args, "user_id")
+    task_id = Map.fetch!(args, "task_id")
+    user_prompt_text = Map.fetch!(args, "user_prompt_text")
+    env_api_key = Map.get(args, "env_api_key", %{})
+    model = Map.get(args, "model")
+
     user = Accounts.get_user!(user_id)
     scope = Scope.for_user(user)
+
     with {:ok, resolved_key} <-
-           Providers.prepare_api_key(scope, @fallback_model, %{}, skip_quota: true),
+           Providers.prepare_api_key(
+             scope,
+             model || @fallback_model,
+             env_api_key,
+             skip_quota: true
+           ),
          {:ok, raw_title} <- call_llm(resolved_key, user_prompt_text),
          title = String.trim(raw_title),
          false <- title == "",

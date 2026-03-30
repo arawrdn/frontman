@@ -5,6 +5,7 @@ defmodule FrontmanServer.Workers.GenerateTitleTest do
   import FrontmanServer.AccountsFixtures
 
   alias FrontmanServer.Accounts.Scope
+  alias FrontmanServer.Providers.Model
   alias FrontmanServer.Tasks
   alias FrontmanServer.Workers.GenerateTitle
 
@@ -13,30 +14,47 @@ defmodule FrontmanServer.Workers.GenerateTitleTest do
     {:ok, user: user}
   end
 
-  describe "new_job/3" do
+  describe "new_job/5" do
     test "builds a job changeset with the correct args", %{user: user} do
-      changeset = GenerateTitle.new_job(user.id, "task-123", "Help me build a login page")
+      changeset =
+        GenerateTitle.new_job(
+          user.id,
+          "task-123",
+          "Help me build a login page",
+          %{"openrouter" => "sk-or-test"},
+          "openrouter:openai/gpt-5.1-codex"
+        )
 
       assert changeset.changes.args == %{
                user_id: user.id,
                task_id: "task-123",
-               user_prompt_text: "Help me build a login page"
+               user_prompt_text: "Help me build a login page",
+               env_api_key: %{"openrouter" => "sk-or-test"},
+               model: "openrouter:openai/gpt-5.1-codex"
              }
     end
   end
 
   describe "perform/1" do
-    test "enqueues via Tasks context", %{user: user} do
+    test "enqueues via Tasks context with forwarded model and env key", %{user: user} do
       scope = Scope.for_user(user)
       task_id = Ecto.UUID.generate()
       {:ok, ^task_id} = Tasks.create_task(scope, task_id, "nextjs")
 
       {:ok, _job} =
-        Tasks.enqueue_title_generation(scope, task_id, "Help me build a login page")
+        Tasks.enqueue_title_generation(scope, task_id, "Help me build a login page",
+          env_api_key: %{"openrouter" => "sk-or-test"},
+          model: Model.new("openrouter", "openai/gpt-5.1-codex")
+        )
 
       assert_enqueued(
         worker: GenerateTitle,
-        args: %{user_id: user.id, task_id: task_id}
+        args: %{
+          user_id: user.id,
+          task_id: task_id,
+          env_api_key: %{"openrouter" => "sk-or-test"},
+          model: "openrouter:openai/gpt-5.1-codex"
+        }
       )
     end
   end
