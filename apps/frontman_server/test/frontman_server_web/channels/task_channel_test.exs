@@ -1965,4 +1965,145 @@ defmodule FrontmanServerWeb.TaskChannelTest do
       })
     end
   end
+
+  describe "MCP disconnect grace period" do
+    setup %{scope: scope} do
+      # Replace the app-level MCPAvailability with one using a short grace period.
+      # The global process is supervised by FrontmanServer.Supervisor with a
+      # 1-minute default; we terminate that child and start our own short-lived one.
+      :ok =
+        Supervisor.terminate_child(
+          FrontmanServer.Supervisor,
+          FrontmanServer.Tasks.Execution.MCPAvailability
+        )
+
+      start_supervised!(
+        {FrontmanServer.Tasks.Execution.MCPAvailability,
+         name: FrontmanServer.MCPAvailability, grace_period_ms: 50}
+      )
+
+      on_exit(fn ->
+        # Restart the app-level child so other tests are unaffected
+        Supervisor.restart_child(
+          FrontmanServer.Supervisor,
+          FrontmanServer.Tasks.Execution.MCPAvailability
+        )
+      end)
+
+      {socket, task_id} = join_task_channel(scope)
+      {:ok, socket: socket, task_id: task_id}
+    end
+
+    test "terminate/2 signals mcp_server_unavailable when MCP was ready", %{
+      socket: socket,
+      task_id: task_id
+    } do
+      complete_mcp_handshake(socket)
+
+      # Register a fake running execution in the runtime registry
+      test_pid = self()
+      runtime_registry = SwarmAi.Runtime.registry_name(FrontmanServer.AgentRuntime)
+
+      agent_pid =
+        spawn(fn ->
+          Registry.register(runtime_registry, {:running, task_id}, %{})
+          send(test_pid, :agent_registered)
+
+          receive do
+            :stop -> :ok
+          end
+        end)
+
+      assert_receive :agent_registered
+
+      # Monitor the agent so we can detect when it's killed
+      ref = Process.monitor(agent_pid)
+
+      # Disconnect the channel cleanly — this triggers terminate/2 via
+      # GenServer {:stop, {:shutdown, :closed}} which guarantees the callback.
+      Process.unlink(socket.channel_pid)
+      close(socket)
+
+      # The grace period is 50ms — after it expires, cancel_execution kills the agent
+      assert_receive {:DOWN, ^ref, :process, ^agent_pid, :cancelled}, 1_000
+    end
+
+    test "terminate/2 does not signal when MCP was not ready", %{
+      socket: socket,
+      task_id: task_id
+    } do
+      # Do NOT complete MCP handshake — mcp_status stays :pending
+
+      # Register a fake running execution
+      test_pid = self()
+      runtime_registry = SwarmAi.Runtime.registry_name(FrontmanServer.AgentRuntime)
+
+      agent_pid =
+        spawn(fn ->
+          Registry.register(runtime_registry, {:running, task_id}, %{})
+          send(test_pid, :agent_registered)
+
+          receive do
+            :stop -> :ok
+          end
+        end)
+
+      assert_receive :agent_registered
+
+      ref = Process.monitor(agent_pid)
+
+      Process.unlink(socket.channel_pid)
+      close(socket)
+
+      # Wait longer than the grace period; the agent should NOT be killed
+      refute_receive {:DOWN, ^ref, :process, ^agent_pid, _}, 200
+
+      # Cleanup
+      Process.exit(agent_pid, :kill)
+    end
+
+    test "reconnect within grace period cancels the timer", %{
+      socket: socket,
+      task_id: task_id,
+      scope: scope
+    } do
+      complete_mcp_handshake(socket)
+
+      # Register a fake running execution
+      test_pid = self()
+      runtime_registry = SwarmAi.Runtime.registry_name(FrontmanServer.AgentRuntime)
+
+      agent_pid =
+        spawn(fn ->
+          Registry.register(runtime_registry, {:running, task_id}, %{})
+          send(test_pid, :agent_registered)
+
+          receive do
+            :stop -> :ok
+          end
+        end)
+
+      assert_receive :agent_registered
+
+      ref = Process.monitor(agent_pid)
+
+      # Disconnect the channel — starts the grace period timer
+      Process.unlink(socket.channel_pid)
+      close(socket)
+
+      # Reconnect immediately (well within the 50ms grace period)
+      {:ok, _reply, socket2} =
+        UserSocket
+        |> socket("user_id", %{scope: scope})
+        |> subscribe_and_join("task:#{task_id}", %{})
+
+      complete_mcp_handshake(socket2)
+
+      # Wait longer than the grace period — agent should survive
+      refute_receive {:DOWN, ^ref, :process, ^agent_pid, _}, 200
+
+      # Cleanup
+      Process.exit(agent_pid, :kill)
+    end
+  end
 end
