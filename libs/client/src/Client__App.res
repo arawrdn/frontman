@@ -1,4 +1,6 @@
 module SettingsModal = Client__SettingsModal
+module CookieAuthHelp = Client__CookieAuthHelp
+module CookieNoticeModal = Client__CookieNoticeModal
 
 @react.component
 let make = (~apiBaseUrl: string) => {
@@ -11,6 +13,7 @@ let make = (~apiBaseUrl: string) => {
   React.useEffect(() => {
     switch connectionState {
     | Connected | SessionActive(_) =>
+      CookieAuthHelp.clearLoginRedirect()
       Client__Debug.init()
       Client__State.Actions.setAcpSession(~sendPrompt, ~cancelPrompt, ~loadTask, ~deleteSession, ~apiBaseUrl)
     | Disconnected | Error(_) => Client__State.Actions.clearAcpSession()
@@ -76,6 +79,18 @@ let make = (~apiBaseUrl: string) => {
     openSettingsProviders()
   }
 
+  let markWelcomeShown = () => {
+    Client__FtueState.setWelcomeShown()
+    setFtueState(_ => Client__FtueState.WelcomeShown)
+  }
+
+  let handleCookieNoticeShown = () => {
+    switch ftueState {
+    | Client__FtueState.New => markWelcomeShown()
+    | Client__FtueState.WelcomeShown | Client__FtueState.Completed => ()
+    }
+  }
+
   // Reset initialTab after settings modal closes so it doesn't stick
   let handleSettingsOpenChange = (value: bool) => {
     setSettingsOpen(_ => value)
@@ -91,9 +106,17 @@ let make = (~apiBaseUrl: string) => {
       onOpenChange={handleSettingsOpenChange}
       initialTab=?{settingsInitialTab}
     />
-    // FTUE: Welcome modal for first-time unauthenticated users
-    {switch (authRedirectUrl, ftueState) {
-    | (Some(loginUrl), Client__FtueState.New) => <Client__WelcomeModal loginUrl />
+    // Auth modals for first-time login and third-party cookie guidance.
+    {switch authRedirectUrl {
+    | Some(loginUrl) =>
+      switch CookieAuthHelp.shouldShowNotice(~loginUrl) {
+      | true => <CookieNoticeModal loginUrl markWelcomeShown={handleCookieNoticeShown} />
+      | false =>
+        switch ftueState {
+        | Client__FtueState.New => <Client__WelcomeModal loginUrl />
+        | Client__FtueState.WelcomeShown | Client__FtueState.Completed => React.null
+        }
+      }
     | _ => React.null
     }}
     // FTUE: Post-signup celebration overlay

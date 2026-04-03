@@ -3,6 +3,7 @@
 
 module Dialog = Bindings__UI__Dialog
 module Button = Bindings__UI__Button
+module CookieAuthHelp = Client__CookieAuthHelp
 
 let redirectDelaySec = 4
 
@@ -26,7 +27,7 @@ let make = (~loginUrl: string) => {
         switch next <= 0 {
         | true =>
           intervalId.contents->Option.forEach(WebAPI.Global.clearInterval)
-          WebAPI.Global.window->WebAPI.Window.location->WebAPI.Location.assign(loginUrl)
+          CookieAuthHelp.continueToLogin(~loginUrl)
         | false => ()
         }
         next
@@ -75,8 +76,7 @@ let make = (~loginUrl: string) => {
           <Button.Button
             variant=#secondary
             className="mt-2"
-            onClick={_ =>
-              WebAPI.Global.window->WebAPI.Window.location->WebAPI.Location.assign(loginUrl)}>
+            onClick={_ => CookieAuthHelp.continueToLogin(~loginUrl)}>
             {React.string("Sign in now")}
           </Button.Button>
         </div>

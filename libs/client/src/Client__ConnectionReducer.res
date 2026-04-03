@@ -12,6 +12,7 @@ module ACP = FrontmanAiFrontmanClient.FrontmanClient__ACP
 module Relay = FrontmanAiFrontmanClient.FrontmanClient__Relay
 module MCPServer = FrontmanAiFrontmanClient.FrontmanClient__MCP__Server
 module Channel = FrontmanAiFrontmanClient.FrontmanClient__Phoenix__Channel
+module CookieAuthHelp = Client__CookieAuthHelp
 
 // Configuration for initialization
 type initConfig = {
@@ -534,21 +535,34 @@ let handleEffect = (effect: effect, state: state, dispatch: action => unit) => {
       | Ok(conn) => dispatch(ACPConnectSuccess(conn))
       | Error(err) =>
         // Don't dispatch error for aborted connections - component is unmounting
-        if signal.aborted {
-          Log.info("ACP connection aborted (cleanup)")
-        } else {
+        switch signal.aborted {
+        | true => Log.info("ACP connection aborted (cleanup)")
+        | false =>
           switch err {
           | ACP.AuthRequired({loginUrl}) =>
-            let encodeURIComponent: string => string = %raw(`encodeURIComponent`)
             let currentUrl =
               WebAPI.Global.window->WebAPI.Window.location->WebAPI.Location.href
-            let returnTo = encodeURIComponent(currentUrl)
-            let fullUrl = `${loginUrl}?return_to=${returnTo}`
-            switch initialAuthBehavior {
-            | Client__FtueState.ShowWelcomeModal =>
+            let fullUrl =
+              try {
+                let authUrl = WebAPI.URL.make(~url=loginUrl)
+                authUrl.searchParams->WebAPI.URLSearchParams.set(
+                  ~name="return_to",
+                  ~value=currentUrl,
+                )
+                authUrl.href
+              } catch {
+              | _ => loginUrl
+              }
+            switch CookieAuthHelp.shouldShowNotice(~loginUrl=fullUrl) {
+            | true =>
               dispatch(ACPConnectError(`auth_required:${fullUrl}`))
-            | Client__FtueState.RedirectToLogin =>
-              WebAPI.Global.window->WebAPI.Window.location->WebAPI.Location.assign(fullUrl)
+            | false =>
+              switch initialAuthBehavior {
+              | Client__FtueState.ShowWelcomeModal =>
+                dispatch(ACPConnectError(`auth_required:${fullUrl}`))
+              | Client__FtueState.RedirectToLogin =>
+                CookieAuthHelp.continueToLogin(~loginUrl=fullUrl)
+              }
             }
           | ACP.ConnectionFailed(msg) => dispatch(ACPConnectError(msg))
           }
