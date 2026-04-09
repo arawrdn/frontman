@@ -66,14 +66,14 @@ export default defineConfig([
     target: 'node18',
     treeshake: true,
   },
-  // Toolbar entry point (runs in browser)
+  // Toolbar entry point (runs in browser — workspace deps must be bundled, not externalized)
   {
     entry: { 'toolbar': './src/FrontmanAstro__ToolbarApp.res.mjs' },
     format: ['esm'],
     outDir: 'dist',
     clean: false,
     define: { '__PACKAGE_VERSION__': JSON.stringify(pkg.version) },
-    external: sharedExternal,
+    external: ['astro', 'astro/toolbar'],
     platform: 'browser',
     target: 'es2020',
     treeshake: true,

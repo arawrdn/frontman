@@ -49,7 +49,12 @@
 	},
 	"dependencies": {
 		"@frontman-ai/frontman-core": "0.5.5",
-		"@sentry/nextjs": "^9.0.0"
+		"@frontman-ai/frontman-protocol": "0.6.0",
+		"@frontman/bindings": "0.3.1",
+		"@rescript/runtime": "12.0.0-beta.14",
+		"@sentry/nextjs": "^9.0.0",
+		"dom-element-to-component-source": "0.5.0",
+		"sury": "11.0.0-alpha.4"
 	},
 	"peerDependencies": {
 		"@opentelemetry/api": "^1.9.0",
@@ -73,6 +78,7 @@
 	},
 	"devDependencies": {
 		"@frontman-ai/frontman-protocol": "*",
+		"@frontman/bindings": "*",
 		"@rescript/runtime": "12.0.0-beta.14",
 		"@rescript/webapi": "*",
 		"@vitest/ui": "catalog:",

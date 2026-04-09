@@ -54,13 +54,19 @@
 		"build": "yarn build:rescript && yarn build:bundle"
 	},
 	"dependencies": {
-		"@frontman-ai/frontman-core": "0.5.5"
+		"@frontman-ai/frontman-core": "0.5.5",
+		"@frontman-ai/frontman-protocol": "0.6.0",
+		"@frontman/bindings": "0.3.1",
+		"@rescript/runtime": "12.0.0-beta.14",
+		"dom-element-to-component-source": "0.5.0",
+		"sury": "11.0.0-alpha.4"
 	},
 	"peerDependencies": {
 		"vite": ">=5.0.0"
 	},
 	"devDependencies": {
 		"@frontman-ai/frontman-protocol": "*",
+		"@frontman/bindings": "*",
 		"@rescript/runtime": "12.0.0-beta.14",
 		"@rescript/webapi": "*",
 		"@vitest/ui": "catalog:",
