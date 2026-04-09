@@ -407,7 +407,7 @@ worktree-registry:
 ## REL_START
 .PHONY: publish publish-deps publish-protocol publish-bindings publish-core \
        publish-astro publish-vite publish-nextjs publish-react-statestore publish-swarm-ai release \
-       package-wordpress-plugin test-wordpress-core-tools
+       package-wordpress-plugin test-wordpress-core-tools smoke-test-publish
 
 publish-protocol: ## Publish @frontman-ai/frontman-protocol to npm
 	cd libs/frontman-protocol && $(MAKE) publish OTP=$(OTP)
@@ -419,6 +419,9 @@ publish-core: ## Publish @frontman-ai/frontman-core to npm
 	cd libs/frontman-core && $(MAKE) publish OTP=$(OTP)
 
 publish-deps: publish-protocol publish-bindings publish-core ## Publish core deps in order (protocol → bindings → core)
+
+smoke-test-publish: ## Build, pack, and clean-install all npm packages to verify publishability
+	bash scripts/smoke-test-publish.sh
 
 publish: publish-deps publish-astro publish-vite publish-nextjs publish-react-statestore ## Publish all npm packages (pass OTP=<code> for 2FA)
 
