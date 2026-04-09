@@ -52,7 +52,7 @@
 		"node": ">=18.0.0"
 	},
 	"dependencies": {
-		"@frontman-ai/frontman-core": "0.5.3"
+		"@frontman-ai/frontman-core": "0.5.5"
 	},
 	"peerDependencies": {
 		"astro": "^5.0.0 || ^6.0.0"
