@@ -124,7 +124,11 @@ function initAuthBridge(root) {
 
   if (popupMode && openerOrigin) {
     setStatus("Completing sign-in in this secure window...")
-    void fetchToken()
+    void fetchToken().catch(err => {
+      const msg = errorMessage(err)
+      setStatus(msg)
+      postToParent({kind: "error", message: msg})
+    })
   } else {
     setStatus("This secure page is only used to hand sign-in back to Frontman.")
   }

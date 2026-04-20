@@ -1,34 +1,33 @@
 let storageKeyPrefix = "frontman:auth-session-token:"
 
-let storageKey = (authBridgeUrl: string): string => {
-  let origin = WebAPI.URL.make(~url=authBridgeUrl).origin
+// Tokens are keyed by origin only, so callers may pass either the auth bridge URL
+// or the API base URL as long as they share the same origin.
+let storageKey = (originUrl: string): string => {
+  let origin = WebAPI.URL.make(~url=originUrl).origin
   `${storageKeyPrefix}${origin}`
 }
 
-let get = (authBridgeUrl: string): option<string> => {
+let get = (originUrl: string): option<string> => {
   try {
     WebAPI.Global.sessionStorage
-    ->WebAPI.Storage.getItem(storageKey(authBridgeUrl))
+    ->WebAPI.Storage.getItem(storageKey(originUrl))
     ->Null.toOption
   } catch {
   | _ => None
   }
 }
 
-let set = (~authBridgeUrl: string, ~token: string): unit => {
+let set = (~originUrl: string, ~token: string): unit => {
   try {
-    WebAPI.Global.sessionStorage->WebAPI.Storage.setItem(
-      ~key=storageKey(authBridgeUrl),
-      ~value=token,
-    )
+    WebAPI.Global.sessionStorage->WebAPI.Storage.setItem(~key=storageKey(originUrl), ~value=token)
   } catch {
   | _ => ()
   }
 }
 
-let clear = (authBridgeUrl: string): unit => {
+let clear = (originUrl: string): unit => {
   try {
-    WebAPI.Global.sessionStorage->WebAPI.Storage.removeItem(storageKey(authBridgeUrl))
+    WebAPI.Global.sessionStorage->WebAPI.Storage.removeItem(storageKey(originUrl))
   } catch {
   | _ => ()
   }

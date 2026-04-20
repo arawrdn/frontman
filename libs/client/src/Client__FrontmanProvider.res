@@ -436,7 +436,7 @@ module Provider = {
     }, [dispatch])
 
     let resumeAuthWithToken = (token: string) => {
-      Client__AuthSessionToken.set(~authBridgeUrl, ~token)
+      Client__AuthSessionToken.set(~originUrl=authBridgeUrl, ~token)
       dispatch(ResumeAuthWithToken(token))
     }
 

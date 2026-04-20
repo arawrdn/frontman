@@ -11,7 +11,7 @@ afterEach(_t => {
 describe("Client__AuthSessionToken", () => {
   test("stores and retrieves tokens per auth bridge origin", t => {
     Client__AuthSessionToken.set(
-      ~authBridgeUrl="https://frontman.local:4000/auth-bridge",
+      ~originUrl="https://frontman.local:4000/auth-bridge",
       ~token="token-123",
     )
 
@@ -25,7 +25,7 @@ describe("Client__AuthSessionToken", () => {
 
   test("clear removes cached tokens", t => {
     Client__AuthSessionToken.set(
-      ~authBridgeUrl="https://frontman.local:4000/auth-bridge",
+      ~originUrl="https://frontman.local:4000/auth-bridge",
       ~token="token-123",
     )
 
