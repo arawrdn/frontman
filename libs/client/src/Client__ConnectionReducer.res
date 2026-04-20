@@ -18,6 +18,7 @@ type initConfig = {
   endpoint: string,
   tokenUrl: string,
   loginUrl: string,
+  authBridgeUrl: string,
   clientName: string,
   clientVersion: string,
   baseUrl: string,
@@ -54,8 +55,8 @@ type state = {
   acp: acpState,
   relay: relayState,
   session: sessionState,
-  initialAuthBehavior: Client__FtueState.authBehavior,
   isSendingPrompt: bool,
+  acpConfig: option<ACP.config>,
   // Relay instance exists before connection completes - needed for MCPServer
   relayInstance: option<Relay.t>,
   // MCPServer created once relay instance exists
@@ -123,16 +124,13 @@ type action =
   | DeleteSession({taskId: string, onComplete: result<unit, string> => unit})
   | ClearSession
   | Cleanup
+  | ResumeAuthWithToken(string)
 
 // Effects - side effects the reducer wants to trigger
 type effect =
   | LogError(string)
   | LogInfo(string)
-  | ConnectACP({
-      config: ACP.config,
-      signal: WebAPI.EventAPI.abortSignal,
-      initialAuthBehavior: Client__FtueState.authBehavior,
-    })
+  | ConnectACP({config: ACP.config, signal: WebAPI.EventAPI.abortSignal})
   | ConnectRelay(Relay.t, WebAPI.EventAPI.abortSignal)
   | DisconnectRelay(Relay.t)
   | DisconnectACP(ACP.connection)
@@ -180,8 +178,8 @@ let initialState: state = {
   acp: ACPDisconnected,
   relay: RelayDisconnected,
   session: NoSession,
-  initialAuthBehavior: Client__FtueState.RedirectToLogin,
   isSendingPrompt: false,
+  acpConfig: None,
   relayInstance: None,
   mcpServer: None,
   abortController: None,
@@ -271,10 +269,12 @@ let reduce = (state: state, action: action): (state, array<effect>) => {
   switch (state, action) {
   // === Initialize - single entry point for connection setup ===
   | ({acp: ACPDisconnected, relay: RelayDisconnected}, Initialize({config, relay, mcpServer})) =>
+    let cachedAuthToken = Client__AuthSessionToken.get(config.authBridgeUrl)
     let acpConfig = ACP.makeConfig(
       ~endpoint=config.endpoint,
       ~tokenUrl=config.tokenUrl,
       ~loginUrl=config.loginUrl,
+      ~authToken=?cachedAuthToken,
       ~name=config.clientName,
       ~version=config.clientVersion,
       ~_meta=config._meta,
@@ -291,8 +291,8 @@ let reduce = (state: state, action: action): (state, array<effect>) => {
         acp: ACPConnecting,
         relay: RelayConnecting,
         session: NoSession,
-        initialAuthBehavior: state.initialAuthBehavior,
         isSendingPrompt: false,
+        acpConfig: Some(acpConfig),
         relayInstance: Some(relay),
         mcpServer: Some(mcpServer),
         abortController: Some(abortController),
@@ -301,7 +301,6 @@ let reduce = (state: state, action: action): (state, array<effect>) => {
         ConnectACP({
           config: acpConfig,
           signal: abortController.signal,
-          initialAuthBehavior: state.initialAuthBehavior,
         }),
         ConnectRelay(relay, abortController.signal),
         LogInfo("Initializing connections..."),
@@ -324,6 +323,26 @@ let reduce = (state: state, action: action): (state, array<effect>) => {
   | ({acp: ACPConnecting}, ACPConnectError(msg)) => (
       {...state, acp: ACPError(msg)},
       [LogError(`ACP connect failed: ${msg}`)],
+    )
+
+  | (
+      {
+        acp: ACPDisconnected | ACPAuthRequired(_) | ACPError(_),
+        acpConfig: Some(acpConfig),
+        abortController: Some(controller),
+      },
+      ResumeAuthWithToken(token),
+    ) =>
+    let nextConfig = {...acpConfig, authToken: Some(token)}
+    (
+      {...state, acp: ACPConnecting, acpConfig: Some(nextConfig)},
+      [
+        LogInfo("Retrying ACP connection with bridge token"),
+        ConnectACP({
+          config: nextConfig,
+          signal: controller.signal,
+        }),
+      ],
     )
 
   // === Relay lifecycle ===
@@ -522,10 +541,7 @@ let reduce = (state: state, action: action): (state, array<effect>) => {
     | ACPConnected(conn) => [DisconnectACP(conn)]
     | ACPDisconnected | ACPConnecting | ACPAuthRequired(_) | ACPError(_) => []
     }
-    (
-      {...initialState, initialAuthBehavior: state.initialAuthBehavior},
-      Array.flat([abortEffects, relayEffects, acpEffects]),
-    )
+    (initialState, Array.flat([abortEffects, relayEffects, acpEffects]))
 
   // === Invalid transitions ===
   | (_, Initialize(_)) => (state, [LogInfo("Initialize ignored: already initialized")])
@@ -590,6 +606,8 @@ let reduce = (state: state, action: action): (state, array<effect>) => {
       [LogError("SessionCreateStart rejected: MCPServer not ready")],
     )
 
+  | (_, ResumeAuthWithToken(_)) => (state, [LogError("Cannot resume auth: ACP config not ready")])
+
   | ({session: SessionCreating | SessionActive(_) | SessionError(_)}, SessionCreateStart) => (
       state,
       [LogError("SessionCreateStart rejected: session already exists")],
@@ -640,7 +658,7 @@ let handleEffect = (effect: effect, state: state, dispatch: action => unit) => {
   | AbortConnections(controller) =>
     Log.info("Aborting in-flight connections")
     WebAPI.AbortController.abort(controller)
-  | ConnectACP({config, signal, initialAuthBehavior}) =>
+  | ConnectACP({config, signal}) =>
     let connect = async () => {
       let result = await ACP.connect(config, ~signal)
       switch result {
@@ -666,12 +684,7 @@ let handleEffect = (effect: effect, state: state, dispatch: action => unit) => {
             | false => "?"
             }
             let fullUrl = `${loginUrl}${separator}return_to=${returnTo}${frameworkParam}`
-            switch initialAuthBehavior {
-            | Client__FtueState.ShowWelcomeModal =>
-              dispatch(ACPAuthRequiredReceived({loginUrl: fullUrl}))
-            | Client__FtueState.RedirectToLogin =>
-              WebAPI.Global.window->WebAPI.Window.location->WebAPI.Location.assign(fullUrl)
-            }
+            dispatch(ACPAuthRequiredReceived({loginUrl: fullUrl}))
           | ACP.ConnectionFailed(msg) => dispatch(ACPConnectError(msg))
           }
         }

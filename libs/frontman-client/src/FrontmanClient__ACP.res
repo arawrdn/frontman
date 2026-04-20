@@ -18,6 +18,7 @@ type config = {
   endpoint: string,
   tokenUrl: string,
   loginUrl: string,
+  authToken: option<string>,
   clientInfo: Types.implementation,
   clientCapabilities: Types.clientCapabilities,
   onMessage: option<(messageDirection, JSON.t) => unit>,
@@ -29,6 +30,7 @@ let makeConfig = (
   ~endpoint: string,
   ~tokenUrl: string,
   ~loginUrl: string,
+  ~authToken: option<string>=?,
   ~name: string,
   ~version: string,
   ~_meta: JSON.t,
@@ -39,6 +41,7 @@ let makeConfig = (
   endpoint,
   tokenUrl,
   loginUrl,
+  authToken,
   clientInfo: {
     name,
     version,
@@ -157,15 +160,19 @@ let connect = async (config: config, ~signal: option<WebAPI.EventAPI.abortSignal
   Sentry.addBreadcrumb(~category=#acp, ~message="Starting ACP connection")
 
   // Fetch socket token
-  let tokenResult = switch await fetchSocketToken(config.tokenUrl) {
-  | Ok(token) => Ok(token)
-  | Error(NotAuthenticated) => Error(AuthRequired({loginUrl: config.loginUrl}))
-  | Error(FetchFailed(msg)) =>
-    Log.error(`Token fetch failed: ${msg}`)
-    Error(ConnectionFailed(`Token fetch failed: ${msg}`))
-  | Error(InvalidResponse) =>
-    Log.error("Invalid token response")
-    Error(ConnectionFailed("Invalid token response"))
+  let tokenResult = switch config.authToken {
+  | Some(token) => Ok(token)
+  | None =>
+    switch await fetchSocketToken(config.tokenUrl) {
+    | Ok(token) => Ok(token)
+    | Error(NotAuthenticated) => Error(AuthRequired({loginUrl: config.loginUrl}))
+    | Error(FetchFailed(msg)) =>
+      Log.error(`Token fetch failed: ${msg}`)
+      Error(ConnectionFailed(`Token fetch failed: ${msg}`))
+    | Error(InvalidResponse) =>
+      Log.error("Invalid token response")
+      Error(ConnectionFailed("Invalid token response"))
+    }
   }
 
   switch (tokenResult, checkAborted(signal)) {

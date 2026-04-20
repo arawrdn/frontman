@@ -10,7 +10,8 @@ defmodule FrontmanServerWeb.SocketTokenController do
   def show(conn, _params) do
     case conn.assigns[:current_scope] do
       %{user: user} when not is_nil(user) ->
-        token = Phoenix.Token.sign(conn, "user socket", user.id)
+        session_token = conn.assigns[:user_session_token] || get_session(conn, :user_token)
+        token = Phoenix.Token.sign(conn, "user socket", session_token)
         json(conn, %{token: token})
 
       _ ->

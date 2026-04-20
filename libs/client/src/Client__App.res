@@ -1,4 +1,5 @@
 module SettingsModal = Client__SettingsModal
+module AuthModal = Client__AuthModal
 
 @react.component
 let make = (~apiBaseUrl: string) => {
@@ -10,6 +11,8 @@ let make = (~apiBaseUrl: string) => {
     loadTask,
     deleteSession,
     authRedirectUrl,
+    authBridgeUrl,
+    resumeAuthWithToken,
     _,
   } = Client__FrontmanProvider.useFrontman()
 
@@ -75,6 +78,15 @@ let make = (~apiBaseUrl: string) => {
     openSettingsProviders()
   }
 
+  let handleWelcomeShown = () => {
+    switch ftueState {
+    | Client__FtueState.New =>
+      Client__FtueState.setWelcomeShown()
+      setFtueState(_ => Client__FtueState.WelcomeShown)
+    | Client__FtueState.WelcomeShown | Client__FtueState.Completed => ()
+    }
+  }
+
   // Provider nudge: show when FTUE is completed, no provider configured, and not dismissed this session.
   // Gate on usageInfo being loaded (Some) to avoid flashing the nudge before provider status is fetched.
   let showNudge = switch (ftueState, hasProviderConfigured, providerNudgeDismissed, usageInfo) {
@@ -106,10 +118,16 @@ let make = (~apiBaseUrl: string) => {
     <SettingsModal
       open_={settingsOpen} onOpenChange={handleSettingsOpenChange} initialTab=?{settingsInitialTab}
     />
-    // FTUE: Welcome modal for first-time unauthenticated users
-    {switch (authRedirectUrl, ftueState) {
-    | (Some(loginUrl), Client__FtueState.New) => <Client__WelcomeModal loginUrl />
-    | _ => React.null
+    {switch authRedirectUrl {
+    | Some(loginUrl) =>
+      <AuthModal
+        loginUrl
+        authBridgeUrl
+        ftueState
+        onWelcomeShown=handleWelcomeShown
+        onBridgeToken=resumeAuthWithToken
+      />
+    | None => React.null
     }}
     // FTUE: Post-signup celebration overlay
     {switch showCelebration {

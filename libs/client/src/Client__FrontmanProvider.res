@@ -139,6 +139,8 @@ type contextValue = {
   session: option<ACP.session>,
   relay: option<Relay.t>,
   authRedirectUrl: option<string>,
+  authBridgeUrl: string,
+  resumeAuthWithToken: string => unit,
   createSession: (~onComplete: result<string, string> => unit) => unit,
   clearSession: unit => unit,
   sendPrompt: (
@@ -161,6 +163,8 @@ let defaultContextValue: contextValue = {
   session: None,
   relay: None,
   authRedirectUrl: None,
+  authBridgeUrl: "",
+  resumeAuthWithToken: _ => (),
   createSession: (~onComplete as _) => (),
   clearSession: () => (),
   sendPrompt: (_, ~additionalBlocks as _, ~onComplete as _, ~_meta as _) => (),
@@ -188,6 +192,7 @@ module Provider = {
     ~endpoint: string,
     ~tokenUrl: string,
     ~loginUrl: string,
+    ~authBridgeUrl: string,
     ~clientName: string="frontman-client",
     ~clientVersion: string="1.0.0",
     ~children: React.element,
@@ -204,11 +209,7 @@ module Provider = {
     })
 
     // Use StateReducer - effects are executed in useEffect, not during dispatch
-    let initialConnectionState = {
-      ...Reducer.initialState,
-      initialAuthBehavior: Client__FtueState.getAuthBehavior(),
-    }
-    let (state, dispatch) = StateReducer.useReducer(module(Reducer), initialConnectionState)
+    let (state, dispatch) = StateReducer.useReducer(module(Reducer), Reducer.initialState)
 
     // Single initialization effect
     React.useEffect0(() => {
@@ -250,6 +251,7 @@ module Provider = {
         endpoint,
         tokenUrl,
         loginUrl,
+        authBridgeUrl,
         clientName,
         clientVersion,
         baseUrl,
@@ -433,7 +435,21 @@ module Provider = {
       dispatch(DeleteSession({taskId, onComplete}))
     }, [dispatch])
 
+    let resumeAuthWithToken = (token: string) => {
+      Client__AuthSessionToken.set(~authBridgeUrl, ~token)
+      dispatch(ResumeAuthWithToken(token))
+    }
+
+    // Submit a late tool result via the ACP session channel.
     let authRedirectUrl = Reducer.Selectors.getAuthRedirectUrl(state)
+
+    React.useEffect(() => {
+      switch authRedirectUrl {
+      | Some(_) => Client__AuthSessionToken.clear(authBridgeUrl)
+      | None => ()
+      }
+      None
+    }, (authBridgeUrl, authRedirectUrl))
 
     let contextValue: contextValue = {
       connectionState: Reducer.Selectors.getConnectionStatus(state),
@@ -442,6 +458,8 @@ module Provider = {
       session: Reducer.Selectors.getSession(state),
       relay: state.relayInstance,
       authRedirectUrl,
+      authBridgeUrl,
+      resumeAuthWithToken,
       createSession,
       clearSession,
       sendPrompt,

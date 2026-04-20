@@ -51,6 +51,90 @@ document.querySelectorAll("form[data-auto-submit]").forEach(form => {
 // >> liveSocket.disableLatencySim()
 window.liveSocket = liveSocket
 
+const AUTH_BRIDGE_SOURCE = "frontman.auth-bridge"
+
+function initAuthBridge(root) {
+  const currentUrl = new URL(window.location.href)
+  const popupMode = currentUrl.searchParams.get("popup") === "1"
+  const openerOrigin = currentUrl.searchParams.get("opener_origin")
+  const status = root.querySelector("#auth-bridge-status")
+
+  if (!status) {
+    return
+  }
+
+  let parentOrigin = null
+  if (popupMode && openerOrigin) parentOrigin = openerOrigin
+
+  const postToParent = payload => {
+    const targetWindow = popupMode ? window.opener : window.parent
+
+    if (!parentOrigin || !targetWindow || targetWindow === window) {
+      return
+    }
+
+    targetWindow.postMessage(JSON.stringify({source: AUTH_BRIDGE_SOURCE, ...payload}), parentOrigin)
+  }
+
+  const setStatus = message => {
+    status.textContent = message
+  }
+
+  const errorMessage = err => {
+    if (err instanceof Error && err.message) {
+      return err.message
+    }
+
+    return "Unable to connect your Frontman session."
+  }
+
+  const fetchToken = async () => {
+    const response = await fetch("/api/socket-token", {
+      credentials: "include",
+    })
+
+    if (response.ok) {
+      const json = await response.json()
+      if (typeof json.token === "string") {
+        postToParent({kind: "token", token: json.token})
+
+        if (popupMode) {
+          window.close()
+        }
+
+        return
+      }
+
+      throw new Error("Auth bridge returned an invalid token payload")
+    }
+
+    if (response.status === 401) {
+      if (popupMode) {
+        setStatus("Sign in did not complete in this window. Please try again.")
+        postToParent({kind: "error", message: "Sign in did not complete in this window."})
+        return
+      }
+
+      setStatus("This secure page needs an active Frontman session before it can continue.")
+      return
+    }
+
+    throw new Error(`Auth bridge token request failed (${response.status})`)
+  }
+
+  if (popupMode && openerOrigin) {
+    setStatus("Completing sign-in in this secure window...")
+    void fetchToken()
+  } else {
+    setStatus("This secure page is only used to hand sign-in back to Frontman.")
+  }
+}
+
+const authBridgeRoot = document.querySelector("[data-auth-bridge-root]")
+if (authBridgeRoot) {
+  initAuthBridge(authBridgeRoot)
+}
+
 // The lines below enable quality of life phoenix_live_reload
 // development features:
 //
@@ -85,4 +169,3 @@ if (process.env.NODE_ENV === "development") {
     window.liveReloader = reloader
   })
 }
-

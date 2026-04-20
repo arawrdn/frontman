@@ -38,6 +38,7 @@ defmodule FrontmanServerWeb.Router do
     pipe_through(:browser)
 
     get("/", PageController, :home)
+    get("/auth-bridge", AuthBridgeController, :show)
   end
 
   scope "/health", FrontmanServerWeb do

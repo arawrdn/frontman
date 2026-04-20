@@ -4,7 +4,6 @@ module Reducer = Client__ConnectionReducer
 module ACP = FrontmanAiFrontmanClient.FrontmanClient__ACP
 module Relay = FrontmanAiFrontmanClient.FrontmanClient__Relay
 module MCPServer = FrontmanAiFrontmanClient.FrontmanClient__MCP__Server
-module FtueState = Client__FtueState
 
 // Helper to check if effect list contains a specific effect type
 let hasEffect = (effects, predicate) => effects->Array.some(predicate)
@@ -29,18 +28,18 @@ let hasConnectACP = effects =>
     | _ => false
     }
   )
+let getConnectACPConfig = effects =>
+  effects->Array.findMap(e =>
+    switch e {
+    | Reducer.ConnectACP({config}) => Some(config)
+    | _ => None
+    }
+  )
 let hasConnectRelay = effects =>
   hasEffect(effects, e =>
     switch e {
     | Reducer.ConnectRelay(_) => true
     | _ => false
-    }
-  )
-let getConnectACPInitialAuthBehavior = effects =>
-  effects->Array.findMap(e =>
-    switch e {
-    | Reducer.ConnectACP({initialAuthBehavior}) => Some(initialAuthBehavior)
-    | _ => None
     }
   )
 
@@ -93,6 +92,7 @@ describe("Connection Reducer", () => {
           endpoint: "ws://test",
           tokenUrl: "http://test/api/socket-token",
           loginUrl: "http://test/users/log-in",
+          authBridgeUrl: "http://test/auth-bridge",
           clientName: "test",
           clientVersion: "1.0.0",
           baseUrl: "http://test",
@@ -101,7 +101,7 @@ describe("Connection Reducer", () => {
           _meta: JSON.Encode.object(Dict.fromArray([("framework", JSON.Encode.string("test"))])),
         }
         let (nextState, effects) = Reducer.reduce(
-          {...Reducer.initialState, initialAuthBehavior: FtueState.ShowWelcomeModal},
+          Reducer.initialState,
           Initialize({config: mockConfig, relay: mockRelay, mcpServer: mockServer}),
         )
 
@@ -110,9 +110,6 @@ describe("Connection Reducer", () => {
         t->expect(Option.isSome(nextState.relayInstance))->Expect.toBe(true)
         t->expect(Option.isSome(nextState.mcpServer))->Expect.toBe(true)
         t->expect(hasConnectACP(effects))->Expect.toBe(true)
-        t
-        ->expect(getConnectACPInitialAuthBehavior(effects))
-        ->Expect.toBe(Some(FtueState.ShowWelcomeModal))
         t->expect(hasConnectRelay(effects))->Expect.toBe(true)
       },
     )
@@ -126,6 +123,7 @@ describe("Connection Reducer", () => {
           endpoint: "ws://test",
           tokenUrl: "http://test/api/socket-token",
           loginUrl: "http://test/users/log-in",
+          authBridgeUrl: "http://test/auth-bridge",
           clientName: "test",
           clientVersion: "1.0.0",
           baseUrl: "http://test",
@@ -140,6 +138,69 @@ describe("Connection Reducer", () => {
         )
 
         t->expect(hasLogInfo(effects))->Expect.toBe(true)
+      },
+    )
+  })
+
+  describe("Auth bridge", () => {
+    test(
+      "ACPAuthRequiredReceived stores login URL for bridge flow",
+      t => {
+        let mockRelay = Obj.magic({"id": "relay-1"})
+        let mockServer = Obj.magic({"tools": []})
+        let mockConfig: Reducer.initConfig = {
+          endpoint: "ws://test",
+          tokenUrl: "http://test/api/socket-token",
+          loginUrl: "http://test/users/log-in",
+          authBridgeUrl: "http://test/auth-bridge",
+          clientName: "test",
+          clientVersion: "1.0.0",
+          baseUrl: "http://test",
+          onACPMessage: (_, _) => (),
+          onTitleUpdated: None,
+          _meta: JSON.Encode.object(Dict.fromArray([("framework", JSON.Encode.string("test"))])),
+        }
+
+        let (connectingState, _) = Reducer.reduce(
+          Reducer.initialState,
+          Initialize({config: mockConfig, relay: mockRelay, mcpServer: mockServer}),
+        )
+        let (nextState, _effects) = Reducer.reduce(
+          connectingState,
+          ACPAuthRequiredReceived({loginUrl: "http://test/users/log-in?return_to=http://site"}),
+        )
+
+        t
+        ->expect(Reducer.Selectors.getAuthRedirectUrl(nextState))
+        ->Expect.toBe(Some("http://test/users/log-in?return_to=http://site"))
+      },
+    )
+
+    test(
+      "ResumeAuthWithToken retries ACP using bridge token",
+      t => {
+        let abortController = WebAPI.AbortController.make()
+        let acpConfig = ACP.makeConfig(
+          ~endpoint="ws://test",
+          ~tokenUrl="http://test/api/socket-token",
+          ~loginUrl="http://test/users/log-in",
+          ~name="test",
+          ~version="1.0.0",
+          ~_meta=JSON.Encode.object(Dict.fromArray([])),
+        )
+        let state = {
+          ...Reducer.initialState,
+          acp: ACPAuthRequired({loginUrl: "http://test/users/log-in?return_to=http://site"}),
+          acpConfig: Some(acpConfig),
+          abortController: Some(abortController),
+        }
+
+        let (nextState, effects) = Reducer.reduce(state, ResumeAuthWithToken("bridge-token"))
+
+        t->expect(nextState.acp)->Expect.toBe(Reducer.ACPConnecting)
+        t
+        ->expect(getConnectACPConfig(effects)->Option.flatMap(config => config.authToken))
+        ->Expect.toBe(Some("bridge-token"))
       },
     )
   })
@@ -495,8 +556,8 @@ describe("Connection Reducer", () => {
           acp: ACPConnected(mockConn),
           relay: RelayConnected,
           session: SessionActive(mockSession),
-          initialAuthBehavior: FtueState.ShowWelcomeModal,
           isSendingPrompt: false,
+          acpConfig: None,
           relayInstance: Some(mockRelay),
           mcpServer: Some(mockServer),
           abortController: Some(mockAbortController),

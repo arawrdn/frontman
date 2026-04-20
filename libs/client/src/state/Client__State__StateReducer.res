@@ -682,12 +682,26 @@ let sendMessageToAPIImpl = (
   }
 }
 
+let authHeaders = (~apiBaseUrl: string, ~entries: array<(string, string)>=[]) => {
+  let headers = WebAPI.Headers.fromKeyValueArray(entries)
+
+  switch Client__AuthSessionToken.get(apiBaseUrl) {
+  | Some(token) => headers->WebAPI.Headers.set(~name="Authorization", ~value=`Bearer ${token}`)
+  | None => ()
+  }
+
+  headers->WebAPI.HeadersInit.fromHeaders
+}
+
 let fetchUsageInfoImpl = (dispatch, ~apiBaseUrl) => {
   let fetch = async () => {
     let url = `${apiBaseUrl}/api/user/api-key-usage`
 
     try {
-      let response = await WebAPI.Global.fetch(url, ~init={credentials: Include})
+      let response = await WebAPI.Global.fetch(
+        url,
+        ~init={credentials: Include, headers: authHeaders(~apiBaseUrl)},
+      )
       if response.ok {
         let json = await response->WebAPI.Response.json
         let usageInfo = S.parseJsonOrThrow(json, Client__State__Types.usageInfoSchema)
@@ -705,7 +719,10 @@ let fetchUserProfileImpl = (dispatch, ~apiBaseUrl) => {
     let url = `${apiBaseUrl}/api/user/me`
 
     try {
-      let response = await WebAPI.Global.fetch(url, ~init={credentials: Include})
+      let response = await WebAPI.Global.fetch(
+        url,
+        ~init={credentials: Include, headers: authHeaders(~apiBaseUrl)},
+      )
       if response.ok {
         let json = await response->WebAPI.Response.json
         let userProfile = S.parseJsonOrThrow(json, Client__State__Types.userProfileSchema)
@@ -794,7 +811,10 @@ let handleEffect = (effect, state: state, dispatch) => {
       let url = `${apiBaseUrl}/api/user/api-key-usage`
 
       try {
-        let response = await WebAPI.Global.fetch(url, ~init={credentials: Include})
+        let response = await WebAPI.Global.fetch(
+          url,
+          ~init={credentials: Include, headers: authHeaders(~apiBaseUrl)},
+        )
         if response.ok {
           let json = await response->WebAPI.Response.json
           let usageInfo = S.parseJsonOrThrow(json, Client__State__Types.usageInfoSchema)
@@ -825,9 +845,7 @@ let handleEffect = (effect, state: state, dispatch) => {
           ~init={
             credentials: Include,
             method: "POST",
-            headers: WebAPI.HeadersInit.fromDict(
-              Dict.fromArray([("Content-Type", "application/json")]),
-            ),
+            headers: authHeaders(~apiBaseUrl, ~entries=[("Content-Type", "application/json")]),
             body: WebAPI.BodyInit.fromString(
               encodeUserApiKeySaveRequest(~provider="openrouter", ~key),
             ),
@@ -856,7 +874,10 @@ let handleEffect = (effect, state: state, dispatch) => {
       let url = `${apiBaseUrl}/api/user/api-key-usage?provider=anthropic`
 
       try {
-        let response = await WebAPI.Global.fetch(url, ~init={credentials: Include})
+        let response = await WebAPI.Global.fetch(
+          url,
+          ~init={credentials: Include, headers: authHeaders(~apiBaseUrl)},
+        )
         if response.ok {
           let json = await response->WebAPI.Response.json
           let usageInfo = S.parseJsonOrThrow(json, Client__State__Types.usageInfoSchema)
@@ -889,9 +910,7 @@ let handleEffect = (effect, state: state, dispatch) => {
           ~init={
             credentials: Include,
             method: "POST",
-            headers: WebAPI.HeadersInit.fromDict(
-              Dict.fromArray([("Content-Type", "application/json")]),
-            ),
+            headers: authHeaders(~apiBaseUrl, ~entries=[("Content-Type", "application/json")]),
             body: WebAPI.BodyInit.fromString(
               encodeUserApiKeySaveRequest(~provider="anthropic", ~key),
             ),
@@ -984,7 +1003,10 @@ let handleEffect = (effect, state: state, dispatch) => {
       let url = `${apiBaseUrl}/api/oauth/anthropic/status`
 
       try {
-        let response = await WebAPI.Global.fetch(url, ~init={credentials: Include})
+        let response = await WebAPI.Global.fetch(
+          url,
+          ~init={credentials: Include, headers: authHeaders(~apiBaseUrl)},
+        )
         if response.ok {
           let json = await response->WebAPI.Response.json
           let connected =
@@ -1009,7 +1031,10 @@ let handleEffect = (effect, state: state, dispatch) => {
       let url = `${apiBaseUrl}/api/oauth/anthropic/authorize-url`
 
       try {
-        let response = await WebAPI.Global.fetch(url, ~init={credentials: Include})
+        let response = await WebAPI.Global.fetch(
+          url,
+          ~init={credentials: Include, headers: authHeaders(~apiBaseUrl)},
+        )
         if response.ok {
           let json = await response->WebAPI.Response.json
           let authorizeUrl =
@@ -1052,9 +1077,7 @@ let handleEffect = (effect, state: state, dispatch) => {
           ~init={
             method: "POST",
             credentials: Include,
-            headers: WebAPI.HeadersInit.fromDict(
-              Dict.fromArray([("Content-Type", "application/json")]),
-            ),
+            headers: authHeaders(~apiBaseUrl, ~entries=[("Content-Type", "application/json")]),
             body: WebAPI.BodyInit.fromString(JSON.stringify(body)),
           },
         )
@@ -1093,6 +1116,7 @@ let handleEffect = (effect, state: state, dispatch) => {
           ~init={
             method: "DELETE",
             credentials: Include,
+            headers: authHeaders(~apiBaseUrl),
           },
         )
         if response.ok {
@@ -1111,7 +1135,10 @@ let handleEffect = (effect, state: state, dispatch) => {
       let url = `${apiBaseUrl}/api/oauth/chatgpt/status`
 
       try {
-        let response = await WebAPI.Global.fetch(url, ~init={credentials: Include})
+        let response = await WebAPI.Global.fetch(
+          url,
+          ~init={credentials: Include, headers: authHeaders(~apiBaseUrl)},
+        )
         if response.ok {
           let json = await response->WebAPI.Response.json
           let connected =
@@ -1144,9 +1171,7 @@ let handleEffect = (effect, state: state, dispatch) => {
           ~init={
             method: "POST",
             credentials: Include,
-            headers: WebAPI.HeadersInit.fromDict(
-              Dict.fromArray([("Content-Type", "application/json")]),
-            ),
+            headers: authHeaders(~apiBaseUrl, ~entries=[("Content-Type", "application/json")]),
           },
         )
         if response.ok {
@@ -1211,9 +1236,7 @@ let handleEffect = (effect, state: state, dispatch) => {
               ~init={
                 method: "POST",
                 credentials: Include,
-                headers: WebAPI.HeadersInit.fromDict(
-                  Dict.fromArray([("Content-Type", "application/json")]),
-                ),
+                headers: authHeaders(~apiBaseUrl, ~entries=[("Content-Type", "application/json")]),
                 body: WebAPI.BodyInit.fromString(body),
               },
             )
@@ -1277,6 +1300,7 @@ let handleEffect = (effect, state: state, dispatch) => {
           ~init={
             method: "DELETE",
             credentials: Include,
+            headers: authHeaders(~apiBaseUrl),
           },
         )
         if response.ok {

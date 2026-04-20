@@ -20,6 +20,7 @@ type clientConfig = {
   endpoint: string,
   tokenUrl: string,
   loginUrl: string,
+  authBridgeUrl: string,
   apiBaseUrl: string,
 }
 
@@ -41,6 +42,7 @@ let getConfig = (): clientConfig => {
     endpoint: `wss://${host}/socket`,
     tokenUrl: `https://${host}/api/socket-token`,
     loginUrl: `https://${host}/users/log-in`,
+    authBridgeUrl: `https://${host}/auth-bridge`,
     apiBaseUrl: `https://${host}`,
   }
 }
@@ -61,6 +63,7 @@ WebAPI.Global.document->WebAPI.Document.addEventListener(Custom("DOMContentLoade
           endpoint={config.endpoint}
           tokenUrl={config.tokenUrl}
           loginUrl={config.loginUrl}
+          authBridgeUrl={config.authBridgeUrl}
         >
           <Client__App apiBaseUrl={config.apiBaseUrl} />
         </Client__FrontmanProvider.Provider>

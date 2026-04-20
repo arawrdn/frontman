@@ -131,32 +131,69 @@ defmodule FrontmanServerWeb.UserAuth do
   Will reissue the session token if it is older than the configured age.
   """
   def fetch_current_scope_for_user(conn, _opts) do
-    with {token, conn} <- ensure_user_token(conn),
+    with {token, conn, source} <- ensure_user_token(conn),
          {user, token_inserted_at} <- Accounts.get_user_by_session_token(token) do
       conn
+      |> assign(:user_session_token, token)
       |> assign(:current_scope, Scope.for_user(user))
-      |> maybe_reissue_user_session_token(user, token_inserted_at)
+      |> maybe_reissue_user_session_token(user, token_inserted_at, source)
     else
-      nil -> assign(conn, :current_scope, Scope.for_user(nil))
+      nil ->
+        conn
+        |> assign(:user_session_token, nil)
+        |> assign(:current_scope, Scope.for_user(nil))
     end
   end
 
   defp ensure_user_token(conn) do
     if token = get_session(conn, :user_token) do
-      {token, conn}
+      {token, conn, :session}
     else
-      conn = fetch_cookies(conn, signed: [@remember_me_cookie])
+      conn
+      |> fetch_cookies(signed: [@remember_me_cookie])
+      |> ensure_remember_or_bearer_user_token()
+    end
+  end
 
-      if token = conn.cookies[@remember_me_cookie] do
-        {token, conn |> put_token_in_session(token) |> put_session(:user_remember_me, true)}
-      else
+  defp ensure_remember_or_bearer_user_token(conn) do
+    case get_bearer_session_token(conn) do
+      nil ->
+        case conn.cookies[@remember_me_cookie] do
+          nil ->
+            nil
+
+          token ->
+            {token, conn |> put_token_in_session(token) |> put_session(:user_remember_me, true),
+             :remember_me}
+        end
+
+      token ->
+        {token, conn, :bearer}
+    end
+  end
+
+  defp get_bearer_session_token(conn) do
+    case get_req_header(conn, "authorization") do
+      ["Bearer " <> token] ->
+        case Phoenix.Token.verify(
+               FrontmanServerWeb.Endpoint,
+               "user socket",
+               token,
+               max_age: @max_cookie_age_in_days * 24 * 60 * 60
+             ) do
+          {:ok, session_token} -> session_token
+          _ -> nil
+        end
+
+      _ ->
         nil
-      end
     end
   end
 
   # Reissue the session token if it is older than the configured reissue age.
-  defp maybe_reissue_user_session_token(conn, user, token_inserted_at) do
+  defp maybe_reissue_user_session_token(conn, _user, _token_inserted_at, :bearer), do: conn
+
+  defp maybe_reissue_user_session_token(conn, user, token_inserted_at, _source) do
     token_age = DateTime.diff(DateTime.utc_now(:second), token_inserted_at, :day)
 
     if token_age >= @session_reissue_age_in_days do

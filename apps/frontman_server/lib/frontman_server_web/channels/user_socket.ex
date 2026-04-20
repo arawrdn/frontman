@@ -32,11 +32,15 @@ defmodule FrontmanServerWeb.UserSocket do
   # Cross-origin auth: token passed in WebSocket params
   defp get_scope_from_token(%{"token" => token}) do
     case Phoenix.Token.verify(FrontmanServerWeb.Endpoint, "user socket", token, max_age: @max_age) do
-      {:ok, user_id} -> Accounts.get_user!(user_id) |> Scope.for_user()
-      _ -> nil
+      {:ok, session_token} ->
+        case Accounts.get_user_by_session_token(session_token) do
+          {user, _inserted_at} -> Scope.for_user(user)
+          nil -> nil
+        end
+
+      _ ->
+        nil
     end
-  rescue
-    Ecto.NoResultsError -> nil
   end
 
   defp get_scope_from_token(_), do: nil
