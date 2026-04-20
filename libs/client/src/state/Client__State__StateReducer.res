@@ -939,7 +939,10 @@ let handleEffect = (effect, state: state, dispatch) => {
       let url = `${apiBaseUrl}/api/user/api-key-usage?provider=fireworks`
 
       try {
-        let response = await WebAPI.Global.fetch(url, ~init={credentials: Include})
+        let response = await WebAPI.Global.fetch(
+          url,
+          ~init={credentials: Include, headers: authHeaders(~apiBaseUrl)},
+        )
         if response.ok {
           let json = await response->WebAPI.Response.json
           let usageInfo = S.parseJsonOrThrow(json, Client__State__Types.usageInfoSchema)
@@ -972,9 +975,7 @@ let handleEffect = (effect, state: state, dispatch) => {
           ~init={
             credentials: Include,
             method: "POST",
-            headers: WebAPI.HeadersInit.fromDict(
-              Dict.fromArray([("Content-Type", "application/json")]),
-            ),
+            headers: authHeaders(~apiBaseUrl, ~entries=[("Content-Type", "application/json")]),
             body: WebAPI.BodyInit.fromString(
               encodeUserApiKeySaveRequest(~provider="fireworks", ~key),
             ),
