@@ -45,6 +45,7 @@ defmodule FrontmanServer.Application do
       FrontmanServer.Vault,
       {DNSCluster, query: Application.get_env(:frontman_server, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: FrontmanServer.PubSub},
+      FrontmanServer.Tasks.ExecutionStartSupervisor,
       # Supervised agent execution (Registry + TaskSupervisor)
       {SwarmAi.Runtime,
        name: FrontmanServer.AgentRuntime,

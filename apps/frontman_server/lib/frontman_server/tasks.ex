@@ -48,6 +48,7 @@ defmodule FrontmanServer.Tasks do
 
   alias FrontmanServer.Tasks.{
     Execution,
+    ExecutionStarter,
     Interaction,
     InteractionSchema,
     Task,
@@ -56,8 +57,6 @@ defmodule FrontmanServer.Tasks do
 
   alias FrontmanServer.Workers.GenerateTitle
   alias ReqLLM.ToolCall
-
-  @execution_start_table :frontman_tasks_execution_start_locks
 
   # --- Authorization Helpers ---
 
@@ -488,22 +487,13 @@ defmodule FrontmanServer.Tasks do
   end
 
   defp maybe_start_execution_async(scope, task_id, tools, opts) do
-    case mark_execution_starting(task_id) do
-      :ok ->
-        {:ok, _pid} =
-          Elixir.Task.start(fn ->
-            try do
-              maybe_start_execution_sync(scope, task_id, tools, opts)
-            after
-              clear_execution_starting(task_id)
-            end
-          end)
+    ExecutionStarter.start_or_join(scope, task_id, tools, opts)
+  end
 
-        :ok
-
-      :already_starting ->
-        :already_running
-    end
+  @doc false
+  @spec start_execution_sync(Scope.t(), String.t(), list(), keyword()) :: :ok
+  def start_execution_sync(scope, task_id, tools, opts) do
+    maybe_start_execution_sync(scope, task_id, tools, opts)
   end
 
   defp maybe_start_execution_sync(scope, task_id, tools, opts) do
@@ -528,41 +518,7 @@ defmodule FrontmanServer.Tasks do
   end
 
   defp execution_active?(scope, task_id) do
-    Execution.running?(scope, task_id) or execution_starting?(task_id)
-  end
-
-  defp mark_execution_starting(task_id) do
-    table = ensure_execution_start_table()
-
-    case :ets.insert_new(table, {task_id}) do
-      true -> :ok
-      false -> :already_starting
-    end
-  end
-
-  defp execution_starting?(task_id) do
-    table = ensure_execution_start_table()
-    :ets.member(table, task_id)
-  end
-
-  defp clear_execution_starting(task_id) do
-    table = ensure_execution_start_table()
-    :ets.delete(table, task_id)
-    :ok
-  end
-
-  defp ensure_execution_start_table do
-    case :ets.whereis(@execution_start_table) do
-      :undefined ->
-        try do
-          :ets.new(@execution_start_table, [:named_table, :public, :set, read_concurrency: true])
-        rescue
-          ArgumentError -> @execution_start_table
-        end
-
-      table ->
-        table
-    end
+    Execution.running?(scope, task_id) or ExecutionStarter.running?(task_id)
   end
 
   @doc false

@@ -225,6 +225,43 @@ defmodule FrontmanServer.Tasks.ExecutionIntegrationTest do
       assert_receive {:execution_start_error, ":sandbox_provisioning_timeout"}, 1_000
     end
 
+    test "in-flight execution start remains owned after caller exits", %{
+      task_id: task_id,
+      scope: scope
+    } do
+      agent =
+        test_agent(
+          %MockLLM{response: "hello", delay_ms: 5_000},
+          "SandboxProvisioningOwnershipAgent"
+        )
+
+      parent = self()
+
+      {starter_pid, starter_ref} =
+        spawn_monitor(fn ->
+          result =
+            Tasks.maybe_start_execution(scope, task_id, [],
+              agent: agent,
+              sandbox_provider: StuckProvisionProvider,
+              sandbox_wait_timeout_ms: 700
+            )
+
+          send(parent, {:first_start_result, result})
+        end)
+
+      assert_receive {:first_start_result, :ok}, 500
+      assert_receive {:DOWN, ^starter_ref, :process, ^starter_pid, :normal}, 500
+
+      assert :already_running =
+               Tasks.maybe_start_execution(scope, task_id, [],
+                 agent: agent,
+                 sandbox_provider: StuckProvisionProvider,
+                 sandbox_wait_timeout_ms: 700
+               )
+
+      assert_receive {:execution_start_error, ":sandbox_provisioning_timeout"}, 1_500
+    end
+
     test "returns sandbox_stopped immediately instead of waiting for timeout", %{
       task_id: task_id,
       scope: scope
