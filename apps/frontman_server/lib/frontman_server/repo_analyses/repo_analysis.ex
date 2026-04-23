@@ -43,7 +43,7 @@ defmodule FrontmanServer.RepoAnalyses.RepoAnalysis do
 
   `user_id` is set explicitly and never cast from attrs.
   """
-  @spec create_changeset(t(), Ecto.UUID.t(), map()) :: Ecto.Changeset.t()
+  @spec create_changeset(t(), map()) :: Ecto.Changeset.t()
   def create_changeset(repo_analysis, attrs) when is_map(attrs) do
     repo_analysis
     |> cast(attrs, [

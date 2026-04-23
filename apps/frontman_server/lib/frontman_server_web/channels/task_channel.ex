@@ -417,8 +417,9 @@ defmodule FrontmanServerWeb.TaskChannel do
     end
   end
 
-  # Handle session/load - stream history via session/update notifications
-  # This is called after the client has joined the session channel, allowing
+  # Handle session/load - stream history via session/update notifications.
+  # This channel is the single owner of session-scoped ACP methods.
+  # session/load is handled here after the client joins task:<id>, allowing
   # history notifications to be received through the onUpdate callback.
   defp handle_session_load(id, params, socket) do
     task_id = socket.assigns.task_id

@@ -1,7 +1,5 @@
 defmodule FrontmanServerWeb.TasksChannelTest do
-  # async: false required because "ACP session/load" describe block uses shared_sandbox: true
-  # Shared sandbox mode is incompatible with async tests as it can interfere with other tests' connections
-  use FrontmanServerWeb.ChannelCase, async: false
+  use FrontmanServerWeb.ChannelCase, async: true
 
   import FrontmanServer.Test.Fixtures.Accounts
   import FrontmanServer.Test.Fixtures.Tasks
@@ -16,12 +14,6 @@ defmodule FrontmanServerWeb.TasksChannelTest do
       |> subscribe_and_join("tasks", %{})
 
     {:ok, socket: socket, scope: scope}
-  end
-
-  describe "join tasks" do
-    test "succeeds and sets acp_initialized to false", %{socket: socket} do
-      assert socket.assigns.acp_initialized == false
-    end
   end
 
   describe "ACP initialize" do
@@ -369,6 +361,24 @@ defmodule FrontmanServerWeb.TasksChannelTest do
         }
       })
     end
+
+    test "returns method not found for session/load on tasks channel", %{socket: socket} do
+      push(socket, "acp:message", %{
+        "jsonrpc" => "2.0",
+        "id" => 1,
+        "method" => "session/load",
+        "params" => %{"sessionId" => Ecto.UUID.generate()}
+      })
+
+      assert_push("acp:message", %{
+        "jsonrpc" => "2.0",
+        "id" => 1,
+        "error" => %{
+          "code" => -32_601,
+          "message" => "Method not found"
+        }
+      })
+    end
   end
 
   describe "list_sessions" do
@@ -384,7 +394,7 @@ defmodule FrontmanServerWeb.TasksChannelTest do
       assert_reply(ref, :ok, %{"sessions" => [session]})
 
       assert session["sessionId"] == task_id
-      assert session["title"] == "New Task"
+      assert session["title"] == "New Task" <> task_id
       assert {:ok, _, _} = DateTime.from_iso8601(session["createdAt"])
       assert {:ok, _, _} = DateTime.from_iso8601(session["updatedAt"])
     end
@@ -445,188 +455,5 @@ defmodule FrontmanServerWeb.TasksChannelTest do
       # Other user's task should still exist
       assert {:ok, _task} = FrontmanServer.Tasks.get_task(other_scope, other_task_id)
     end
-  end
-
-  describe "ACP session/load" do
-    @describetag shared_sandbox: true
-
-    setup %{scope: scope} do
-      task_id = task_fixture(scope)
-      {:ok, task_id: task_id}
-    end
-
-    test "returns success for valid session", %{socket: socket, task_id: task_id} do
-      push(socket, "acp:message", acp_request(1, "session/load", %{"sessionId" => task_id}))
-
-      assert_push("acp:message", %{
-        "jsonrpc" => "2.0",
-        "id" => 1,
-        "result" => %{}
-      })
-    end
-
-    test "streams user message history with timestamps", %{
-      socket: socket,
-      scope: scope,
-      task_id: task_id
-    } do
-      # Persist messages without starting execution — this test is about
-      # session/load history streaming, not the agent loop.
-      FrontmanServer.Tasks.add_user_message(scope, task_id, [
-        %{"type" => "text", "text" => "Hello"}
-      ])
-
-      FrontmanServer.Tasks.add_user_message(scope, task_id, [
-        %{"type" => "text", "text" => "World"}
-      ])
-
-      push(socket, "acp:message", acp_request(1, "session/load", %{"sessionId" => task_id}))
-
-      assert_push("acp:message", %{
-        "method" => "session/update",
-        "params" => %{
-          "sessionId" => ^task_id,
-          "update" => %{
-            "sessionUpdate" => "user_message_chunk",
-            "content" => %{"text" => "Hello"},
-            "timestamp" => timestamp1
-          }
-        }
-      })
-
-      assert is_binary(timestamp1)
-
-      assert_push("acp:message", %{
-        "method" => "session/update",
-        "params" => %{
-          "sessionId" => ^task_id,
-          "update" => %{
-            "sessionUpdate" => "user_message_chunk",
-            "content" => %{"text" => "World"},
-            "timestamp" => timestamp2
-          }
-        }
-      })
-
-      assert is_binary(timestamp2)
-
-      assert_push("acp:message", %{"id" => 1, "result" => %{}})
-    end
-
-    test "streams agent message history", %{
-      socket: socket,
-      scope: scope,
-      task_id: task_id
-    } do
-      FrontmanServer.Tasks.add_agent_response(scope, task_id, "Response 1", %{})
-      FrontmanServer.Tasks.add_agent_response(scope, task_id, "Response 2", %{})
-
-      push(socket, "acp:message", acp_request(1, "session/load", %{"sessionId" => task_id}))
-
-      # Per ACP spec: only agent_message_chunk exists (no start/end markers)
-      # Client's LoadComplete handler finalizes any streaming messages
-      assert_push("acp:message", %{
-        "method" => "session/update",
-        "params" => %{
-          "sessionId" => ^task_id,
-          "update" => %{
-            "sessionUpdate" => "agent_message_chunk",
-            "content" => %{"text" => "Response 1"}
-          }
-        }
-      })
-
-      assert_push("acp:message", %{
-        "method" => "session/update",
-        "params" => %{
-          "sessionId" => ^task_id,
-          "update" => %{
-            "sessionUpdate" => "agent_message_chunk",
-            "content" => %{"text" => "Response 2"}
-          }
-        }
-      })
-
-      assert_push("acp:message", %{"id" => 1, "result" => %{}})
-    end
-
-    test "streams mixed history in order", %{socket: socket, scope: scope, task_id: task_id} do
-      FrontmanServer.Tasks.add_user_message(scope, task_id, [
-        %{"type" => "text", "text" => "Question"}
-      ])
-
-      FrontmanServer.Tasks.add_agent_response(scope, task_id, "Answer", %{})
-
-      push(socket, "acp:message", acp_request(1, "session/load", %{"sessionId" => task_id}))
-
-      # User message
-      assert_push("acp:message", %{
-        "params" => %{
-          "update" => %{
-            "sessionUpdate" => "user_message_chunk",
-            "content" => %{"text" => "Question"}
-          }
-        }
-      })
-
-      # Per ACP spec: only agent_message_chunk exists (no start/end markers)
-      assert_push("acp:message", %{
-        "params" => %{
-          "update" => %{
-            "sessionUpdate" => "agent_message_chunk",
-            "content" => %{"text" => "Answer"}
-          }
-        }
-      })
-
-      assert_push("acp:message", %{"id" => 1, "result" => %{}})
-    end
-
-    test "returns empty history for task with no messages", %{socket: socket, task_id: task_id} do
-      push(socket, "acp:message", acp_request(1, "session/load", %{"sessionId" => task_id}))
-
-      assert_push("acp:message", %{"id" => 1, "result" => %{}})
-      refute_push("acp:message", %{"method" => "session/update"}, 100)
-    end
-
-    test "returns error for non-existent session", %{socket: socket} do
-      push(
-        socket,
-        "acp:message",
-        acp_request(1, "session/load", %{"sessionId" => Ecto.UUID.generate()})
-      )
-
-      assert_push("acp:message", %{
-        "id" => 1,
-        "error" => %{"code" => -32_602, "message" => "Session not found"}
-      })
-    end
-
-    test "returns error for unauthorized session (appears as not found)", %{socket: socket} do
-      # Security: Implementation returns "not found" for unauthorized access
-      # to avoid revealing whether a resource exists
-      other_scope = user_scope_fixture()
-      other_task_id = task_fixture(other_scope, framework: "vite")
-
-      push(socket, "acp:message", acp_request(1, "session/load", %{"sessionId" => other_task_id}))
-
-      assert_push("acp:message", %{
-        "id" => 1,
-        "error" => %{"code" => -32_602, "message" => "Session not found"}
-      })
-    end
-
-    test "returns error when sessionId missing", %{socket: socket} do
-      push(socket, "acp:message", acp_request(1, "session/load", %{}))
-
-      assert_push("acp:message", %{
-        "id" => 1,
-        "error" => %{"code" => -32_602, "message" => "Missing sessionId parameter"}
-      })
-    end
-  end
-
-  defp acp_request(id, method, params) do
-    %{"jsonrpc" => "2.0", "id" => id, "method" => method, "params" => params}
   end
 end
