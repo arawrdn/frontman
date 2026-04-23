@@ -30,23 +30,20 @@ config :frontman_server,
     preview_proxy: [
       preview_base_host: "preview.frontman.local",
       preview_scheme: "http",
-      app_login_host: "frontman.local",
-      app_login_scheme: "http",
-      app_login_port: 4002,
       upstream_host: "127.0.0.1"
     ],
     bootstrap: [
       image: "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
-      project_root: "/workspace/frontman",
-      app_dir: "apps/frontman_server",
-      install_command: "mix deps.get",
-      start_command: "mix phx.server",
-      app_port: 4000,
-      health_path: "/health/ready",
+      project_root: "/workspace/project",
+      app_port: 3000,
+      health_path: "/",
       wait_timeout_ms: 60_000,
       poll_interval_ms: 100,
       step_timeout_ms: 30_000
-    ]
+    ],
+    # Default repository analysis client in tests.
+    # Keep deterministic behavior while letting specific tests swap to MockGitHubClient when needed.
+    repo_analyses_github_client: FrontmanServer.Test.Support.RepoAnalyses.StaticGitHubClient
   ]
 
 # In test we don't send emails

@@ -81,9 +81,8 @@ if config_env() == :dev do
 
   preview_base_host = env!("PREVIEW_BASE_HOST", :string!, "preview.frontman.local")
   auth_cookie_domain = env!("AUTH_COOKIE_DOMAIN", :string!, ".frontman.local")
-  app_login_host = env!("APP_LOGIN_HOST", :string!, phx_host)
 
-  sandbox_mvp_app_port = env!("SANDBOX_MVP_APP_PORT", :integer, 4000)
+  sandbox_mvp_app_port = env!("SANDBOX_MVP_APP_PORT", :integer, 3000)
   sandbox_mvp_wait_timeout_ms = env!("SANDBOX_MVP_WAIT_TIMEOUT_MS", :integer, 600_000)
   sandbox_mvp_poll_interval_ms = env!("SANDBOX_MVP_POLL_INTERVAL_MS", :integer, 1000)
   sandbox_mvp_step_timeout_ms = env!("SANDBOX_MVP_STEP_TIMEOUT_MS", :integer, 180_000)
@@ -94,20 +93,16 @@ if config_env() == :dev do
       preview_proxy: [
         preview_base_host: preview_base_host,
         preview_scheme: "https",
-        app_login_host: app_login_host,
-        app_login_scheme: "https",
-        app_login_port: phx_url_port,
         upstream_host: "127.0.0.1"
       ],
       bootstrap: [
         image:
           env!("SANDBOX_MVP_IMAGE", :string!, "mcr.microsoft.com/devcontainers/base:ubuntu-24.04"),
-        project_root: env!("SANDBOX_MVP_PROJECT_ROOT", :string!, "/workspace/frontman"),
-        app_dir: env!("SANDBOX_MVP_APP_DIR", :string!, "apps/frontman_server"),
-        install_command: env!("SANDBOX_MVP_INSTALL_COMMAND", :string!, "mix deps.get"),
-        start_command: env!("SANDBOX_MVP_START_COMMAND", :string!, "mix phx.server"),
+        project_root: env!("SANDBOX_MVP_PROJECT_ROOT", :string!, "/workspace/project"),
+        install_command: env!("SANDBOX_MVP_INSTALL_COMMAND", :string, nil),
+        start_command: env!("SANDBOX_MVP_START_COMMAND", :string, nil),
         app_port: sandbox_mvp_app_port,
-        health_path: env!("SANDBOX_MVP_HEALTH_PATH", :string!, "/health/ready"),
+        health_path: env!("SANDBOX_MVP_HEALTH_PATH", :string!, "/"),
         wait_timeout_ms: sandbox_mvp_wait_timeout_ms,
         poll_interval_ms: sandbox_mvp_poll_interval_ms,
         step_timeout_ms: sandbox_mvp_step_timeout_ms
@@ -258,17 +253,10 @@ if config_env() == :prod do
 
   preview_base_host = env!("PREVIEW_BASE_HOST", :string!, "preview.frontman.sh")
   auth_cookie_domain = env!("AUTH_COOKIE_DOMAIN", :string!, ".frontman.sh")
-  app_login_host = env!("APP_LOGIN_HOST", :string!, host)
-  sandbox_mvp_app_port = env!("SANDBOX_MVP_APP_PORT", :integer, 4000)
+  sandbox_mvp_app_port = env!("SANDBOX_MVP_APP_PORT", :integer, 3000)
   sandbox_mvp_wait_timeout_ms = env!("SANDBOX_MVP_WAIT_TIMEOUT_MS", :integer, 600_000)
   sandbox_mvp_poll_interval_ms = env!("SANDBOX_MVP_POLL_INTERVAL_MS", :integer, 1000)
   sandbox_mvp_step_timeout_ms = env!("SANDBOX_MVP_STEP_TIMEOUT_MS", :integer, 180_000)
-
-  app_login_port =
-    case System.get_env("APP_LOGIN_PORT") do
-      nil -> nil
-      value -> String.to_integer(value)
-    end
 
   config :frontman_server,
     auth_cookie_domain: auth_cookie_domain,
@@ -276,20 +264,16 @@ if config_env() == :prod do
       preview_proxy: [
         preview_base_host: preview_base_host,
         preview_scheme: "https",
-        app_login_host: app_login_host,
-        app_login_scheme: "https",
-        app_login_port: app_login_port,
         upstream_host: "127.0.0.1"
       ],
       bootstrap: [
         image:
           env!("SANDBOX_MVP_IMAGE", :string!, "mcr.microsoft.com/devcontainers/base:ubuntu-24.04"),
-        project_root: env!("SANDBOX_MVP_PROJECT_ROOT", :string!, "/workspace/frontman"),
-        app_dir: env!("SANDBOX_MVP_APP_DIR", :string!, "apps/frontman_server"),
-        install_command: env!("SANDBOX_MVP_INSTALL_COMMAND", :string!, "mix deps.get"),
-        start_command: env!("SANDBOX_MVP_START_COMMAND", :string!, "mix phx.server"),
+        project_root: env!("SANDBOX_MVP_PROJECT_ROOT", :string!, "/workspace/project"),
+        install_command: env!("SANDBOX_MVP_INSTALL_COMMAND", :string, nil),
+        start_command: env!("SANDBOX_MVP_START_COMMAND", :string, nil),
         app_port: sandbox_mvp_app_port,
-        health_path: env!("SANDBOX_MVP_HEALTH_PATH", :string!, "/health/ready"),
+        health_path: env!("SANDBOX_MVP_HEALTH_PATH", :string!, "/"),
         wait_timeout_ms: sandbox_mvp_wait_timeout_ms,
         poll_interval_ms: sandbox_mvp_poll_interval_ms,
         step_timeout_ms: sandbox_mvp_step_timeout_ms

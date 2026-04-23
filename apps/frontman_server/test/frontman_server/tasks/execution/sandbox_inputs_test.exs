@@ -5,7 +5,7 @@ defmodule FrontmanServer.Tasks.Execution.SandboxInputsTest do
 
   alias FrontmanServer.Providers
   alias FrontmanServer.Tasks.Execution.SandboxInputs
-  alias FrontmanServer.Test.Support.RepoAnalyses.StaticGitHubClient
+  alias FrontmanServer.Test.Support.RepoAnalyses.GitHubClientHelpers
 
   @default_vm_image "ghcr.io/frontman-ai/frontman-dev:stable"
   @default_repo_url "https://github.com/frontman-ai/frontman.git"
@@ -17,6 +17,8 @@ defmodule FrontmanServer.Tasks.Execution.SandboxInputsTest do
 
     {:ok, _oauth_token} =
       Providers.upsert_oauth_token(scope, "github", "sandbox-inputs-github-token", nil, nil)
+
+    GitHubClientHelpers.setup_static_client()
 
     on_exit(fn ->
       Application.put_env(:frontman_server, :sandbox, original_sandbox_config)
@@ -33,9 +35,7 @@ defmodule FrontmanServer.Tasks.Execution.SandboxInputsTest do
       put_sandbox_config(image: @default_vm_image)
 
       assert {:ok, env_spec} =
-               SandboxInputs.build(scope, task_id,
-                 repo_analyses_github_client: StaticGitHubClient
-               )
+               SandboxInputs.build(scope, task_id)
 
       assert env_spec["image"] == @default_vm_image
 
@@ -56,9 +56,7 @@ defmodule FrontmanServer.Tasks.Execution.SandboxInputsTest do
       put_sandbox_config(image: "   ")
 
       assert {:error, :invalid_sandbox_vm_image} =
-               SandboxInputs.build(scope, task_id,
-                 repo_analyses_github_client: StaticGitHubClient
-               )
+               SandboxInputs.build(scope, task_id)
     end
 
     test "returns no_github_oauth_token when GitHub OAuth token is missing", %{task_id: task_id} do
@@ -67,9 +65,7 @@ defmodule FrontmanServer.Tasks.Execution.SandboxInputsTest do
       put_sandbox_config(image: @default_vm_image)
 
       assert {:error, :no_github_oauth_token} =
-               SandboxInputs.build(scope_without_token, task_id,
-                 repo_analyses_github_client: StaticGitHubClient
-               )
+               SandboxInputs.build(scope_without_token, task_id)
     end
   end
 

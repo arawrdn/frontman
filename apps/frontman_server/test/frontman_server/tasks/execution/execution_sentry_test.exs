@@ -17,14 +17,18 @@ defmodule FrontmanServer.Tasks.Execution.ExecutionSentryTest do
   alias FrontmanServer.Providers
   alias FrontmanServer.Tasks
   alias FrontmanServer.Tasks.ExecutionEvent
-  alias FrontmanServer.Test.Support.RepoAnalyses.StaticGitHubClient
+  alias FrontmanServer.Test.Support.RepoAnalyses.GitHubClientHelpers
   alias FrontmanServer.Test.Support.Sandbox.IntegrationProvider
 
   setup do
     Sentry.Test.start_collecting_sentry_reports()
+    GitHubClientHelpers.setup_static_client()
 
     pid = Sandbox.start_owner!(FrontmanServer.Repo, shared: true)
-    on_exit(fn -> Sandbox.stop_owner(pid) end)
+
+    on_exit(fn ->
+      Sandbox.stop_owner(pid)
+    end)
 
     scope = user_scope_fixture()
 
@@ -52,8 +56,7 @@ defmodule FrontmanServer.Tasks.Execution.ExecutionSentryTest do
       :ok =
         Tasks.start_execution_sync(scope, task_id, [],
           agent: agent,
-          sandbox_provider: IntegrationProvider,
-          repo_analyses_github_client: StaticGitHubClient
+          sandbox_provider: IntegrationProvider
         )
 
       # Wait for the failed event broadcast (Sentry call completes before broadcast)
@@ -99,8 +102,7 @@ defmodule FrontmanServer.Tasks.Execution.ExecutionSentryTest do
       :ok =
         Tasks.start_execution_sync(scope, task_id, [],
           agent: agent,
-          sandbox_provider: IntegrationProvider,
-          repo_analyses_github_client: StaticGitHubClient
+          sandbox_provider: IntegrationProvider
         )
 
       # Stream errors now produce {:failed, ...} instead of {:crashed, ...}

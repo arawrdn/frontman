@@ -25,7 +25,7 @@ defmodule FrontmanServer.Observability.OtelHandlerTest do
   alias FrontmanServer.Providers
   alias FrontmanServer.Tasks
   alias FrontmanServer.Tasks.Interaction
-  alias FrontmanServer.Test.Support.RepoAnalyses.StaticGitHubClient
+  alias FrontmanServer.Test.Support.RepoAnalyses.GitHubClientHelpers
   alias FrontmanServer.Test.Support.Sandbox.IntegrationProvider
 
   require Record
@@ -58,6 +58,8 @@ defmodule FrontmanServer.Observability.OtelHandlerTest do
     pid = Sandbox.start_owner!(FrontmanServer.Repo, shared: true)
     on_exit(fn -> Sandbox.stop_owner(pid) end)
 
+    GitHubClientHelpers.setup_static_client()
+
     scope = user_scope_fixture()
 
     {:ok, _oauth_token} =
@@ -89,8 +91,7 @@ defmodule FrontmanServer.Observability.OtelHandlerTest do
           [%{"type" => "text", "text" => "Show my todos"}],
           [],
           agent: agent,
-          sandbox_provider: IntegrationProvider,
-          repo_analyses_github_client: StaticGitHubClient
+          sandbox_provider: IntegrationProvider
         )
 
       assert_receive {:interaction, %Interaction.AgentCompleted{}}, 5_000
@@ -187,8 +188,7 @@ defmodule FrontmanServer.Observability.OtelHandlerTest do
           [%{"type" => "text", "text" => "Hi"}],
           [],
           agent: agent_mod,
-          sandbox_provider: IntegrationProvider,
-          repo_analyses_github_client: StaticGitHubClient
+          sandbox_provider: IntegrationProvider
         )
 
       assert_receive {:interaction, %Interaction.AgentCompleted{}}, 5_000

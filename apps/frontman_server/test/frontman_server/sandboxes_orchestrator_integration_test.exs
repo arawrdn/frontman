@@ -119,10 +119,8 @@ defmodule FrontmanServer.SandboxesOrchestratorIntegrationTest do
              )
            end)
 
-    assert Enum.any?(scripts, fn script ->
-             String.contains?(script, "cd '/workspace/frontman/apps/frontman_server'") and
-               String.contains?(script, "nohup mix phx.server")
-           end)
+    refute Enum.any?(scripts, &String.contains?(&1, "nohup "))
+    refute Enum.any?(scripts, &String.contains?(&1, "healthcheck_failed"))
   end
 
   test "marks sandbox as error when provider.create fails", %{scope: scope, task: task} do

@@ -16,13 +16,15 @@ defmodule FrontmanServer.Tasks.Execution.MCPToolBroadcastTest do
   alias Ecto.Adapters.SQL.Sandbox
   alias FrontmanServer.Providers
   alias FrontmanServer.Tasks
-  alias FrontmanServer.Test.Support.RepoAnalyses.StaticGitHubClient
+  alias FrontmanServer.Test.Support.RepoAnalyses.GitHubClientHelpers
   alias FrontmanServer.Test.Support.Sandbox.IntegrationProvider
 
   describe "MCP tool call broadcast" do
     setup do
       pid = Sandbox.start_owner!(FrontmanServer.Repo, shared: true)
       on_exit(fn -> Sandbox.stop_owner(pid) end)
+
+      GitHubClientHelpers.setup_static_client()
 
       scope = user_scope_fixture()
 
@@ -59,8 +61,7 @@ defmodule FrontmanServer.Tasks.Execution.MCPToolBroadcastTest do
       {:ok, _} =
         Tasks.submit_user_message(scope, task_id, user_content("Please call the MCP tool"), [],
           agent: agent,
-          sandbox_provider: IntegrationProvider,
-          repo_analyses_github_client: StaticGitHubClient
+          sandbox_provider: IntegrationProvider
         )
 
       # Collect all tool call interactions broadcast via PubSub
@@ -101,6 +102,8 @@ defmodule FrontmanServer.Tasks.Execution.MCPToolBroadcastTest do
       pid = Sandbox.start_owner!(FrontmanServer.Repo, shared: true)
       on_exit(fn -> Sandbox.stop_owner(pid) end)
 
+      GitHubClientHelpers.setup_static_client()
+
       scope = user_scope_fixture()
 
       {:ok, _oauth_token} =
@@ -134,8 +137,7 @@ defmodule FrontmanServer.Tasks.Execution.MCPToolBroadcastTest do
       {:ok, _} =
         Tasks.submit_user_message(scope, task_id, user_content("Call tool"), [],
           agent: agent,
-          sandbox_provider: IntegrationProvider,
-          repo_analyses_github_client: StaticGitHubClient
+          sandbox_provider: IntegrationProvider
         )
 
       # Wait for the interaction broadcast

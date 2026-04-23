@@ -34,8 +34,6 @@ defmodule FrontmanServerWeb.Plugs.SandboxPreviewProxy do
                         "upgrade"
                       ])
 
-  @blocked_cookie_names ["_frontman_server_key", "_frontman_server_web_user_remember_me"]
-
   @ws_forward_headers ["origin", "cookie", "user-agent", "sec-websocket-protocol"]
 
   @impl true
@@ -100,26 +98,13 @@ defmodule FrontmanServerWeb.Plugs.SandboxPreviewProxy do
     return_to = current_request_url(conn)
     query = URI.encode_query(%{"return_to" => return_to})
 
-    case Keyword.get(opts, :app_login_host) do
-      host when is_binary(host) and byte_size(host) > 0 ->
-        login_url =
-          build_absolute_url(
-            login_scheme(opts, conn.scheme),
-            host,
-            Keyword.get(opts, :app_login_port),
-            "/users/log-in",
-            query
-          )
+    {scheme, host, port} = app_login_target(conn, opts)
 
-        conn
-        |> redirect(external: login_url)
-        |> halt()
+    login_url = build_absolute_url(scheme, host, port, "/users/log-in", query)
 
-      _ ->
-        conn
-        |> redirect(to: "/users/log-in?#{query}")
-        |> halt()
-    end
+    conn
+    |> redirect(external: login_url)
+    |> halt()
   end
 
   defp proxy_http(conn, target, opts) do
@@ -272,8 +257,13 @@ defmodule FrontmanServerWeb.Plugs.SandboxPreviewProxy do
 
   defp blocked_cookie_names(opts) do
     opts
-    |> Keyword.get(:blocked_cookie_names, @blocked_cookie_names)
+    |> Keyword.get(:blocked_cookie_names, auth_cookie_names())
     |> MapSet.new()
+  end
+
+  defp auth_cookie_names do
+    Application.fetch_env!(:frontman_server, :auth_cookie_names)
+    |> Keyword.values()
   end
 
   defp scrub_cookie_headers(headers, blocked_cookie_names) do
@@ -364,19 +354,59 @@ defmodule FrontmanServerWeb.Plugs.SandboxPreviewProxy do
     end
   end
 
-  defp login_scheme(opts, request_scheme) do
-    case Keyword.get(opts, :app_login_scheme) do
-      nil ->
-        Atom.to_string(request_scheme)
+  defp app_login_target(conn, _opts) do
+    url_config = FrontmanServerWeb.Endpoint.config(:url) || []
+    http_config = FrontmanServerWeb.Endpoint.config(:http)
+    https_config = FrontmanServerWeb.Endpoint.config(:https)
 
-      scheme when is_atom(scheme) ->
-        Atom.to_string(scheme)
+    {
+      login_scheme(conn, url_config),
+      login_host(url_config),
+      login_port(url_config, http_config, https_config, conn.port)
+    }
+  end
 
+  defp login_host(url_config) do
+    url_config
+    |> Keyword.get(:host)
+    |> maybe_login_host()
+  end
+
+  defp login_scheme(conn, url_config) do
+    case Keyword.get(url_config, :scheme) do
       scheme when is_binary(scheme) and byte_size(scheme) > 0 ->
         scheme
 
       _ ->
-        Atom.to_string(request_scheme)
+        Atom.to_string(conn.scheme)
+    end
+  end
+
+  defp login_port(url_config, http_config, https_config, fallback_port) do
+    [
+      Keyword.get(url_config, :port),
+      Keyword.get(http_config, :port),
+      Keyword.get(https_config, :port),
+      fallback_port
+    ]
+    |> Enum.find(&is_integer/1) ||
+      fallback_port
+  end
+
+  defp maybe_login_host(host) when is_binary(host) and byte_size(host) > 0 do
+    if String.downcase(host) == "localhost" do
+      auth_cookie_domain_host()
+    else
+      host
+    end
+  end
+
+  defp maybe_login_host(_), do: auth_cookie_domain_host()
+
+  defp auth_cookie_domain_host do
+    case Application.fetch_env!(:frontman_server, :auth_cookie_domain) do
+      domain when is_binary(domain) and byte_size(domain) > 0 -> String.trim_leading(domain, ".")
+      _ -> "localhost"
     end
   end
 

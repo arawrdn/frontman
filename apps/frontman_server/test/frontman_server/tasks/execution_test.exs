@@ -27,7 +27,7 @@ defmodule FrontmanServer.Tasks.ExecutionIntegrationTest do
   alias FrontmanServer.Tasks
   alias FrontmanServer.Tasks.{Execution, TaskSchema}
   alias FrontmanServer.Tasks.{ExecutionEvent, Interaction}
-  alias FrontmanServer.Test.Support.RepoAnalyses.StaticGitHubClient
+  alias FrontmanServer.Test.Support.RepoAnalyses.GitHubClientHelpers
   alias FrontmanServer.Test.Support.Sandbox.IntegrationProvider
   alias FrontmanServer.Tools.MCP
   alias FrontmanServer.Workers.GenerateTitle
@@ -100,9 +100,6 @@ defmodule FrontmanServer.Tasks.ExecutionIntegrationTest do
 
     original_sandbox_config = Application.fetch_env!(:frontman_server, :sandbox)
 
-    original_repo_analyses_github_client =
-      Application.fetch_env!(:frontman_server, :repo_analyses_github_client)
-
     sandbox_config =
       original_sandbox_config
       |> Keyword.put(:provider, IntegrationProvider)
@@ -113,23 +110,12 @@ defmodule FrontmanServer.Tasks.ExecutionIntegrationTest do
       end)
 
     Application.put_env(:frontman_server, :sandbox, sandbox_config)
-
-    Application.put_env(
-      :frontman_server,
-      :repo_analyses_github_client,
-      StaticGitHubClient
-    )
+    GitHubClientHelpers.setup_static_client()
 
     IntegrationProvider.reset!()
 
     on_exit(fn ->
       Application.put_env(:frontman_server, :sandbox, original_sandbox_config)
-
-      Application.put_env(
-        :frontman_server,
-        :repo_analyses_github_client,
-        original_repo_analyses_github_client
-      )
 
       IntegrationProvider.reset!()
 
@@ -217,8 +203,7 @@ defmodule FrontmanServer.Tasks.ExecutionIntegrationTest do
                Execution.run(scope, task,
                  agent: agent,
                  sandbox_provider: IntegrationProvider,
-                 sandbox_wait_timeout_ms: 50,
-                 repo_analyses_github_client: StaticGitHubClient
+                 sandbox_wait_timeout_ms: 50
                )
 
       assert {:ok, sandbox} = Sandboxes.current_for_task(scope, task_id)
@@ -245,8 +230,7 @@ defmodule FrontmanServer.Tasks.ExecutionIntegrationTest do
                Tasks.submit_user_message(scope, task_id, user_content("Hello"), [],
                  agent: agent,
                  sandbox_provider: StuckProvisionProvider,
-                 sandbox_wait_timeout_ms: 350,
-                 repo_analyses_github_client: StaticGitHubClient
+                 sandbox_wait_timeout_ms: 350
                )
 
       elapsed_ms = System.monotonic_time(:millisecond) - started_at
@@ -273,8 +257,7 @@ defmodule FrontmanServer.Tasks.ExecutionIntegrationTest do
             Tasks.start_execution(scope, task_id, [],
               agent: agent,
               sandbox_provider: StuckProvisionProvider,
-              sandbox_wait_timeout_ms: 700,
-              repo_analyses_github_client: StaticGitHubClient
+              sandbox_wait_timeout_ms: 700
             )
 
           send(parent, {:first_start_result, result})
@@ -287,8 +270,7 @@ defmodule FrontmanServer.Tasks.ExecutionIntegrationTest do
                Tasks.start_execution(scope, task_id, [],
                  agent: agent,
                  sandbox_provider: StuckProvisionProvider,
-                 sandbox_wait_timeout_ms: 700,
-                 repo_analyses_github_client: StaticGitHubClient
+                 sandbox_wait_timeout_ms: 700
                )
 
       assert_receive {:execution_start_error, ":sandbox_provisioning_timeout"}, 1_500

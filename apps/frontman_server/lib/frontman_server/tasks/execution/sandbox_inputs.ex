@@ -9,8 +9,8 @@ defmodule FrontmanServer.Tasks.Execution.SandboxInputs do
   @sandbox_repo_name "frontman-ai/frontman"
   @sandbox_requested_ref "main"
 
-  @spec build(Scope.t(), String.t(), keyword()) :: {:ok, map()} | {:error, term()}
-  def build(%Scope{} = scope, task_id, opts \\ []) when is_binary(task_id) and is_list(opts) do
+  @spec build(Scope.t(), String.t()) :: {:ok, map()} | {:error, term()}
+  def build(%Scope{} = scope, task_id) when is_binary(task_id) do
     config =
       Application.fetch_env!(:frontman_server, :sandbox)
       |> Keyword.fetch!(:bootstrap)
@@ -20,27 +20,22 @@ defmodule FrontmanServer.Tasks.Execution.SandboxInputs do
     requested_ref = @sandbox_requested_ref
     repo_url = repo_url(repo_name)
 
-    github_client =
-      Keyword.get(opts, :repo_analyses_github_client, configured_repo_analyses_github_client())
-
     with {:ok, vm_image} <- normalize_vm_image(vm_image),
-         {:ok, analysis} <- analyze_repository(scope, repo_name, requested_ref, github_client) do
-      {:ok,
-       %{
-         "name" => sandbox_name(task_id),
-         "image" => vm_image,
-         "devcontainer" => analysis.devcontainer_raw,
-         "env" => sandbox_env(repo_url, analysis.resolved_commit_sha)
-       }}
+         {:ok, analysis} <- analyze_repository(scope, repo_name, requested_ref) do
+      {
+        :ok,
+        %{
+          "name" => sandbox_name(task_id),
+          "image" => vm_image,
+          "devcontainer" => analysis.devcontainer_raw,
+          "env" => sandbox_env(repo_url, analysis.resolved_commit_sha)
+        }
+      }
     end
   end
 
-  defp analyze_repository(scope, repo_name, requested_ref, github_client) do
-    RepoAnalyses.analyze_repository(scope, repo_name, requested_ref, github_client)
-  end
-
-  defp configured_repo_analyses_github_client do
-    Application.fetch_env!(:frontman_server, :repo_analyses_github_client)
+  defp analyze_repository(scope, repo_name, requested_ref) do
+    RepoAnalyses.analyze_repository(scope, repo_name, requested_ref)
   end
 
   defp normalize_vm_image(image) when is_binary(image) do

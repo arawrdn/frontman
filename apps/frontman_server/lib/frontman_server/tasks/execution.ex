@@ -365,7 +365,7 @@ defmodule FrontmanServer.Tasks.Execution do
         {:ok, sandbox}
 
       {:error, :not_found} ->
-        with {:ok, env_spec} <- sandbox_env_spec(scope, task_id, opts) do
+        with {:ok, env_spec} <- sandbox_env_spec(scope, task_id) do
           create_opts =
             [task_id: task_id]
             |> maybe_put_provider_override(opts)
@@ -422,9 +422,9 @@ defmodule FrontmanServer.Tasks.Execution do
     end
   end
 
-  defp sandbox_env_spec(%Scope{} = scope, task_id, opts)
-       when is_binary(task_id) and is_list(opts) do
-    SandboxInputs.build(scope, task_id, opts)
+  defp sandbox_env_spec(%Scope{} = scope, task_id)
+       when is_binary(task_id) do
+    SandboxInputs.build(scope, task_id)
   end
 
   defp sandbox_wait_timeout_ms do

@@ -21,13 +21,21 @@ defmodule FrontmanServerWeb.UserAuth do
   # Make the remember me cookie valid for 14 days. This should match
   # the session validity setting in UserToken.
   @max_cookie_age_in_days 14
-  @session_cookie "_frontman_server_key"
-  @remember_me_cookie "_frontman_server_web_user_remember_me"
   @remember_me_base_options [
     sign: true,
     max_age: @max_cookie_age_in_days * 24 * 60 * 60,
     same_site: "Lax"
   ]
+
+  defp auth_session_cookie do
+    Application.fetch_env!(:frontman_server, :auth_cookie_names)
+    |> Keyword.fetch!(:session_cookie)
+  end
+
+  defp auth_remember_me_cookie do
+    Application.fetch_env!(:frontman_server, :auth_cookie_names)
+    |> Keyword.fetch!(:remember_me_cookie)
+  end
 
   # How old the session token should be before a new one is issued. When a request is made
   # with a session token older than this value, then a new session token will be created
@@ -121,9 +129,11 @@ defmodule FrontmanServerWeb.UserAuth do
         url -> ~p"/users/log-in?#{%{"return_to" => url}}"
       end
 
+    remember_me_cookie = auth_remember_me_cookie()
+
     conn
     |> renew_session(nil)
-    |> delete_resp_cookie(@remember_me_cookie, remember_me_delete_options())
+    |> delete_resp_cookie(remember_me_cookie, remember_me_delete_options())
     |> redirect(to: redirect_url)
   end
 
@@ -159,7 +169,8 @@ defmodule FrontmanServerWeb.UserAuth do
   end
 
   defp authenticate_from_remember_me(conn, stale_token) do
-    conn = fetch_cookies(conn, signed: [@remember_me_cookie])
+    remember_me_cookie = auth_remember_me_cookie()
+    conn = fetch_cookies(conn, signed: [remember_me_cookie])
 
     case find_valid_remember_me_session(conn, stale_token) do
       {:ok, token, user, token_inserted_at} ->
@@ -171,7 +182,7 @@ defmodule FrontmanServerWeb.UserAuth do
 
       :error ->
         conn
-        |> delete_resp_cookie(@remember_me_cookie)
+        |> delete_resp_cookie(remember_me_cookie)
         |> assign(:current_scope, Scope.for_user(nil))
     end
   end
@@ -192,8 +203,10 @@ defmodule FrontmanServerWeb.UserAuth do
   end
 
   defp remember_me_candidate_tokens(conn) do
+    remember_me_cookie = auth_remember_me_cookie()
+
     fetched_cookie_token =
-      case conn.cookies[@remember_me_cookie] do
+      case conn.cookies[remember_me_cookie] do
         token when is_binary(token) -> [token]
         _ -> []
       end
@@ -214,19 +227,23 @@ defmodule FrontmanServerWeb.UserAuth do
     |> Enum.flat_map(&String.split(&1, ";"))
     |> Enum.map(&String.trim/1)
     |> Enum.flat_map(fn cookie ->
+      remember_me_cookie = auth_remember_me_cookie()
+
       case String.split(cookie, "=", parts: 2) do
-        [@remember_me_cookie, value] -> [value]
+        [^remember_me_cookie, value] -> [value]
         _ -> []
       end
     end)
   end
 
   defp decode_signed_remember_me_token(conn, signed_value) do
+    remember_me_cookie = auth_remember_me_cookie()
+
     conn
-    |> conn_with_cookie_header("#{@remember_me_cookie}=#{signed_value}")
-    |> fetch_cookies(signed: [@remember_me_cookie])
+    |> conn_with_cookie_header("#{remember_me_cookie}=#{signed_value}")
+    |> fetch_cookies(signed: [remember_me_cookie])
     |> Map.get(:cookies)
-    |> Map.get(@remember_me_cookie)
+    |> Map.get(remember_me_cookie)
   end
 
   defp conn_with_cookie_header(conn, cookie_header) do
@@ -246,9 +263,10 @@ defmodule FrontmanServerWeb.UserAuth do
     if token = get_session(conn, :user_token) do
       {token, conn}
     else
-      conn = fetch_cookies(conn, signed: [@remember_me_cookie])
+      remember_me_cookie = auth_remember_me_cookie()
+      conn = fetch_cookies(conn, signed: [remember_me_cookie])
 
-      if token = conn.cookies[@remember_me_cookie] do
+      if token = conn.cookies[remember_me_cookie] do
         {token, conn |> put_token_in_session(token) |> put_session(:user_remember_me, true)}
       else
         nil
@@ -288,14 +306,17 @@ defmodule FrontmanServerWeb.UserAuth do
   end
 
   defp maybe_expire_host_only_auth_cookies(conn) do
+    session_cookie = auth_session_cookie()
+    remember_me_cookie = auth_remember_me_cookie()
+
     case auth_cookie_domain() do
       domain when is_binary(domain) and byte_size(domain) > 0 ->
         conn
         |> prepend_resp_headers([
-          {"set-cookie", expired_host_only_cookie_header(@session_cookie, "None")}
+          {"set-cookie", expired_host_only_cookie_header(session_cookie, "None")}
         ])
         |> prepend_resp_headers([
-          {"set-cookie", expired_host_only_cookie_header(@remember_me_cookie, "Lax")}
+          {"set-cookie", expired_host_only_cookie_header(remember_me_cookie, "Lax")}
         ])
 
       _ ->
@@ -361,7 +382,7 @@ defmodule FrontmanServerWeb.UserAuth do
   defp write_remember_me_cookie(conn, token) do
     conn
     |> put_session(:user_remember_me, true)
-    |> put_resp_cookie(@remember_me_cookie, token, remember_me_options())
+    |> put_resp_cookie(auth_remember_me_cookie(), token, remember_me_options())
   end
 
   defp remember_me_options do

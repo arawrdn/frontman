@@ -477,24 +477,51 @@ defmodule FrontmanServer.Sandbox.Orchestrator do
 
     with :ok <- wait_for_vm_running(provider, provider_ref, step_timeout_ms),
          :ok <- sync_repo(provider, provider_ref, config, step_timeout_ms),
-         :ok <-
-           run_post_create_command(
-             provider,
-             provider_ref,
-             config.post_create_workdir,
-             config,
-             step_timeout_ms
-           ),
-         :ok <-
-           run_post_start_command(
-             provider,
-             provider_ref,
-             config.post_start_workdir,
-             config,
-             step_timeout_ms
-           ) do
-      wait_for_health(provider, provider_ref, config, step_timeout_ms)
+         :ok <- maybe_run_post_create_command(provider, provider_ref, config, step_timeout_ms),
+         :ok <- maybe_run_post_start_command(provider, provider_ref, config, step_timeout_ms) do
+      maybe_wait_for_health(provider, provider_ref, config, step_timeout_ms)
     end
+  end
+
+  defp maybe_run_post_create_command(
+         _provider,
+         _provider_ref,
+         %{post_create_command: nil},
+         _timeout_ms
+       ),
+       do: :ok
+
+  defp maybe_run_post_create_command(
+         provider,
+         provider_ref,
+         %{project_root: workdir} = config,
+         timeout_ms
+       ) do
+    run_post_create_command(provider, provider_ref, workdir, config, timeout_ms)
+  end
+
+  defp maybe_run_post_start_command(
+         _provider,
+         _provider_ref,
+         %{post_start_command: nil},
+         _timeout_ms
+       ),
+       do: :ok
+
+  defp maybe_run_post_start_command(
+         provider,
+         provider_ref,
+         %{project_root: workdir} = config,
+         timeout_ms
+       ) do
+    run_post_start_command(provider, provider_ref, workdir, config, timeout_ms)
+  end
+
+  defp maybe_wait_for_health(_provider, _provider_ref, %{post_start_command: nil}, _timeout_ms),
+    do: :ok
+
+  defp maybe_wait_for_health(provider, provider_ref, config, timeout_ms) do
+    wait_for_health(provider, provider_ref, config, timeout_ms)
   end
 
   defp wait_for_vm_running(provider, provider_ref, timeout_ms) do
@@ -638,48 +665,37 @@ defmodule FrontmanServer.Sandbox.Orchestrator do
     env = environment_spec_env(environment_spec)
     devcontainer = environment_spec.devcontainer
     project_root = Keyword.fetch!(config, :project_root)
-    app_dir = Keyword.fetch!(config, :app_dir)
-    app_root = Path.join(project_root, app_dir)
 
-    default_install_command =
-      normalize_command(Keyword.fetch!(config, :install_command))
+    default_install_command = normalize_optional_command(Keyword.get(config, :install_command))
 
-    default_start_command =
-      normalize_command(Keyword.fetch!(config, :start_command))
+    default_start_command = normalize_optional_command(Keyword.get(config, :start_command))
 
     default_app_port = Keyword.fetch!(config, :app_port)
 
     repo_url = required_env_override!(env, @sandbox_env_repo_url_key)
     repo_ref = required_env_override!(env, @sandbox_env_repo_ref_key)
 
-    {post_create_command, post_create_workdir} =
-      resolve_setup_command_and_workdir(
+    post_create_command =
+      resolve_setup_command(
         devcontainer,
         "postCreateCommand",
         :postCreateCommand,
-        default_install_command,
-        project_root,
-        app_root
+        default_install_command
       )
 
-    {post_start_command, post_start_workdir} =
-      resolve_setup_command_and_workdir(
+    post_start_command =
+      resolve_setup_command(
         devcontainer,
         "postStartCommand",
         :postStartCommand,
-        default_start_command,
-        project_root,
-        app_root
+        default_start_command
       )
 
     %{
       repo_url: repo_url,
       repo_ref: repo_ref,
       project_root: project_root,
-      app_dir: app_dir,
-      post_create_workdir: post_create_workdir,
       post_create_command: post_create_command,
-      post_start_workdir: post_start_workdir,
       post_start_command: post_start_command,
       remote_env: devcontainer_remote_env(devcontainer),
       app_port: devcontainer_app_port(devcontainer, default_app_port),
@@ -688,44 +704,36 @@ defmodule FrontmanServer.Sandbox.Orchestrator do
     }
   end
 
-  defp normalize_command(command) when is_binary(command) do
+  defp normalize_optional_command(nil), do: nil
+
+  defp normalize_optional_command(command) when is_binary(command) do
     trimmed_command = String.trim(command)
 
     case trimmed_command do
-      "" -> raise "Sandbox command config must be a non-empty string"
+      "" -> nil
       _ -> trimmed_command
     end
   end
 
-  defp normalize_command(_command), do: raise("Sandbox command config must be a string")
+  defp normalize_optional_command(_command),
+    do: raise("Sandbox command config must be a string when set")
 
-  defp resolve_setup_command_and_workdir(
+  defp resolve_setup_command(
          devcontainer,
          key,
          atom_key,
-         fallback,
-         project_root,
-         app_root
+         fallback
        )
-       when is_map(devcontainer) and is_binary(key) and is_atom(atom_key) and is_binary(fallback) and
-              is_binary(project_root) and is_binary(app_root) do
+       when is_map(devcontainer) and is_binary(key) and is_atom(atom_key) do
     command = Map.get_lazy(devcontainer, key, fn -> Map.get(devcontainer, atom_key) end)
 
     case normalize_devcontainer_command(command) do
-      nil -> {fallback, app_root}
-      normalized_command -> {normalized_command, project_root}
+      nil -> fallback
+      normalized_command -> normalized_command
     end
   end
 
-  defp resolve_setup_command_and_workdir(
-         _devcontainer,
-         _key,
-         _atom_key,
-         fallback,
-         _project_root,
-         app_root
-       ),
-       do: {fallback, app_root}
+  defp resolve_setup_command(_devcontainer, _key, _atom_key, fallback), do: fallback
 
   defp normalize_devcontainer_command(command) when is_binary(command) do
     trimmed_command = String.trim(command)

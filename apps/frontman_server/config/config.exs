@@ -7,6 +7,12 @@
 # General application configuration
 import Config
 
+# Centralized auth cookie names used across session, remember-me, and sandbox proxy plumbing.
+auth_cookie_names = [
+  session_cookie: "_frontman_server_key",
+  remember_me_cookie: "_frontman_server_web_user_remember_me"
+]
+
 config :frontman_server, :scopes,
   user: [
     default: true,
@@ -42,6 +48,7 @@ config :req_llm,
 config :frontman_server,
   env: config_env(),
   ecto_repos: [FrontmanServer.Repo],
+  auth_cookie_names: auth_cookie_names,
   generators: [timestamp_type: :utc_datetime, binary_id: true],
   dev_routes: false,
   dns_cluster_query: :ignore,
@@ -51,12 +58,9 @@ config :frontman_server,
     command_runner: FrontmanServer.Sandbox.CommandRunner.System,
     bootstrap: [
       image: "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
-      project_root: "/workspace/frontman",
-      app_dir: "apps/frontman_server",
-      install_command: "mix deps.get",
-      start_command: "mix phx.server",
-      app_port: 4000,
-      health_path: "/health/ready",
+      project_root: "/workspace/project",
+      app_port: 3000,
+      health_path: "/",
       wait_timeout_ms: 600_000,
       poll_interval_ms: 1000,
       step_timeout_ms: 180_000
@@ -64,16 +68,13 @@ config :frontman_server,
     preview_proxy: [
       preview_base_host: "preview.frontman.local",
       preview_scheme: "https",
-      app_login_host: "frontman.local",
-      app_login_scheme: "https",
-      app_login_port: 4000,
       upstream_host: "127.0.0.1",
       upstream_connect_timeout_ms: 5_000,
       upstream_receive_timeout_ms: 30_000,
       upstream_stream_timeout_ms: 30_000,
       websocket_upgrade_timeout_ms: 5_000,
       websocket_idle_timeout_ms: 60_000,
-      blocked_cookie_names: ["_frontman_server_key", "_frontman_server_web_user_remember_me"]
+      blocked_cookie_names: Keyword.values(auth_cookie_names)
     ]
   ],
   repo_analyses_github_client: FrontmanServer.RepoAnalyses.GitHubClient.Req,

@@ -8,15 +8,19 @@ defmodule FrontmanServer.RepoAnalysesTest do
   alias FrontmanServer.Repo
   alias FrontmanServer.RepoAnalyses
   alias FrontmanServer.RepoAnalyses.RepoAnalysis
+  alias FrontmanServer.Test.Support.RepoAnalyses.GitHubClientHelpers
 
   setup :verify_on_exit!
 
   setup do
     scope = user_scope_fixture()
+
+    GitHubClientHelpers.setup_mock_client()
+
     %{scope: scope}
   end
 
-  describe "analyze_repository/4" do
+  describe "analyze_repository/3" do
     test "persists an immutable analysis run", %{scope: scope} do
       token = put_github_token(scope)
       repo_name = "owner/repo"
@@ -37,7 +41,7 @@ defmodule FrontmanServer.RepoAnalysesTest do
       end)
 
       assert {:ok, %RepoAnalysis{} = analysis} =
-               RepoAnalyses.analyze_repository(scope, repo_name, nil, MockGitHubClient)
+               RepoAnalyses.analyze_repository(scope, repo_name, nil)
 
       assert analysis.provider == "github"
       assert analysis.repo_name == repo_name
@@ -74,7 +78,7 @@ defmodule FrontmanServer.RepoAnalysesTest do
       end)
 
       assert {:ok, analysis} =
-               RepoAnalyses.analyze_repository(scope, repo_name, "release", MockGitHubClient)
+               RepoAnalyses.analyze_repository(scope, repo_name, "release")
 
       assert analysis.requested_ref == "release"
       assert analysis.resolved_ref_kind == "branch"
@@ -102,7 +106,7 @@ defmodule FrontmanServer.RepoAnalysesTest do
       end)
 
       assert {:ok, analysis} =
-               RepoAnalyses.analyze_repository(scope, repo_name, "main", MockGitHubClient)
+               RepoAnalyses.analyze_repository(scope, repo_name, "main")
 
       assert analysis.requested_ref == "main"
       assert analysis.resolved_commit_sha == commit_sha
@@ -128,7 +132,7 @@ defmodule FrontmanServer.RepoAnalysesTest do
       end)
 
       assert {:error, %Ecto.Changeset{} = changeset} =
-               RepoAnalyses.analyze_repository(scope, repo_name, nil, MockGitHubClient)
+               RepoAnalyses.analyze_repository(scope, repo_name, nil)
 
       assert %{resolved_commit_sha: ["has invalid format"]} = errors_on(changeset)
       assert analysis_count_for_scope(scope) == 0
@@ -136,14 +140,14 @@ defmodule FrontmanServer.RepoAnalysesTest do
 
     test "returns :invalid_repo_name for invalid repository format", %{scope: scope} do
       assert {:error, :invalid_repo_name} =
-               RepoAnalyses.analyze_repository(scope, "owner-only", nil, MockGitHubClient)
+               RepoAnalyses.analyze_repository(scope, "owner-only", nil)
 
       assert analysis_count_for_scope(scope) == 0
     end
 
     test "returns :no_github_oauth_token when scope has no token", %{scope: scope} do
       assert {:error, :no_github_oauth_token} =
-               RepoAnalyses.analyze_repository(scope, "owner/repo", nil, MockGitHubClient)
+               RepoAnalyses.analyze_repository(scope, "owner/repo", nil)
 
       assert analysis_count_for_scope(scope) == 0
     end
@@ -158,7 +162,7 @@ defmodule FrontmanServer.RepoAnalysesTest do
       end)
 
       assert {:error, :repo_not_found} =
-               RepoAnalyses.analyze_repository(scope, repo_name, nil, MockGitHubClient)
+               RepoAnalyses.analyze_repository(scope, repo_name, nil)
 
       assert analysis_count_for_scope(scope) == 0
     end
@@ -179,12 +183,7 @@ defmodule FrontmanServer.RepoAnalysesTest do
       end)
 
       assert {:error, :ref_not_found} =
-               RepoAnalyses.analyze_repository(
-                 scope,
-                 repo_name,
-                 "does-not-exist",
-                 MockGitHubClient
-               )
+               RepoAnalyses.analyze_repository(scope, repo_name, "does-not-exist")
 
       assert analysis_count_for_scope(scope) == 0
     end
@@ -199,7 +198,7 @@ defmodule FrontmanServer.RepoAnalysesTest do
       end)
 
       assert {:error, :unauthorized} =
-               RepoAnalyses.analyze_repository(scope, repo_name, nil, MockGitHubClient)
+               RepoAnalyses.analyze_repository(scope, repo_name, nil)
 
       assert analysis_count_for_scope(scope) == 0
     end

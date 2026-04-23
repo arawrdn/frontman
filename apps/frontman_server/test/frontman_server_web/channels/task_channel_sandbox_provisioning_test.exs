@@ -3,7 +3,7 @@ defmodule FrontmanServerWeb.TaskChannelSandboxProvisioningTest do
 
   alias FrontmanServer.Providers
   alias FrontmanServer.Sandbox.EnvironmentSpec
-  alias FrontmanServer.Test.Support.RepoAnalyses.StaticGitHubClient
+  alias FrontmanServer.Test.Support.RepoAnalyses.GitHubClientHelpers
 
   @moduletag :capture_log
 
@@ -44,6 +44,7 @@ defmodule FrontmanServerWeb.TaskChannelSandboxProvisioningTest do
       end)
 
     Application.put_env(:frontman_server, :sandbox, sandbox_config)
+    GitHubClientHelpers.setup_static_client()
 
     {:ok, _oauth_token} =
       Providers.upsert_oauth_token(scope, "github", "channel-sandbox-github-token", nil, nil)
@@ -63,7 +64,7 @@ defmodule FrontmanServerWeb.TaskChannelSandboxProvisioningTest do
 
   test "channel remains responsive while sandbox provisioning is pending", %{scope: scope} do
     {socket, _task_id} =
-      join_task_channel(scope, repo_analyses_github_client: StaticGitHubClient)
+      join_task_channel(scope)
 
     complete_mcp_handshake(socket)
 

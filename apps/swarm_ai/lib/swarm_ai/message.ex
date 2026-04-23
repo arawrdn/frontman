@@ -7,7 +7,7 @@ defmodule SwarmAi.Message do
   unrepresentable at compile time.
   """
 
-  alias SwarmAi.Message.{System, User, Assistant, Tool}
+  alias SwarmAi.Message.{Assistant, System, Tool, User}
   alias SwarmAi.Message.ContentPart
 
   @type role :: :system | :user | :assistant | :tool

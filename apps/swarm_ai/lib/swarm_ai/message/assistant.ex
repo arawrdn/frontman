@@ -1,4 +1,6 @@
 defmodule SwarmAi.Message.Assistant do
+  @moduledoc "Assistant-role message struct used for model responses."
+
   use TypedStruct
   alias SwarmAi.Message.ContentPart
 

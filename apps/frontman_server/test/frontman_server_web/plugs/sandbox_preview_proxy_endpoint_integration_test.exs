@@ -10,9 +10,13 @@ defmodule FrontmanServerWeb.Plugs.SandboxPreviewProxyEndpointIntegrationTest do
   alias Plug.Conn
   alias Plug.Session
 
+  @auth_cookie_names Application.compile_env(:frontman_server, :auth_cookie_names)
+  @session_cookie Keyword.fetch!(@auth_cookie_names, :session_cookie)
+  @remember_me_cookie Keyword.fetch!(@auth_cookie_names, :remember_me_cookie)
+
   @session_options [
     store: :cookie,
-    key: "_frontman_server_key",
+    key: @session_cookie,
     signing_salt: "4+DQeuxI",
     same_site: "None",
     secure: true,
@@ -21,19 +25,6 @@ defmodule FrontmanServerWeb.Plugs.SandboxPreviewProxyEndpointIntegrationTest do
 
   setup do
     endpoint_port = free_port()
-
-    original_sandbox_config = Application.fetch_env!(:frontman_server, :sandbox)
-
-    sandbox_config =
-      Keyword.update!(original_sandbox_config, :preview_proxy, fn preview_proxy ->
-        Keyword.put(preview_proxy, :app_login_port, endpoint_port)
-      end)
-
-    Application.put_env(:frontman_server, :sandbox, sandbox_config)
-
-    on_exit(fn ->
-      Application.put_env(:frontman_server, :sandbox, original_sandbox_config)
-    end)
 
     start_supervised!(
       {Bandit, plug: FrontmanServerWeb.Endpoint, ip: {127, 0, 0, 1}, port: endpoint_port}
@@ -131,8 +122,7 @@ defmodule FrontmanServerWeb.Plugs.SandboxPreviewProxyEndpointIntegrationTest do
     preview_host = "#{sandbox.id}.preview.frontman.local"
 
     cookie =
-      session_cookie_for(user) <>
-        "; _frontman_server_web_user_remember_me=abc123; sandbox_pref=keep"
+      session_cookie_for(user) <> "; #{@remember_me_cookie}=abc123; sandbox_pref=keep"
 
     {:ok, conn_pid} = :gun.open(~c"127.0.0.1", endpoint_port)
     assert_receive {:gun_up, ^conn_pid, _protocol}, 1_000
@@ -150,8 +140,8 @@ defmodule FrontmanServerWeb.Plugs.SandboxPreviewProxyEndpointIntegrationTest do
     assert_receive {:gun_ws, ^conn_pid, ^stream_ref, {:text, upstream_cookie}}, 1_000
 
     assert upstream_cookie == "cookie:sandbox_pref=keep"
-    refute String.contains?(upstream_cookie, "_frontman_server_key=")
-    refute String.contains?(upstream_cookie, "_frontman_server_web_user_remember_me=")
+    refute String.contains?(upstream_cookie, "#{@session_cookie}=")
+    refute String.contains?(upstream_cookie, "#{@remember_me_cookie}=")
 
     :ok = :gun.close(conn_pid)
   end
@@ -205,15 +195,15 @@ defmodule FrontmanServerWeb.Plugs.SandboxPreviewProxyEndpointIntegrationTest do
         "http://127.0.0.1:#{endpoint_port}/inspect-cookie",
         headers: [
           {"host", preview_host},
-          {"cookie", session_cookie_for(user) <> "; _frontman_server_web_user_remember_me=abc123"}
+          {"cookie", session_cookie_for(user) <> "; #{@remember_me_cookie}=abc123"}
         ],
         retry: false,
         redirect: false
       )
 
     assert response.status == 200
-    refute String.contains?(response.body, "_frontman_server_key=")
-    refute String.contains?(response.body, "_frontman_server_web_user_remember_me=")
+    refute String.contains?(response.body, "#{@session_cookie}=")
+    refute String.contains?(response.body, "#{@remember_me_cookie}=")
   end
 
   test "does not forward upstream set-cookie headers to preview responses", %{
@@ -367,7 +357,7 @@ defmodule FrontmanServerWeb.Plugs.SandboxPreviewProxyEndpointIntegrationTest do
 
     conn
     |> Conn.get_resp_header("set-cookie")
-    |> Enum.find(&String.starts_with?(&1, "_frontman_server_key="))
+    |> Enum.find(&String.starts_with?(&1, "#{@session_cookie}="))
     |> String.split(";", parts: 2)
     |> List.first()
   end

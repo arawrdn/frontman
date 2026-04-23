@@ -1,4 +1,6 @@
 defmodule SwarmAi.Message.Tool do
+  @moduledoc "Tool-role message struct returned from tool invocations."
+
   use TypedStruct
   alias SwarmAi.Message.ContentPart
 

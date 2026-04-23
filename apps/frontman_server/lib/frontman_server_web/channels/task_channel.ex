@@ -69,12 +69,14 @@ defmodule FrontmanServerWeb.TaskChannel do
 
   @impl true
   def handle_in(@acp_message, payload, socket) do
+    task_id = socket.assigns.task_id
+
     case JsonRpc.parse(payload) do
       {:ok, {:request, id, @acp_method_session_prompt, params}} ->
         handle_prompt(id, params, socket)
 
-      {:ok, {:notification, @acp_method_session_cancel, params}} ->
-        handle_cancel(params, socket)
+      {:ok, {:notification, @acp_method_session_cancel, _params}} ->
+        task_id |> handle_cancel(socket)
 
       {:ok, {:request, id, @acp_method_session_load, params}} ->
         # Load session history - streamed via session/update notifications
@@ -361,16 +363,23 @@ defmodule FrontmanServerWeb.TaskChannel do
     task_id = socket.assigns.task_id
     mcp_status = MCPInitializer.channel_status(socket.assigns[:mcp_init_state])
 
-    # Check if MCP initialization is complete
     case mcp_status do
       :ready ->
-        # MCP is ready, process the prompt immediately
         process_prompt(id, params, socket)
 
       :failed ->
-        # MCP failed, process anyway with empty tools (best effort)
-        Logger.warning("Processing prompt with failed MCP initialization for task #{task_id}")
-        process_prompt(id, params, socket)
+        Logger.warning("Rejecting prompt while MCP initialization failed for task #{task_id}")
+
+        {:reply,
+         {:ok,
+          %{
+            @acp_message =>
+              JsonRpc.error_response(
+                id,
+                JsonRpc.error_internal(),
+                mcp_failed_prompt_error_message(socket)
+              )
+          }}, socket}
 
       _pending ->
         # MCP still initializing, queue the prompt
@@ -384,11 +393,23 @@ defmodule FrontmanServerWeb.TaskChannel do
     end
   end
 
+  defp mcp_failed_prompt_error_message(socket) do
+    case socket.assigns[:mcp_error] do
+      nil ->
+        "MCP initialization failed"
+
+      message when is_binary(message) ->
+        "MCP initialization failed: #{message}"
+
+      _ ->
+        "MCP initialization failed"
+    end
+  end
+
   # ACP spec: session/cancel is a NOTIFICATION (no response expected).
   # The pending session/prompt request will be resolved with stopReason: "cancelled"
   # via the :agent_cancelled handler (triggered by the death watcher).
-  defp handle_cancel(_params, socket) do
-    task_id = socket.assigns.task_id
+  defp handle_cancel(task_id, socket) do
     Logger.info("Cancel notification received for task #{task_id}")
 
     # Clear retry state up front — whether an execution is running or not,
@@ -587,16 +608,10 @@ defmodule FrontmanServerWeb.TaskChannel do
   defp build_execution_opts(socket, base_opts) do
     base_opts
     |> maybe_put_agent_override(socket.assigns[:agent_override])
-    |> maybe_put_repo_analyses_github_client(socket.assigns[:repo_analyses_github_client])
   end
 
   defp maybe_put_agent_override(opts, nil), do: opts
   defp maybe_put_agent_override(opts, agent), do: [{:agent, agent} | opts]
-
-  defp maybe_put_repo_analyses_github_client(opts, nil), do: opts
-
-  defp maybe_put_repo_analyses_github_client(opts, github_client),
-    do: [{:repo_analyses_github_client, github_client} | opts]
 
   defp backend_tool_modules_for_execution do
     Tools.backend_tool_modules(sandbox: %{})
@@ -998,7 +1013,7 @@ defmodule FrontmanServerWeb.TaskChannel do
         socket = assign(socket, :queued_prompt, nil)
         ensure_noreply(process_prompt(id, params, socket), socket)
 
-      {:failed, {id, params}} ->
+      {:failed, {id, _params}} ->
         task_id = socket.assigns.task_id
 
         Logger.warning(
@@ -1006,7 +1021,18 @@ defmodule FrontmanServerWeb.TaskChannel do
         )
 
         socket = assign(socket, :queued_prompt, nil)
-        ensure_noreply(process_prompt(id, params, socket), socket)
+
+        push(
+          socket,
+          @acp_message,
+          JsonRpc.error_response(
+            id,
+            JsonRpc.error_internal(),
+            mcp_failed_prompt_error_message(socket)
+          )
+        )
+
+        {:noreply, socket}
 
       _ ->
         {:noreply, socket}

@@ -124,7 +124,6 @@ defmodule FrontmanServerWeb.ChannelCase do
   ## Options
 
     * `:framework` - framework name for the task (default: `"nextjs"`)
-    * `:repo_analyses_github_client` - override GitHub analysis client module
 
   ## Examples
 
@@ -137,9 +136,6 @@ defmodule FrontmanServerWeb.ChannelCase do
       join_opts = unquote(opts)
       framework = Keyword.get(join_opts, :framework, "nextjs")
 
-      repo_analyses_github_client =
-        Keyword.get(join_opts, :repo_analyses_github_client)
-
       task_id = Ecto.UUID.generate()
       {:ok, ^task_id} = FrontmanServer.Tasks.create_task(scope, task_id, framework)
 
@@ -147,15 +143,6 @@ defmodule FrontmanServerWeb.ChannelCase do
         FrontmanServerWeb.UserSocket
         |> socket("user_id", %{scope: scope})
         |> Phoenix.Socket.assign(:agent_override, %FrontmanServer.Testing.BlockingAgent{})
-
-      socket =
-        case repo_analyses_github_client do
-          nil ->
-            socket
-
-          github_client ->
-            Phoenix.Socket.assign(socket, :repo_analyses_github_client, github_client)
-        end
 
       {:ok, _reply, socket} =
         socket

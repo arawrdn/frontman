@@ -1,5 +1,5 @@
 defmodule FrontmanServerWeb.TaskChannelTest do
-  use FrontmanServerWeb.ChannelCase, async: true
+  use FrontmanServerWeb.ChannelCase, async: false
   use Oban.Testing, repo: FrontmanServer.Repo
 
   import FrontmanServer.InteractionCase.Helpers
@@ -501,6 +501,52 @@ defmodule FrontmanServerWeb.TaskChannelTest do
         "params" => %{
           "protocolVersion" => ^expected_version,
           "clientInfo" => %{"name" => "frontman-server"}
+        }
+      })
+    end
+
+    test "returns JSON-RPC error for prompt when initialization fails", %{scope: scope} do
+      {socket, _task_id} = join_task_channel(scope)
+
+      assert_push("mcp:message", %{"id" => init_request_id, "method" => "initialize"})
+
+      push(
+        socket,
+        "mcp:message",
+        JsonRpc.error_response(init_request_id, JsonRpc.error_internal(), "init handshake failed")
+      )
+
+      :sys.get_state(socket.channel_pid)
+
+      ref = push(socket, "acp:message", build_prompt_request())
+
+      assert_reply(ref, :ok, %{"acp:message" => response})
+      assert response["error"]["code"] == JsonRpc.error_internal()
+      assert response["error"]["message"] == "MCP initialization failed: init handshake failed"
+    end
+
+    test "rejects queued prompt when initialization fails", %{scope: scope} do
+      {socket, _task_id} = join_task_channel(scope)
+      expected_error_code = JsonRpc.error_internal()
+
+      assert_push("mcp:message", %{"id" => init_request_id, "method" => "initialize"})
+
+      # Queue prompt while initialization is pending.
+      push(socket, "acp:message", build_prompt_request(id: 55))
+      :sys.get_state(socket.channel_pid)
+
+      push(
+        socket,
+        "mcp:message",
+        JsonRpc.error_response(init_request_id, JsonRpc.error_internal(), "init handshake failed")
+      )
+
+      assert_push("acp:message", %{
+        "jsonrpc" => "2.0",
+        "id" => 55,
+        "error" => %{
+          "code" => ^expected_error_code,
+          "message" => "MCP initialization failed: init handshake failed"
         }
       })
     end

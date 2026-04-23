@@ -7,6 +7,11 @@ defmodule FrontmanServerWeb.TestSupport.SandboxPreviewProxy.UpstreamPlug do
 
   def init(opts), do: opts
 
+  defp auth_session_cookie do
+    Application.fetch_env!(:frontman_server, :auth_cookie_names)
+    |> Keyword.fetch!(:session_cookie)
+  end
+
   def call(%Plug.Conn{request_path: "/hmr"} = conn, _opts) do
     conn
     |> WebSockAdapter.upgrade(UpstreamEchoSocket, %{}, [])
@@ -42,7 +47,10 @@ defmodule FrontmanServerWeb.TestSupport.SandboxPreviewProxy.UpstreamPlug do
 
   def call(%Plug.Conn{request_path: "/set-cookie"} = conn, _opts) do
     conn
-    |> put_resp_header("set-cookie", "_frontman_server_key=evil; Domain=.frontman.local; Path=/")
+    |> put_resp_header(
+      "set-cookie",
+      "#{auth_session_cookie()}=evil; Domain=.frontman.local; Path=/"
+    )
     |> send_resp(200, "cookie-set")
   end
 

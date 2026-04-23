@@ -27,24 +27,6 @@ defmodule FrontmanServer.Tools.Sandbox.Common do
     Keyword.fetch!(config, :project_root)
   end
 
-  @spec app_port() :: pos_integer()
-  def app_port do
-    config =
-      Application.fetch_env!(:frontman_server, :sandbox)
-      |> Keyword.fetch!(:bootstrap)
-
-    Keyword.fetch!(config, :app_port)
-  end
-
-  @spec health_path() :: String.t()
-  def health_path do
-    config =
-      Application.fetch_env!(:frontman_server, :sandbox)
-      |> Keyword.fetch!(:bootstrap)
-
-    Keyword.fetch!(config, :health_path)
-  end
-
   @spec resolve_relative_path(String.t()) ::
           {:ok, %{absolute: String.t(), relative: String.t()}} | {:error, String.t()}
   def resolve_relative_path(path) when is_binary(path) do

@@ -11,12 +11,15 @@ defmodule FrontmanServerWeb.Endpoint do
   alias FrontmanServerWeb.Plugs.SandboxPreviewProxy
   alias Plug.Session
 
+  @auth_cookie_names Application.compile_env(:frontman_server, :auth_cookie_names)
+  @session_cookie Keyword.fetch!(@auth_cookie_names, :session_cookie)
+
   # The session will be stored in the cookie and signed,
   # this means its contents can be read but not tampered with.
   # Set :encryption_salt if you would also like to encrypt it.
   @session_options [
     store: :cookie,
-    key: "_frontman_server_key",
+    key: @session_cookie,
     signing_salt: "4+DQeuxI",
     same_site: "None",
     secure: true
@@ -87,7 +90,16 @@ defmodule FrontmanServerWeb.Endpoint do
     auth_cookie_domain = Application.fetch_env!(:frontman_server, :auth_cookie_domain)
 
     cached_opts(@session_opts_cache_key, auth_cookie_domain, fn ->
-      Session.init(session_options_with_domain(auth_cookie_domain))
+      session_options =
+        case auth_cookie_domain do
+          domain when is_binary(domain) and byte_size(domain) > 0 ->
+            Keyword.put(@session_options, :domain, domain)
+
+          _ ->
+            @session_options
+        end
+
+      Session.init(session_options)
     end)
   end
 
@@ -110,16 +122,6 @@ defmodule FrontmanServerWeb.Endpoint do
         opts = build_opts.()
         :persistent_term.put(cache_key, {config_key, opts})
         opts
-    end
-  end
-
-  defp session_options_with_domain(auth_cookie_domain) do
-    case auth_cookie_domain do
-      domain when is_binary(domain) and byte_size(domain) > 0 ->
-        Keyword.put(@session_options, :domain, domain)
-
-      _ ->
-        @session_options
     end
   end
 end

@@ -50,17 +50,6 @@ defmodule FrontmanServer.Image do
     Map.get(@image_tool_configs, canonical)
   end
 
-  @doc """
-  Checks whether a binary image exceeds a dimension limit on either axis.
-
-  Returns `:ok` when the image is within limits or the format is
-  unrecognised (fail-open). Returns `{:too_large, width, height}` when
-  either dimension exceeds the limit.
-
-  The optional second argument overrides the default `max_dimension/0`.
-  """
-  @spec check_dimensions(binary(), pos_integer()) ::
-          :ok | {:too_large, pos_integer(), pos_integer()}
   def check_dimensions(data, max \\ @max_dimension) when is_binary(data) and is_integer(max) do
     case parse_dimensions(data) do
       {:ok, width, height} when width > max or height > max ->
@@ -87,42 +76,37 @@ defmodule FrontmanServer.Image do
     end
   end
 
-  @doc """
-  Parse image dimensions from binary headers.
-
-  Supports JPEG, PNG, GIF (87a/89a), and WebP (VP8, VP8L, VP8X).
-  Returns `{:ok, width, height}` or `:unknown` for unrecognised formats.
-  """
+  # ── Private ─────────────────────────────────────────────────────────
   @spec parse_dimensions(binary()) :: {:ok, pos_integer(), pos_integer()} | :unknown
 
   # JPEG: scan for SOFn marker which contains dimensions
-  def parse_dimensions(<<0xFF, 0xD8, rest::binary>>), do: jpeg_scan_for_sof(rest)
+  defp parse_dimensions(<<0xFF, 0xD8, rest::binary>>), do: jpeg_scan_for_sof(rest)
 
   # PNG: IHDR chunk at fixed offset contains width/height as 4-byte big-endian ints
-  def parse_dimensions(
-        <<0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, _length::32, "IHDR", width::32,
-          height::32, _::binary>>
-      ),
-      do: {:ok, width, height}
+  defp parse_dimensions(
+         <<0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, _length::32, "IHDR", width::32,
+           height::32, _::binary>>
+       ),
+       do: {:ok, width, height}
 
   # GIF87a / GIF89a: width and height as 16-bit little-endian at bytes 6-9
-  def parse_dimensions(<<"GIF8", version, "a", width::16-little, height::16-little, _::binary>>)
-      when version == ?7 or version == ?9,
-      do: {:ok, width, height}
+  defp parse_dimensions(<<"GIF8", version, "a", width::16-little, height::16-little, _::binary>>)
+       when version == ?7 or version == ?9,
+       do: {:ok, width, height}
 
   # WebP VP8X (extended — alpha, animation, ICC, etc.): canvas dims as 24-bit LE + 1
-  def parse_dimensions(
-        <<"RIFF", _file_size::32-little, "WEBP", "VP8X", _chunk_size::32-little,
-          _flags::32-little, width_minus1::24-little, height_minus1::24-little, _::binary>>
-      ),
-      do: {:ok, width_minus1 + 1, height_minus1 + 1}
+  defp parse_dimensions(
+         <<"RIFF", _file_size::32-little, "WEBP", "VP8X", _chunk_size::32-little,
+           _flags::32-little, width_minus1::24-little, height_minus1::24-little, _::binary>>
+       ),
+       do: {:ok, width_minus1 + 1, height_minus1 + 1}
 
   # WebP VP8L (lossless): 0x2F signature byte, then width-1 and height-1 packed
   # into a 32-bit LE bitfield (14 bits each, starting from bit 0)
-  def parse_dimensions(
-        <<"RIFF", _file_size::32-little, "WEBP", "VP8L", _chunk_size::32-little, 0x2F,
-          bitfield::32-little, _::binary>>
-      ) do
+  defp parse_dimensions(
+         <<"RIFF", _file_size::32-little, "WEBP", "VP8L", _chunk_size::32-little, 0x2F,
+           bitfield::32-little, _::binary>>
+       ) do
     width = Bitwise.band(bitfield, 0x3FFF) + 1
     height = Bitwise.band(Bitwise.bsr(bitfield, 14), 0x3FFF) + 1
     {:ok, width, height}
@@ -130,19 +114,17 @@ defmodule FrontmanServer.Image do
 
   # WebP VP8 (lossy): 3-byte frame tag + sync code 0x9D012A, then 16-bit LE dims
   # (lower 14 bits are the actual dimension, upper 2 bits are scale factor)
-  def parse_dimensions(
-        <<"RIFF", _file_size::32-little, "WEBP", "VP8 ", _chunk_size::32-little,
-          _frame_tag::binary-size(3), 0x9D, 0x01, 0x2A, width_raw::16-little,
-          height_raw::16-little, _::binary>>
-      ) do
+  defp parse_dimensions(
+         <<"RIFF", _file_size::32-little, "WEBP", "VP8 ", _chunk_size::32-little,
+           _frame_tag::binary-size(3), 0x9D, 0x01, 0x2A, width_raw::16-little,
+           height_raw::16-little, _::binary>>
+       ) do
     width = Bitwise.band(width_raw, 0x3FFF)
     height = Bitwise.band(height_raw, 0x3FFF)
     {:ok, width, height}
   end
 
-  def parse_dimensions(_), do: :unknown
-
-  # ── Private ─────────────────────────────────────────────────────────
+  defp parse_dimensions(_), do: :unknown
 
   # Scan JPEG markers looking for any SOFn (Start of Frame) marker.
   # SOFn markers are 0xFFC0-0xFFCF except 0xFFC4 (DHT), 0xFFC8 (JPG extension),

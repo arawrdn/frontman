@@ -20,13 +20,15 @@ defmodule FrontmanServer.Tasks.Execution.ErrorPropagationTest do
   alias FrontmanServer.Providers
   alias FrontmanServer.Tasks
   alias FrontmanServer.Tasks.ExecutionEvent
-  alias FrontmanServer.Test.Support.RepoAnalyses.StaticGitHubClient
+  alias FrontmanServer.Test.Support.RepoAnalyses.GitHubClientHelpers
   alias FrontmanServer.Test.Support.Sandbox.IntegrationProvider
 
   describe "LLM stream error propagation" do
     setup do
       pid = Sandbox.start_owner!(FrontmanServer.Repo, shared: true)
       on_exit(fn -> Sandbox.stop_owner(pid) end)
+
+      GitHubClientHelpers.setup_static_client()
 
       scope = user_scope_fixture()
 
@@ -59,8 +61,7 @@ defmodule FrontmanServer.Tasks.Execution.ErrorPropagationTest do
       {:ok, _} =
         Tasks.submit_user_message(scope, task_id, user_content("Take a screenshot"), [],
           agent: agent,
-          sandbox_provider: IntegrationProvider,
-          repo_analyses_github_client: StaticGitHubClient
+          sandbox_provider: IntegrationProvider
         )
 
       # Stream errors are now caught and surfaced as graceful failures
@@ -84,8 +85,7 @@ defmodule FrontmanServer.Tasks.Execution.ErrorPropagationTest do
       {:ok, _} =
         Tasks.submit_user_message(scope, task_id, user_content("Hello"), [],
           agent: agent,
-          sandbox_provider: IntegrationProvider,
-          repo_analyses_github_client: StaticGitHubClient
+          sandbox_provider: IntegrationProvider
         )
 
       # Should receive a failed event broadcast
