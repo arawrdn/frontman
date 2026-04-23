@@ -769,8 +769,6 @@ defmodule FrontmanServer.Sandbox.Orchestrator do
     end
   end
 
-  defp devcontainer_remote_env(_devcontainer), do: %{}
-
   defp put_valid_remote_env_entry({key, value}, acc) do
     case valid_remote_env_entry?(key, value) do
       true -> Map.put(acc, key, value)
@@ -798,7 +796,6 @@ defmodule FrontmanServer.Sandbox.Orchestrator do
   defp devcontainer_app_port(_devcontainer, default_app_port), do: default_app_port
 
   defp environment_spec_env(%EnvironmentSpec{env: env}) when is_map(env), do: env
-  defp environment_spec_env(_), do: %{}
 
   defp required_env_override!(env, key) do
     case Map.get(env, key) do

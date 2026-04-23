@@ -17,6 +17,7 @@ defmodule FrontmanServer do
     {Accounts, []},
     {Organizations, []},
     {Providers, []},
+    Sandboxes,
     {RepoAnalyses, []},
     {Tasks, []},
     Repo,

@@ -476,7 +476,7 @@ defmodule FrontmanServer.Tasks do
   end
 
   @doc false
-  @spec start_execution_sync(Scope.t(), String.t(), list(), keyword()) :: :ok
+  @spec start_execution_sync(Accounts.Scope.t(), String.t(), list(), keyword()) :: :ok
   def start_execution_sync(scope, task_id, tools, opts) do
     start_execution_sync_internal(scope, task_id, tools, opts)
   end

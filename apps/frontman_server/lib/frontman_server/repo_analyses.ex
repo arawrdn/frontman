@@ -82,8 +82,6 @@ defmodule FrontmanServer.RepoAnalyses do
     end
   end
 
-  defp validate_repo_name(_repo_name), do: {:error, :invalid_repo_name}
-
   defp validate_requested_ref(nil), do: :ok
 
   defp validate_requested_ref(requested_ref) when is_binary(requested_ref) do
