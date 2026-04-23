@@ -35,7 +35,7 @@ defmodule FrontmanServer.TasksTest do
     test "returns title for existing task", %{scope: scope} do
       task_id = task_fixture(scope)
 
-      assert {:ok, "New Task"} = Tasks.get_short_desc(scope, task_id)
+      assert {:ok, "New Task" <> ^task_id} = Tasks.get_short_desc(scope, task_id)
     end
 
     test "returns updated title after set_generated_title", %{scope: scope} do

@@ -150,21 +150,21 @@ defmodule FrontmanServer.RepoAnalysesTest do
                RepoAnalyses.analyze_repository(scope, repo_name)
 
       assert %{resolved_commit_sha: ["has invalid format"]} = errors_on(changeset)
-      assert Repo.aggregate(RepoAnalysis, :count) == 0
+      assert analysis_count_for_scope(scope) == 0
     end
 
     test "returns :invalid_repo_name for invalid repository format", %{scope: scope} do
       assert {:error, :invalid_repo_name} =
                RepoAnalyses.analyze_repository(scope, "owner-only")
 
-      assert Repo.aggregate(RepoAnalysis, :count) == 0
+      assert analysis_count_for_scope(scope) == 0
     end
 
     test "returns :no_github_oauth_token when scope has no token", %{scope: scope} do
       assert {:error, :no_github_oauth_token} =
                RepoAnalyses.analyze_repository(scope, "owner/repo")
 
-      assert Repo.aggregate(RepoAnalysis, :count) == 0
+      assert analysis_count_for_scope(scope) == 0
     end
 
     test "maps repository 404 to :repo_not_found", %{scope: scope} do
@@ -179,7 +179,7 @@ defmodule FrontmanServer.RepoAnalysesTest do
       assert {:error, :repo_not_found} =
                RepoAnalyses.analyze_repository(scope, repo_name)
 
-      assert Repo.aggregate(RepoAnalysis, :count) == 0
+      assert analysis_count_for_scope(scope) == 0
     end
 
     test "maps ref 404 to :ref_not_found", %{scope: scope} do
@@ -200,7 +200,7 @@ defmodule FrontmanServer.RepoAnalysesTest do
       assert {:error, :ref_not_found} =
                RepoAnalyses.analyze_repository(scope, repo_name, ref: "does-not-exist")
 
-      assert Repo.aggregate(RepoAnalysis, :count) == 0
+      assert analysis_count_for_scope(scope) == 0
     end
 
     test "maps GitHub unauthorized response to :unauthorized", %{scope: scope} do
@@ -215,8 +215,14 @@ defmodule FrontmanServer.RepoAnalysesTest do
       assert {:error, :unauthorized} =
                RepoAnalyses.analyze_repository(scope, repo_name)
 
-      assert Repo.aggregate(RepoAnalysis, :count) == 0
+      assert analysis_count_for_scope(scope) == 0
     end
+  end
+
+  defp analysis_count_for_scope(scope) do
+    RepoAnalysis
+    |> where([analysis], analysis.user_id == ^scope.user.id)
+    |> Repo.aggregate(:count)
   end
 
   defp put_github_token(scope) do

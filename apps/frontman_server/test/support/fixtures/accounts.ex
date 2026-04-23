@@ -13,10 +13,10 @@ defmodule FrontmanServer.Test.Fixtures.Accounts do
   alias FrontmanServer.Accounts
   alias FrontmanServer.Accounts.Scope
 
-  def unique_user_email, do: "user#{System.unique_integer()}@example.com"
+  def unique_user_email, do: "user-#{Ecto.UUID.generate()}@example.com"
   def valid_user_password, do: "hello world!"
 
-  def unique_user_name, do: "User #{System.unique_integer()}"
+  def unique_user_name, do: "User #{Ecto.UUID.generate()}"
 
   def valid_user_attributes(attrs \\ %{}) do
     Enum.into(attrs, %{
