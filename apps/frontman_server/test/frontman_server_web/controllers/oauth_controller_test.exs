@@ -7,6 +7,9 @@ defmodule FrontmanServerWeb.OAuthControllerTest do
   alias FrontmanServer.Providers
 
   setup do
+    original_workos_client = Application.fetch_env!(:workos, WorkOS.Client)
+    original_workos_req_options = Application.fetch_env!(:frontman_server, :workos_req_options)
+
     Application.put_env(:workos, WorkOS.Client,
       api_key: "sk_test_workos",
       client_id: "client_test_workos"
@@ -15,8 +18,8 @@ defmodule FrontmanServerWeb.OAuthControllerTest do
     Application.put_env(:frontman_server, :workos_req_options, plug: {Req.Test, :workos_auth})
 
     on_exit(fn ->
-      Application.put_env(:workos, WorkOS.Client, api_key: nil, client_id: nil)
-      Application.delete_env(:frontman_server, :workos_req_options)
+      Application.put_env(:workos, WorkOS.Client, original_workos_client)
+      Application.put_env(:frontman_server, :workos_req_options, original_workos_req_options)
     end)
 
     %{user: user_fixture()}

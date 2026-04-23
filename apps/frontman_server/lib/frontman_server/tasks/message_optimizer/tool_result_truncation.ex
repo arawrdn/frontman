@@ -17,8 +17,6 @@ defmodule FrontmanServer.Tasks.MessageOptimizer.ToolResultTruncation do
   alias ReqLLM.Message
   alias ReqLLM.Message.ContentPart
 
-  @default_max_bytes 51_200
-
   @spec run([Message.t()], keyword()) :: [Message.t()]
   def run(messages, opts \\ []) do
     max_bytes = max_bytes(opts)
@@ -59,8 +57,8 @@ defmodule FrontmanServer.Tasks.MessageOptimizer.ToolResultTruncation do
 
   defp max_bytes(opts) do
     config =
-      Application.get_env(:frontman_server, FrontmanServer.Tasks.MessageOptimizer, [])
-      |> Keyword.get(:tool_result_max_bytes, @default_max_bytes)
+      Application.fetch_env!(:frontman_server, FrontmanServer.Tasks.MessageOptimizer)
+      |> Keyword.fetch!(:tool_result_max_bytes)
 
     Keyword.get(opts, :tool_result_max_bytes, config)
   end

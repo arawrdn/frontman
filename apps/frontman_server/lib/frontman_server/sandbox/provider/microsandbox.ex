@@ -10,8 +10,6 @@ defmodule FrontmanServer.Sandbox.Provider.Microsandbox do
 
   @behaviour FrontmanServer.Sandbox.Provider
 
-  alias FrontmanServer.Sandbox.CommandRunner
-
   @default_timeout_ms 30_000
   @create_timeout_ms 180_000
 
@@ -203,6 +201,7 @@ defmodule FrontmanServer.Sandbox.Provider.Microsandbox do
   end
 
   defp default_runner do
-    Application.get_env(:frontman_server, :command_runner, CommandRunner.System)
+    Application.fetch_env!(:frontman_server, :sandbox)
+    |> Keyword.fetch!(:command_runner)
   end
 end

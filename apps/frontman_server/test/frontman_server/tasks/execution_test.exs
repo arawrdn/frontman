@@ -97,13 +97,61 @@ defmodule FrontmanServer.Tasks.ExecutionIntegrationTest do
 
   defp setup_sandbox(_context) do
     pid = Sandbox.start_owner!(FrontmanServer.Repo, shared: true)
-    on_exit(fn -> Sandbox.stop_owner(pid) end)
+
+    original_sandbox_config = Application.fetch_env!(:frontman_server, :sandbox)
+
+    original_repo_analyses_github_client =
+      Application.fetch_env!(:frontman_server, :repo_analyses_github_client)
+
+    sandbox_config =
+      original_sandbox_config
+      |> Keyword.put(:provider, IntegrationProvider)
+      |> Keyword.update!(:bootstrap, fn bootstrap ->
+        bootstrap
+        |> Keyword.put(:wait_timeout_ms, 50)
+        |> Keyword.put(:poll_interval_ms, 10)
+      end)
+
+    Application.put_env(:frontman_server, :sandbox, sandbox_config)
+
+    Application.put_env(
+      :frontman_server,
+      :repo_analyses_github_client,
+      StaticGitHubClient
+    )
+
+    IntegrationProvider.reset!()
+
+    on_exit(fn ->
+      Application.put_env(:frontman_server, :sandbox, original_sandbox_config)
+
+      Application.put_env(
+        :frontman_server,
+        :repo_analyses_github_client,
+        original_repo_analyses_github_client
+      )
+
+      IntegrationProvider.reset!()
+
+      DynamicSupervisor.which_children(FrontmanServer.Sandbox.DynamicSupervisor)
+      |> Enum.each(fn
+        {_, pid, _, _} when is_pid(pid) -> Process.exit(pid, :kill)
+        _ -> :ok
+      end)
+
+      Sandbox.stop_owner(pid)
+    end)
 
     :ok
   end
 
   defp setup_user(_context) do
-    {:ok, scope: user_scope_fixture()}
+    scope = user_scope_fixture()
+
+    {:ok, _oauth_token} =
+      Providers.upsert_oauth_token(scope, "github", "sandbox-mvp-github-token", nil, nil)
+
+    {:ok, scope: scope}
   end
 
   defp setup_task(%{scope: scope}) do
@@ -123,43 +171,7 @@ defmodule FrontmanServer.Tasks.ExecutionIntegrationTest do
     {:ok, socket: socket}
   end
 
-  defp setup_sandbox_mvp_enabled(%{scope: scope}) do
-    original_config = Application.get_env(:frontman_server, :sandbox_mvp, [])
-
-    original_repo_analyses_client =
-      Application.get_env(:frontman_server, :repo_analyses_github_client)
-
-    sandbox_mvp_config =
-      original_config
-      |> Keyword.put(:enabled, true)
-      |> Keyword.put(:wait_timeout_ms, 50)
-      |> Keyword.put(:poll_interval_ms, 10)
-
-    Application.put_env(:frontman_server, :sandbox_mvp, sandbox_mvp_config)
-    Application.put_env(:frontman_server, :repo_analyses_github_client, StaticGitHubClient)
-
-    {:ok, _oauth_token} =
-      Providers.upsert_oauth_token(scope, "github", "sandbox-mvp-github-token", nil, nil)
-
-    IntegrationProvider.reset!()
-
-    on_exit(fn ->
-      Application.put_env(:frontman_server, :sandbox_mvp, original_config)
-
-      case original_repo_analyses_client do
-        nil -> Application.delete_env(:frontman_server, :repo_analyses_github_client)
-        client -> Application.put_env(:frontman_server, :repo_analyses_github_client, client)
-      end
-
-      IntegrationProvider.reset!()
-
-      DynamicSupervisor.which_children(FrontmanServer.Sandbox.DynamicSupervisor)
-      |> Enum.each(fn
-        {_, pid, _, _} when is_pid(pid) -> Process.exit(pid, :kill)
-        _ -> :ok
-      end)
-    end)
-
+  defp setup_sandbox_bootstrap(_context) do
     :ok
   end
 
@@ -192,7 +204,7 @@ defmodule FrontmanServer.Tasks.ExecutionIntegrationTest do
   end
 
   describe "sandbox bootstrap invariants" do
-    setup [:setup_sandbox, :setup_user, :setup_task, :setup_sandbox_mvp_enabled]
+    setup [:setup_sandbox, :setup_user, :setup_task, :setup_sandbox_bootstrap]
 
     test "creating a new sandbox preserves task_id and provider override", %{
       task_id: task_id,
@@ -205,7 +217,8 @@ defmodule FrontmanServer.Tasks.ExecutionIntegrationTest do
                Execution.run(scope, task,
                  agent: agent,
                  sandbox_provider: IntegrationProvider,
-                 sandbox_wait_timeout_ms: 50
+                 sandbox_wait_timeout_ms: 50,
+                 repo_analyses_github_client: StaticGitHubClient
                )
 
       assert {:ok, sandbox} = Sandboxes.current_for_task(scope, task_id)
@@ -232,7 +245,8 @@ defmodule FrontmanServer.Tasks.ExecutionIntegrationTest do
                Tasks.submit_user_message(scope, task_id, user_content("Hello"), [],
                  agent: agent,
                  sandbox_provider: StuckProvisionProvider,
-                 sandbox_wait_timeout_ms: 350
+                 sandbox_wait_timeout_ms: 350,
+                 repo_analyses_github_client: StaticGitHubClient
                )
 
       elapsed_ms = System.monotonic_time(:millisecond) - started_at
@@ -259,7 +273,8 @@ defmodule FrontmanServer.Tasks.ExecutionIntegrationTest do
             Tasks.start_execution(scope, task_id, [],
               agent: agent,
               sandbox_provider: StuckProvisionProvider,
-              sandbox_wait_timeout_ms: 700
+              sandbox_wait_timeout_ms: 700,
+              repo_analyses_github_client: StaticGitHubClient
             )
 
           send(parent, {:first_start_result, result})
@@ -272,7 +287,8 @@ defmodule FrontmanServer.Tasks.ExecutionIntegrationTest do
                Tasks.start_execution(scope, task_id, [],
                  agent: agent,
                  sandbox_provider: StuckProvisionProvider,
-                 sandbox_wait_timeout_ms: 700
+                 sandbox_wait_timeout_ms: 700,
+                 repo_analyses_github_client: StaticGitHubClient
                )
 
       assert_receive {:execution_start_error, ":sandbox_provisioning_timeout"}, 1_500

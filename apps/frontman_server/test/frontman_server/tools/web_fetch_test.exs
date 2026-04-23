@@ -4,10 +4,12 @@ defmodule FrontmanServer.Tools.WebFetchTest do
   alias FrontmanServer.Tools.WebFetch
 
   setup do
+    original_req_options = Application.fetch_env!(:frontman_server, :web_fetch_req_options)
+
     Application.put_env(:frontman_server, :web_fetch_req_options, plug: {Req.Test, :web_fetch})
 
     on_exit(fn ->
-      Application.delete_env(:frontman_server, :web_fetch_req_options)
+      Application.put_env(:frontman_server, :web_fetch_req_options, original_req_options)
     end)
 
     context = %FrontmanServer.Tools.Backend.Context{

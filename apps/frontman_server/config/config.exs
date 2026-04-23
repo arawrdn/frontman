@@ -40,8 +40,49 @@ config :req_llm,
   ]
 
 config :frontman_server,
+  env: config_env(),
   ecto_repos: [FrontmanServer.Repo],
   generators: [timestamp_type: :utc_datetime, binary_id: true],
+  dev_routes: false,
+  dns_cluster_query: :ignore,
+  auth_cookie_domain: ".frontman.local",
+  sandbox: [
+    provider: FrontmanServer.Sandbox.Provider.Microsandbox,
+    command_runner: FrontmanServer.Sandbox.CommandRunner.System,
+    bootstrap: [
+      image: "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
+      project_root: "/workspace/frontman",
+      app_dir: "apps/frontman_server",
+      install_command: "mix deps.get",
+      start_command: "mix phx.server",
+      app_port: 4000,
+      health_path: "/health/ready",
+      wait_timeout_ms: 600_000,
+      poll_interval_ms: 1000,
+      step_timeout_ms: 180_000
+    ],
+    preview_proxy: [
+      preview_base_host: "preview.frontman.local",
+      preview_scheme: "https",
+      app_login_host: "frontman.local",
+      app_login_scheme: "https",
+      app_login_port: 4000,
+      upstream_host: "127.0.0.1",
+      upstream_connect_timeout_ms: 5_000,
+      upstream_receive_timeout_ms: 30_000,
+      upstream_stream_timeout_ms: 30_000,
+      websocket_upgrade_timeout_ms: 5_000,
+      websocket_idle_timeout_ms: 60_000,
+      blocked_cookie_names: ["_frontman_server_key", "_frontman_server_web_user_remember_me"]
+    ]
+  ],
+  repo_analyses_github_client: FrontmanServer.RepoAnalyses.GitHubClient.Req,
+  repo_analyses_github_req_options: [],
+  github_oauth_req_options: [],
+  workos_req_options: [],
+  sync_resend_contact_req_options: [],
+  notify_discord_req_options: [],
+  web_fetch_req_options: [],
   # Default usage limit for server-provided API keys
   user_key_usage_limit: 10,
   # Max time to wait for the next LLM stream chunk before declaring a stall.
@@ -340,6 +381,7 @@ config :frontman_server, :providers, %{
 
 config :frontman_server, FrontmanServer.Tasks.MessageOptimizer,
   enabled: true,
+  tool_result_max_bytes: 51_200,
   tool_result_strip_keys: ["start_line", "lines_returned", "total_lines"]
 
 # Import environment specific config. This must remain at the bottom

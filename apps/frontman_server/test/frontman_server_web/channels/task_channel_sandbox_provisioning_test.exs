@@ -32,37 +32,24 @@ defmodule FrontmanServerWeb.TaskChannelSandboxProvisioningTest do
   end
 
   setup %{scope: scope} do
-    original_mvp_config = Application.get_env(:frontman_server, :sandbox_mvp, [])
-    original_provider = Application.get_env(:frontman_server, :sandbox_provider)
+    original_sandbox_config = Application.fetch_env!(:frontman_server, :sandbox)
 
-    original_repo_analyses_client =
-      Application.get_env(:frontman_server, :repo_analyses_github_client)
+    sandbox_config =
+      original_sandbox_config
+      |> Keyword.put(:provider, StuckProvisionProvider)
+      |> Keyword.update!(:bootstrap, fn bootstrap ->
+        bootstrap
+        |> Keyword.put(:wait_timeout_ms, 400)
+        |> Keyword.put(:poll_interval_ms, 20)
+      end)
 
-    sandbox_mvp_config =
-      original_mvp_config
-      |> Keyword.put(:enabled, true)
-      |> Keyword.put(:wait_timeout_ms, 400)
-      |> Keyword.put(:poll_interval_ms, 20)
-
-    Application.put_env(:frontman_server, :sandbox_mvp, sandbox_mvp_config)
-    Application.put_env(:frontman_server, :sandbox_provider, StuckProvisionProvider)
-    Application.put_env(:frontman_server, :repo_analyses_github_client, StaticGitHubClient)
+    Application.put_env(:frontman_server, :sandbox, sandbox_config)
 
     {:ok, _oauth_token} =
       Providers.upsert_oauth_token(scope, "github", "channel-sandbox-github-token", nil, nil)
 
     on_exit(fn ->
-      Application.put_env(:frontman_server, :sandbox_mvp, original_mvp_config)
-
-      case original_provider do
-        nil -> Application.delete_env(:frontman_server, :sandbox_provider)
-        provider -> Application.put_env(:frontman_server, :sandbox_provider, provider)
-      end
-
-      case original_repo_analyses_client do
-        nil -> Application.delete_env(:frontman_server, :repo_analyses_github_client)
-        client -> Application.put_env(:frontman_server, :repo_analyses_github_client, client)
-      end
+      Application.put_env(:frontman_server, :sandbox, original_sandbox_config)
 
       DynamicSupervisor.which_children(FrontmanServer.Sandbox.DynamicSupervisor)
       |> Enum.each(fn
@@ -75,7 +62,9 @@ defmodule FrontmanServerWeb.TaskChannelSandboxProvisioningTest do
   end
 
   test "channel remains responsive while sandbox provisioning is pending", %{scope: scope} do
-    {socket, _task_id} = join_task_channel(scope)
+    {socket, _task_id} =
+      join_task_channel(scope, repo_analyses_github_client: StaticGitHubClient)
+
     complete_mcp_handshake(socket)
 
     push(socket, "acp:message", build_prompt_request(id: 1, text: "Start"))

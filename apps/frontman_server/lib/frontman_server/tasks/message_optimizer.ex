@@ -67,7 +67,7 @@ defmodule FrontmanServer.Tasks.MessageOptimizer do
   end
 
   defp enabled? do
-    Application.get_env(:frontman_server, __MODULE__, [])
-    |> Keyword.get(:enabled, true)
+    Application.fetch_env!(:frontman_server, __MODULE__)
+    |> Keyword.fetch!(:enabled)
   end
 end

@@ -5,28 +5,27 @@ config :frontman_server, env: :dev
 
 config :frontman_server,
   auth_cookie_domain: ".frontman.local",
-  sandbox_preview_proxy: [
-    preview_base_host: "preview.frontman.local",
-    preview_scheme: "https",
-    app_login_host: "frontman.local",
-    app_login_scheme: "https",
-    app_login_port: 4000,
-    upstream_host: "127.0.0.1"
-  ],
-  sandbox_mvp: [
-    enabled: false,
-    image: "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
-    project_root: "/workspace/frontman",
-    repo_url: "https://github.com/frontman-ai/frontman.git",
-    repo_ref: "main",
-    app_dir: "apps/frontman_server",
-    install_command: "mix deps.get",
-    start_command: "mix phx.server",
-    app_port: 4000,
-    health_path: "/health/ready",
-    wait_timeout_ms: 600_000,
-    poll_interval_ms: 1000,
-    step_timeout_ms: 180_000
+  sandbox: [
+    preview_proxy: [
+      preview_base_host: "preview.frontman.local",
+      preview_scheme: "https",
+      app_login_host: "frontman.local",
+      app_login_scheme: "https",
+      app_login_port: 4000,
+      upstream_host: "127.0.0.1"
+    ],
+    bootstrap: [
+      image: "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
+      project_root: "/workspace/frontman",
+      app_dir: "apps/frontman_server",
+      install_command: "mix deps.get",
+      start_command: "mix phx.server",
+      app_port: 4000,
+      health_path: "/health/ready",
+      wait_timeout_ms: 600_000,
+      poll_interval_ms: 1000,
+      step_timeout_ms: 180_000
+    ]
   ]
 
 # Configure your database

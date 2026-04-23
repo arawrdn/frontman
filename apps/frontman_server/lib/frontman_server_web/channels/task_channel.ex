@@ -582,21 +582,24 @@ defmodule FrontmanServerWeb.TaskChannel do
 
   defp enrich_scope_from_params(scope, _), do: scope
 
-  # Builds execution opts, forwarding an injected agent if present in socket assigns.
-  # In production, :agent_override is never set. Tests can assign it to avoid real
-  # LLM calls — see FrontmanServer.Testing.BlockingAgent.
+  # Builds execution opts, forwarding test-only overrides from socket assigns.
+  # In production, these assigns are not set.
   defp build_execution_opts(socket, base_opts) do
-    case socket.assigns[:agent_override] do
-      nil -> base_opts
-      agent -> [{:agent, agent} | base_opts]
-    end
+    base_opts
+    |> maybe_put_agent_override(socket.assigns[:agent_override])
+    |> maybe_put_repo_analyses_github_client(socket.assigns[:repo_analyses_github_client])
   end
 
+  defp maybe_put_agent_override(opts, nil), do: opts
+  defp maybe_put_agent_override(opts, agent), do: [{:agent, agent} | opts]
+
+  defp maybe_put_repo_analyses_github_client(opts, nil), do: opts
+
+  defp maybe_put_repo_analyses_github_client(opts, github_client),
+    do: [{:repo_analyses_github_client, github_client} | opts]
+
   defp backend_tool_modules_for_execution do
-    case Execution.sandbox_mvp_enabled?() do
-      true -> Tools.backend_tool_modules(sandbox: %{})
-      false -> Tools.backend_tool_modules()
-    end
+    Tools.backend_tool_modules(sandbox: %{})
   end
 
   # Extract model selection from prompt params _meta.

@@ -102,7 +102,17 @@ defmodule FrontmanServer.Tasks.MessageOptimizerTest do
     end
 
     test "pass-through when disabled" do
-      Application.put_env(:frontman_server, MessageOptimizer, enabled: false)
+      original_config = Application.fetch_env!(:frontman_server, MessageOptimizer)
+
+      on_exit(fn ->
+        Application.put_env(:frontman_server, MessageOptimizer, original_config)
+      end)
+
+      Application.put_env(
+        :frontman_server,
+        MessageOptimizer,
+        Keyword.put(original_config, :enabled, false)
+      )
 
       messages = [
         %Message{
@@ -114,8 +124,6 @@ defmodule FrontmanServer.Tasks.MessageOptimizerTest do
 
       result = MessageOptimizer.optimize(messages)
       assert result == messages
-    after
-      Application.delete_env(:frontman_server, MessageOptimizer)
     end
 
     test "handles empty message list" do

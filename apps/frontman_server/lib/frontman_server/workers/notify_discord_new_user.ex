@@ -40,7 +40,8 @@ defmodule FrontmanServer.Workers.NotifyDiscordNewUser do
   end
 
   defp enabled? do
-    Application.get_env(:frontman_server, __MODULE__)[:enabled] == true
+    config = Application.fetch_env!(:frontman_server, __MODULE__)
+    Keyword.fetch!(config, :enabled) == true
   end
 
   defp post_to_discord(user, framework) do
@@ -77,7 +78,7 @@ defmodule FrontmanServer.Workers.NotifyDiscordNewUser do
   end
 
   defp req_options do
-    Application.get_env(:frontman_server, :notify_discord_req_options, [])
+    Application.fetch_env!(:frontman_server, :notify_discord_req_options)
   end
 
   defp framework_display_name("nextjs"), do: "Next.js"

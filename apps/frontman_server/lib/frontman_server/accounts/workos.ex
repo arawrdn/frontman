@@ -509,14 +509,16 @@ defmodule FrontmanServer.Accounts.WorkOS do
     do: {:error, {:invalid_auth_response_field, field}}
 
   defp workos_api_key do
-    Application.get_env(:workos, WorkOS.Client)[:api_key]
+    workos_client = Application.fetch_env!(:workos, WorkOS.Client)
+    Keyword.fetch!(workos_client, :api_key)
   end
 
   defp workos_client_id do
-    Application.get_env(:workos, WorkOS.Client)[:client_id]
+    workos_client = Application.fetch_env!(:workos, WorkOS.Client)
+    Keyword.fetch!(workos_client, :client_id)
   end
 
   defp workos_req_options do
-    Application.get_env(:frontman_server, :workos_req_options, [])
+    Application.fetch_env!(:frontman_server, :workos_req_options)
   end
 end

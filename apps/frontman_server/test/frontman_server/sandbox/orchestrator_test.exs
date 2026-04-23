@@ -164,10 +164,12 @@ defmodule FrontmanServer.Sandbox.OrchestratorTest do
     end
 
     test "returns task_start_failed when task supervisor is unavailable", %{sandbox: sandbox} do
+      task_supervisor = start_supervised!({Task.Supervisor, []})
+
       {:ok, _pid} =
         start_orchestrator(sandbox.id,
           provider: IntegrationProvider,
-          task_supervisor: FrontmanServer.Sandbox.MissingTaskSupervisor,
+          task_supervisor: task_supervisor,
           heartbeat_interval_ms: 10,
           provision_timeout_ms: 5_000
         )
@@ -175,6 +177,10 @@ defmodule FrontmanServer.Sandbox.OrchestratorTest do
       assert_eventually(fn ->
         Repo.get!(SandboxSchema, sandbox.id).status == :running
       end)
+
+      ref = Process.monitor(task_supervisor)
+      :ok = Supervisor.stop(task_supervisor)
+      assert_receive {:DOWN, ^ref, :process, ^task_supervisor, :normal}, 1_000
 
       assert {:error, {:task_start_failed, _reason}} =
                Orchestrator.exec(sandbox.id, "echo", ["hello"])

@@ -415,8 +415,6 @@ defmodule FrontmanServer.Sandbox.Orchestrator do
 
   # --- Private Helpers ---
 
-  defp start_setup_task(%{bootstrap_config: %{enabled: false}}, _provider_ref), do: {:ok, nil}
-
   defp start_setup_task(state, provider_ref) do
     task =
       Task.Supervisor.async_nolink(state.task_supervisor, fn ->
@@ -473,8 +471,6 @@ defmodule FrontmanServer.Sandbox.Orchestrator do
         {:noreply, %{state | heartbeat_ref: heartbeat_ref}}
     end
   end
-
-  defp run_setup_sequence(_provider, _provider_ref, %{enabled: false}), do: :ok
 
   defp run_setup_sequence(provider, provider_ref, config) do
     step_timeout_ms = Map.fetch!(config, :step_timeout_ms)
@@ -635,31 +631,26 @@ defmodule FrontmanServer.Sandbox.Orchestrator do
   end
 
   defp sandbox_bootstrap_config(environment_spec) do
-    config = Application.get_env(:frontman_server, :sandbox_mvp, [])
+    config =
+      Application.fetch_env!(:frontman_server, :sandbox)
+      |> Keyword.fetch!(:bootstrap)
+
     env = environment_spec_env(environment_spec)
     devcontainer = environment_spec.devcontainer
-    project_root = Keyword.get(config, :project_root, "/workspace/frontman")
-    app_dir = Keyword.get(config, :app_dir, "apps/frontman_server")
+    project_root = Keyword.fetch!(config, :project_root)
+    app_dir = Keyword.fetch!(config, :app_dir)
     app_root = Path.join(project_root, app_dir)
 
     default_install_command =
-      normalize_command(
-        Keyword.get(config, :install_command, "mix deps.get"),
-        "mix deps.get"
-      )
+      normalize_command(Keyword.fetch!(config, :install_command))
 
     default_start_command =
-      normalize_command(
-        Keyword.get(config, :start_command, "mix phx.server"),
-        "mix phx.server"
-      )
+      normalize_command(Keyword.fetch!(config, :start_command))
 
-    default_app_port = Keyword.get(config, :app_port, 4000)
+    default_app_port = Keyword.fetch!(config, :app_port)
 
-    default_repo_url =
-      Keyword.get(config, :repo_url, "https://github.com/frontman-ai/frontman.git")
-
-    default_repo_ref = Keyword.get(config, :repo_ref, "main")
+    repo_url = required_env_override!(env, @sandbox_env_repo_url_key)
+    repo_ref = required_env_override!(env, @sandbox_env_repo_ref_key)
 
     {post_create_command, post_create_workdir} =
       resolve_setup_command_and_workdir(
@@ -682,9 +673,8 @@ defmodule FrontmanServer.Sandbox.Orchestrator do
       )
 
     %{
-      enabled: Keyword.get(config, :enabled, false),
-      repo_url: env_override(env, @sandbox_env_repo_url_key, default_repo_url),
-      repo_ref: env_override(env, @sandbox_env_repo_ref_key, default_repo_ref),
+      repo_url: repo_url,
+      repo_ref: repo_ref,
       project_root: project_root,
       app_dir: app_dir,
       post_create_workdir: post_create_workdir,
@@ -693,21 +683,21 @@ defmodule FrontmanServer.Sandbox.Orchestrator do
       post_start_command: post_start_command,
       remote_env: devcontainer_remote_env(devcontainer),
       app_port: devcontainer_app_port(devcontainer, default_app_port),
-      health_path: Keyword.get(config, :health_path, "/health/ready"),
-      step_timeout_ms: Keyword.get(config, :step_timeout_ms, 180_000)
+      health_path: Keyword.fetch!(config, :health_path),
+      step_timeout_ms: Keyword.fetch!(config, :step_timeout_ms)
     }
   end
 
-  defp normalize_command(command, fallback) when is_binary(command) and is_binary(fallback) do
+  defp normalize_command(command) when is_binary(command) do
     trimmed_command = String.trim(command)
 
     case trimmed_command do
-      "" -> fallback
+      "" -> raise "Sandbox command config must be a non-empty string"
       _ -> trimmed_command
     end
   end
 
-  defp normalize_command(_command, fallback), do: fallback
+  defp normalize_command(_command), do: raise("Sandbox command config must be a string")
 
   defp resolve_setup_command_and_workdir(
          devcontainer,
@@ -810,10 +800,10 @@ defmodule FrontmanServer.Sandbox.Orchestrator do
   defp environment_spec_env(%EnvironmentSpec{env: env}) when is_map(env), do: env
   defp environment_spec_env(_), do: %{}
 
-  defp env_override(env, key, default) do
+  defp required_env_override!(env, key) do
     case Map.get(env, key) do
       value when is_binary(value) and byte_size(value) > 0 -> value
-      _ -> default
+      _ -> raise("Environment spec is missing required sandbox key: #{key}")
     end
   end
 
@@ -923,11 +913,8 @@ defmodule FrontmanServer.Sandbox.Orchestrator do
   end
 
   defp default_provider do
-    Application.get_env(
-      :frontman_server,
-      :sandbox_provider,
-      FrontmanServer.Sandbox.Provider.Microsandbox
-    )
+    Application.fetch_env!(:frontman_server, :sandbox)
+    |> Keyword.fetch!(:provider)
   end
 
   defp build_port_routing(environment_spec) do
@@ -999,16 +986,21 @@ defmodule FrontmanServer.Sandbox.Orchestrator do
   end
 
   defp preview_url(sandbox_id) do
-    preview_config = Application.get_env(:frontman_server, :sandbox_preview_proxy, [])
-    preview_base_host = Keyword.get(preview_config, :preview_base_host)
+    preview_config =
+      Application.fetch_env!(:frontman_server, :sandbox)
+      |> Keyword.fetch!(:preview_proxy)
 
-    case preview_base_host do
-      base_host when is_binary(base_host) and byte_size(base_host) > 0 ->
-        preview_scheme = Keyword.get(preview_config, :preview_scheme, "https")
-        "#{preview_scheme}://#{sandbox_id}.#{base_host}"
+    preview_base_host = Keyword.fetch!(preview_config, :preview_base_host)
+    preview_scheme = Keyword.fetch!(preview_config, :preview_scheme)
+
+    case {preview_base_host, preview_scheme} do
+      {base_host, scheme}
+      when is_binary(base_host) and byte_size(base_host) > 0 and is_binary(scheme) and
+             byte_size(scheme) > 0 ->
+        "#{scheme}://#{sandbox_id}.#{base_host}"
 
       _ ->
-        nil
+        raise "Config :frontman_server, :sandbox[:preview_proxy] must include non-empty :preview_base_host and :preview_scheme"
     end
   end
 

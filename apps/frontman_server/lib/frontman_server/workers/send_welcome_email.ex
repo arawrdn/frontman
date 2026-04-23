@@ -44,6 +44,7 @@ defmodule FrontmanServer.Workers.SendWelcomeEmail do
   end
 
   defp enabled? do
-    Application.get_env(:frontman_server, __MODULE__)[:enabled] == true
+    config = Application.fetch_env!(:frontman_server, __MODULE__)
+    Keyword.fetch!(config, :enabled) == true
   end
 end

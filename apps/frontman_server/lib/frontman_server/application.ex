@@ -23,7 +23,7 @@ defmodule FrontmanServer.Application do
     SwarmOtelHandler.setup()
 
     # Setup console telemetry logging in dev
-    if Application.get_env(:frontman_server, :env) == :dev do
+    if Application.fetch_env!(:frontman_server, :env) == :dev do
       ConsoleHandler.setup()
     end
 
@@ -43,7 +43,7 @@ defmodule FrontmanServer.Application do
       FrontmanServerWeb.Telemetry,
       FrontmanServer.Repo,
       FrontmanServer.Vault,
-      {DNSCluster, query: Application.get_env(:frontman_server, :dns_cluster_query) || :ignore},
+      {DNSCluster, query: Application.fetch_env!(:frontman_server, :dns_cluster_query)},
       {Phoenix.PubSub, name: FrontmanServer.PubSub},
       FrontmanServer.Tasks.ExecutionStartSupervisor,
       # Supervised agent execution (Registry + TaskSupervisor)

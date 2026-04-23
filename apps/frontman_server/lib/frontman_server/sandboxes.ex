@@ -291,11 +291,16 @@ defmodule FrontmanServer.Sandboxes do
   defp parse_host_port(_), do: {:error, :unavailable}
 
   defp preview_upstream_host do
-    config = Application.get_env(:frontman_server, :sandbox_preview_proxy, [])
+    config =
+      Application.fetch_env!(:frontman_server, :sandbox)
+      |> Keyword.fetch!(:preview_proxy)
 
-    case Keyword.get(config, :upstream_host, "127.0.0.1") do
-      host when is_binary(host) and byte_size(host) > 0 -> host
-      _ -> "127.0.0.1"
+    case Keyword.fetch!(config, :upstream_host) do
+      host when is_binary(host) and byte_size(host) > 0 ->
+        host
+
+      _ ->
+        raise "Config :frontman_server, :sandbox[:preview_proxy][:upstream_host] must be a non-empty string"
     end
   end
 

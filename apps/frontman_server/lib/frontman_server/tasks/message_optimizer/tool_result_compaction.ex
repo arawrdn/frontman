@@ -15,8 +15,6 @@ defmodule FrontmanServer.Tasks.MessageOptimizer.ToolResultCompaction do
   alias ReqLLM.Message
   alias ReqLLM.Message.ContentPart
 
-  @default_strip_keys ["start_line", "lines_returned", "total_lines"]
-
   @spec run([Message.t()], non_neg_integer(), keyword()) :: [Message.t()]
   def run(messages, old_boundary, opts \\ []) do
     strip_keys = strip_keys(opts)
@@ -60,8 +58,8 @@ defmodule FrontmanServer.Tasks.MessageOptimizer.ToolResultCompaction do
 
   defp strip_keys(opts) do
     config_keys =
-      Application.get_env(:frontman_server, FrontmanServer.Tasks.MessageOptimizer, [])
-      |> Keyword.get(:tool_result_strip_keys, @default_strip_keys)
+      Application.fetch_env!(:frontman_server, FrontmanServer.Tasks.MessageOptimizer)
+      |> Keyword.fetch!(:tool_result_strip_keys)
 
     Keyword.get(opts, :tool_result_strip_keys, config_keys)
   end

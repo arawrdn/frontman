@@ -8,12 +8,19 @@ defmodule FrontmanServer.Workers.SyncResendContactTest do
   # Inject Req.Test as the HTTP adapter so no real network calls are made.
   # The Resend API key comes from test.exs ("re_test_key") — no patching needed.
   setup do
+    original_req_options =
+      Application.fetch_env!(:frontman_server, :sync_resend_contact_req_options)
+
     Application.put_env(:frontman_server, :sync_resend_contact_req_options,
       plug: {Req.Test, :resend}
     )
 
     on_exit(fn ->
-      Application.delete_env(:frontman_server, :sync_resend_contact_req_options)
+      Application.put_env(
+        :frontman_server,
+        :sync_resend_contact_req_options,
+        original_req_options
+      )
     end)
 
     :ok

@@ -27,13 +27,11 @@ defmodule FrontmanServer.RepoAnalyses.Analyzer do
   @doc """
   Analyzes one repository revision using the provided GitHub access token.
   """
-  @spec analyze_repository(String.t(), String.t(), keyword()) ::
+  @spec analyze_repository(String.t(), String.t(), String.t() | nil, module()) ::
           {:ok, analysis_result()} | {:error, term()}
-  def analyze_repository(github_access_token, repo_name, opts \\ [])
-      when is_binary(github_access_token) and is_binary(repo_name) and is_list(opts) do
-    github_client = Keyword.get(opts, :github_client, default_github_client())
-
-    with {:ok, requested_ref} <- normalize_requested_ref(opts),
+  def analyze_repository(github_access_token, repo_name, requested_ref, github_client)
+      when is_binary(github_access_token) and is_binary(repo_name) and is_atom(github_client) do
+    with {:ok, requested_ref} <- normalize_requested_ref(requested_ref),
          {:ok, repository} <- fetch_repository(github_client, github_access_token, repo_name),
          {:ok, resolved_ref} <-
            resolve_requested_ref(
@@ -62,8 +60,8 @@ defmodule FrontmanServer.RepoAnalyses.Analyzer do
     end
   end
 
-  defp normalize_requested_ref(opts) do
-    case Keyword.get(opts, :ref) do
+  defp normalize_requested_ref(requested_ref) do
+    case requested_ref do
       nil -> {:ok, nil}
       ref when is_binary(ref) and ref != "" -> {:ok, ref}
       _ -> {:error, :ref_not_found}
@@ -222,13 +220,5 @@ defmodule FrontmanServer.RepoAnalyses.Analyzer do
 
   defp commit_sha?(ref) when is_binary(ref) do
     Regex.match?(@commit_sha_regex, ref)
-  end
-
-  defp default_github_client do
-    Application.get_env(
-      :frontman_server,
-      :repo_analyses_github_client,
-      FrontmanServer.RepoAnalyses.GitHubClient.Req
-    )
   end
 end

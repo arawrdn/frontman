@@ -206,6 +206,6 @@ defmodule FrontmanServer.RepoAnalyses.GitHubClient.Req do
   end
 
   defp req_options do
-    Application.get_env(:frontman_server, :repo_analyses_github_req_options, [])
+    Application.fetch_env!(:frontman_server, :repo_analyses_github_req_options)
   end
 end

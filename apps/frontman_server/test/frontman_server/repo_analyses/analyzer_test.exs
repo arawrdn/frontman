@@ -7,7 +7,7 @@ defmodule FrontmanServer.RepoAnalyses.AnalyzerTest do
 
   setup :verify_on_exit!
 
-  describe "analyze_repository/3" do
+  describe "analyze_repository/4" do
     test "resolves default branch when ref is omitted" do
       token = "github-token"
       repo_name = "owner/repo"
@@ -28,7 +28,7 @@ defmodule FrontmanServer.RepoAnalyses.AnalyzerTest do
       end)
 
       assert {:ok, analysis} =
-               Analyzer.analyze_repository(token, repo_name, github_client: MockGitHubClient)
+               Analyzer.analyze_repository(token, repo_name, nil, MockGitHubClient)
 
       assert analysis.requested_ref == nil
       assert analysis.resolved_ref_kind == "branch"
@@ -58,10 +58,7 @@ defmodule FrontmanServer.RepoAnalyses.AnalyzerTest do
       end)
 
       assert {:ok, analysis} =
-               Analyzer.analyze_repository(token, repo_name,
-                 ref: "release",
-                 github_client: MockGitHubClient
-               )
+               Analyzer.analyze_repository(token, repo_name, "release", MockGitHubClient)
 
       assert analysis.requested_ref == "release"
       assert analysis.resolved_ref_kind == "branch"
@@ -95,10 +92,7 @@ defmodule FrontmanServer.RepoAnalyses.AnalyzerTest do
       end)
 
       assert {:ok, analysis} =
-               Analyzer.analyze_repository(token, repo_name,
-                 ref: "v1.2.3",
-                 github_client: MockGitHubClient
-               )
+               Analyzer.analyze_repository(token, repo_name, "v1.2.3", MockGitHubClient)
 
       assert analysis.requested_ref == "v1.2.3"
       assert analysis.resolved_ref_kind == "tag"
@@ -127,9 +121,11 @@ defmodule FrontmanServer.RepoAnalyses.AnalyzerTest do
       end)
 
       assert {:ok, analysis} =
-               Analyzer.analyze_repository(token, repo_name,
-                 ref: requested_commit_sha,
-                 github_client: MockGitHubClient
+               Analyzer.analyze_repository(
+                 token,
+                 repo_name,
+                 requested_commit_sha,
+                 MockGitHubClient
                )
 
       assert analysis.requested_ref == requested_commit_sha
@@ -148,7 +144,7 @@ defmodule FrontmanServer.RepoAnalyses.AnalyzerTest do
       end)
 
       assert {:error, :repo_not_found} =
-               Analyzer.analyze_repository(token, repo_name, github_client: MockGitHubClient)
+               Analyzer.analyze_repository(token, repo_name, nil, MockGitHubClient)
     end
 
     test "returns :ref_not_found when ref is blank" do
@@ -156,10 +152,7 @@ defmodule FrontmanServer.RepoAnalyses.AnalyzerTest do
       repo_name = "owner/repo"
 
       assert {:error, :ref_not_found} =
-               Analyzer.analyze_repository(token, repo_name,
-                 ref: "",
-                 github_client: MockGitHubClient
-               )
+               Analyzer.analyze_repository(token, repo_name, "", MockGitHubClient)
     end
 
     test "returns an internal github_error for malformed repository payloads" do
@@ -172,7 +165,7 @@ defmodule FrontmanServer.RepoAnalyses.AnalyzerTest do
       end)
 
       assert {:error, {:github_error, 500, %{"message" => "invalid_repository_response"}}} =
-               Analyzer.analyze_repository(token, repo_name, github_client: MockGitHubClient)
+               Analyzer.analyze_repository(token, repo_name, nil, MockGitHubClient)
     end
 
     test "returns :ref_not_found for unknown ref" do
@@ -191,10 +184,7 @@ defmodule FrontmanServer.RepoAnalyses.AnalyzerTest do
       end)
 
       assert {:error, :ref_not_found} =
-               Analyzer.analyze_repository(token, repo_name,
-                 ref: "does-not-exist",
-                 github_client: MockGitHubClient
-               )
+               Analyzer.analyze_repository(token, repo_name, "does-not-exist", MockGitHubClient)
     end
 
     test "returns :no_devcontainer when no devcontainer config is present" do
@@ -220,10 +210,7 @@ defmodule FrontmanServer.RepoAnalyses.AnalyzerTest do
       end)
 
       assert {:error, :no_devcontainer} =
-               Analyzer.analyze_repository(token, repo_name,
-                 ref: commit_sha,
-                 github_client: MockGitHubClient
-               )
+               Analyzer.analyze_repository(token, repo_name, commit_sha, MockGitHubClient)
     end
 
     test "returns :invalid_devcontainer_json when devcontainer is not valid JSON" do
@@ -246,10 +233,7 @@ defmodule FrontmanServer.RepoAnalyses.AnalyzerTest do
       end)
 
       assert {:error, :invalid_devcontainer_json} =
-               Analyzer.analyze_repository(token, repo_name,
-                 ref: commit_sha,
-                 github_client: MockGitHubClient
-               )
+               Analyzer.analyze_repository(token, repo_name, commit_sha, MockGitHubClient)
     end
 
     test "returns :invalid_devcontainer_json when decoded devcontainer is not a map" do
@@ -272,10 +256,7 @@ defmodule FrontmanServer.RepoAnalyses.AnalyzerTest do
       end)
 
       assert {:error, :invalid_devcontainer_json} =
-               Analyzer.analyze_repository(token, repo_name,
-                 ref: commit_sha,
-                 github_client: MockGitHubClient
-               )
+               Analyzer.analyze_repository(token, repo_name, commit_sha, MockGitHubClient)
     end
 
     test "propagates non-not-found devcontainer lookup errors" do
@@ -298,10 +279,7 @@ defmodule FrontmanServer.RepoAnalyses.AnalyzerTest do
       end)
 
       assert {:error, {:network_error, :timeout}} =
-               Analyzer.analyze_repository(token, repo_name,
-                 ref: commit_sha,
-                 github_client: MockGitHubClient
-               )
+               Analyzer.analyze_repository(token, repo_name, commit_sha, MockGitHubClient)
     end
 
     test "prefers .devcontainer/devcontainer.json over .devcontainer.json" do
@@ -324,10 +302,7 @@ defmodule FrontmanServer.RepoAnalyses.AnalyzerTest do
       end)
 
       assert {:ok, analysis} =
-               Analyzer.analyze_repository(token, repo_name,
-                 ref: commit_sha,
-                 github_client: MockGitHubClient
-               )
+               Analyzer.analyze_repository(token, repo_name, commit_sha, MockGitHubClient)
 
       assert analysis.devcontainer_path == ".devcontainer/devcontainer.json"
       assert analysis.devcontainer_raw == %{"name" => "preferred"}
@@ -343,7 +318,7 @@ defmodule FrontmanServer.RepoAnalyses.AnalyzerTest do
       end)
 
       assert {:error, :unauthorized} =
-               Analyzer.analyze_repository(token, repo_name, github_client: MockGitHubClient)
+               Analyzer.analyze_repository(token, repo_name, nil, MockGitHubClient)
     end
   end
 

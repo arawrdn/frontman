@@ -84,7 +84,7 @@ defmodule FrontmanServerWeb.Endpoint do
   end
 
   defp session_opts do
-    auth_cookie_domain = Application.get_env(:frontman_server, :auth_cookie_domain)
+    auth_cookie_domain = Application.fetch_env!(:frontman_server, :auth_cookie_domain)
 
     cached_opts(@session_opts_cache_key, auth_cookie_domain, fn ->
       Session.init(session_options_with_domain(auth_cookie_domain))
@@ -93,7 +93,8 @@ defmodule FrontmanServerWeb.Endpoint do
 
   defp preview_proxy_opts do
     sandbox_preview_proxy_config =
-      Application.get_env(:frontman_server, :sandbox_preview_proxy, [])
+      Application.fetch_env!(:frontman_server, :sandbox)
+      |> Keyword.fetch!(:preview_proxy)
 
     cached_opts(@preview_proxy_opts_cache_key, sandbox_preview_proxy_config, fn ->
       SandboxPreviewProxy.init([])

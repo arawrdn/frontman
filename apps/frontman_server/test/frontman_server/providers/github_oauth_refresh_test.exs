@@ -12,6 +12,9 @@ defmodule FrontmanServer.Providers.GitHubOAuthRefreshTest do
   alias FrontmanServer.Providers
 
   setup do
+    original_req_options = Application.fetch_env!(:frontman_server, :github_oauth_req_options)
+    original_github_oauth = Application.fetch_env!(:frontman_server, :github_oauth)
+
     Application.put_env(:frontman_server, :github_oauth_req_options,
       plug: {Req.Test, :github_oauth}
     )
@@ -22,7 +25,8 @@ defmodule FrontmanServer.Providers.GitHubOAuthRefreshTest do
     )
 
     on_exit(fn ->
-      Application.delete_env(:frontman_server, :github_oauth_req_options)
+      Application.put_env(:frontman_server, :github_oauth_req_options, original_req_options)
+      Application.put_env(:frontman_server, :github_oauth, original_github_oauth)
     end)
 
     scope = user_scope_fixture()

@@ -14,8 +14,11 @@ defmodule FrontmanServer.Tasks.Execution.ExecutionSentryTest do
 
   alias Ecto.Adapters.SQL.Sandbox
   alias FrontmanServer.Accounts.Scope
+  alias FrontmanServer.Providers
   alias FrontmanServer.Tasks
   alias FrontmanServer.Tasks.ExecutionEvent
+  alias FrontmanServer.Test.Support.RepoAnalyses.StaticGitHubClient
+  alias FrontmanServer.Test.Support.Sandbox.IntegrationProvider
 
   setup do
     Sentry.Test.start_collecting_sentry_reports()
@@ -24,6 +27,10 @@ defmodule FrontmanServer.Tasks.Execution.ExecutionSentryTest do
     on_exit(fn -> Sandbox.stop_owner(pid) end)
 
     scope = user_scope_fixture()
+
+    {:ok, _oauth_token} =
+      Providers.upsert_oauth_token(scope, "github", "sandbox-mvp-github-token", nil, nil)
+
     task_id = task_with_pubsub_fixture(scope, framework: "test-framework")
 
     {:ok, task_id: task_id, scope: scope}
@@ -40,8 +47,14 @@ defmodule FrontmanServer.Tasks.Execution.ExecutionSentryTest do
 
       scope = Scope.with_env_api_keys(scope, %{"openrouter" => "sk-or-test"})
 
-      {:ok, _} =
-        Tasks.submit_user_message(scope, task_id, user_content("Hello"), [], agent: agent)
+      {:ok, _interaction} = Tasks.add_user_message(scope, task_id, user_content("Hello"))
+
+      :ok =
+        Tasks.start_execution_sync(scope, task_id, [],
+          agent: agent,
+          sandbox_provider: IntegrationProvider,
+          repo_analyses_github_client: StaticGitHubClient
+        )
 
       # Wait for the failed event broadcast (Sentry call completes before broadcast)
       assert_receive {:execution_event, %ExecutionEvent{type: :failed}}, 5_000
@@ -81,8 +94,14 @@ defmodule FrontmanServer.Tasks.Execution.ExecutionSentryTest do
 
       scope = Scope.with_env_api_keys(scope, %{"openrouter" => "sk-or-test"})
 
-      {:ok, _} =
-        Tasks.submit_user_message(scope, task_id, user_content("Trigger error"), [], agent: agent)
+      {:ok, _interaction} = Tasks.add_user_message(scope, task_id, user_content("Trigger error"))
+
+      :ok =
+        Tasks.start_execution_sync(scope, task_id, [],
+          agent: agent,
+          sandbox_provider: IntegrationProvider,
+          repo_analyses_github_client: StaticGitHubClient
+        )
 
       # Stream errors now produce {:failed, ...} instead of {:crashed, ...}
       assert_receive {:execution_event,

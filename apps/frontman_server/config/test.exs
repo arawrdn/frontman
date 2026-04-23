@@ -26,28 +26,27 @@ config :frontman_server, FrontmanServerWeb.Endpoint,
 
 config :frontman_server,
   auth_cookie_domain: ".frontman.local",
-  sandbox_preview_proxy: [
-    preview_base_host: "preview.frontman.local",
-    preview_scheme: "http",
-    app_login_host: "frontman.local",
-    app_login_scheme: "http",
-    app_login_port: 4002,
-    upstream_host: "127.0.0.1"
-  ],
-  sandbox_mvp: [
-    enabled: false,
-    image: "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
-    project_root: "/workspace/frontman",
-    repo_url: "https://github.com/frontman-ai/frontman.git",
-    repo_ref: "main",
-    app_dir: "apps/frontman_server",
-    install_command: "mix deps.get",
-    start_command: "mix phx.server",
-    app_port: 4000,
-    health_path: "/health/ready",
-    wait_timeout_ms: 60_000,
-    poll_interval_ms: 100,
-    step_timeout_ms: 30_000
+  sandbox: [
+    preview_proxy: [
+      preview_base_host: "preview.frontman.local",
+      preview_scheme: "http",
+      app_login_host: "frontman.local",
+      app_login_scheme: "http",
+      app_login_port: 4002,
+      upstream_host: "127.0.0.1"
+    ],
+    bootstrap: [
+      image: "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
+      project_root: "/workspace/frontman",
+      app_dir: "apps/frontman_server",
+      install_command: "mix deps.get",
+      start_command: "mix phx.server",
+      app_port: 4000,
+      health_path: "/health/ready",
+      wait_timeout_ms: 60_000,
+      poll_interval_ms: 100,
+      step_timeout_ms: 30_000
+    ]
   ]
 
 # In test we don't send emails

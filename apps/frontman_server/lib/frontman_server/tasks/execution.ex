@@ -52,13 +52,6 @@ defmodule FrontmanServer.Tasks.Execution do
     SwarmAi.Runtime.running?(FrontmanServer.AgentRuntime, task_id)
   end
 
-  @doc "Returns true when sandbox MVP bootstrap is enabled."
-  @spec sandbox_mvp_enabled?() :: boolean()
-  def sandbox_mvp_enabled? do
-    config = Application.get_env(:frontman_server, :sandbox_mvp, [])
-    Keyword.get(config, :enabled, false)
-  end
-
   @doc """
   Runs an agent execution for a task.
 
@@ -355,20 +348,14 @@ defmodule FrontmanServer.Tasks.Execution do
   # --- Sandbox bootstrap ---
 
   defp ensure_sandbox(%Scope{} = scope, %Task{} = task, opts) do
-    case sandbox_mvp_enabled?() do
-      false ->
-        {:ok, nil}
+    wait_timeout_ms = Keyword.get(opts, :sandbox_wait_timeout_ms, sandbox_wait_timeout_ms())
 
-      true ->
-        wait_timeout_ms = Keyword.get(opts, :sandbox_wait_timeout_ms, sandbox_wait_timeout_ms())
+    case get_or_start_sandbox(scope, task.task_id, opts) do
+      {:ok, sandbox} ->
+        wait_for_sandbox_running(scope, sandbox.id, wait_timeout_ms)
 
-        case get_or_start_sandbox(scope, task.task_id, opts) do
-          {:ok, sandbox} ->
-            wait_for_sandbox_running(scope, sandbox.id, wait_timeout_ms)
-
-          {:error, reason} ->
-            {:error, reason}
-        end
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
@@ -378,7 +365,7 @@ defmodule FrontmanServer.Tasks.Execution do
         {:ok, sandbox}
 
       {:error, :not_found} ->
-        with {:ok, env_spec} <- sandbox_env_spec(scope, task_id) do
+        with {:ok, env_spec} <- sandbox_env_spec(scope, task_id, opts) do
           create_opts =
             [task_id: task_id]
             |> maybe_put_provider_override(opts)
@@ -435,18 +422,25 @@ defmodule FrontmanServer.Tasks.Execution do
     end
   end
 
-  defp sandbox_env_spec(%Scope{} = scope, task_id) when is_binary(task_id) do
-    SandboxInputs.build(scope, task_id)
+  defp sandbox_env_spec(%Scope{} = scope, task_id, opts)
+       when is_binary(task_id) and is_list(opts) do
+    SandboxInputs.build(scope, task_id, opts)
   end
 
   defp sandbox_wait_timeout_ms do
-    config = Application.get_env(:frontman_server, :sandbox_mvp, [])
-    Keyword.get(config, :wait_timeout_ms, 600_000)
+    config =
+      Application.fetch_env!(:frontman_server, :sandbox)
+      |> Keyword.fetch!(:bootstrap)
+
+    Keyword.fetch!(config, :wait_timeout_ms)
   end
 
   defp sandbox_wait_interval_ms do
-    config = Application.get_env(:frontman_server, :sandbox_mvp, [])
-    Keyword.get(config, :poll_interval_ms, 1_000)
+    config =
+      Application.fetch_env!(:frontman_server, :sandbox)
+      |> Keyword.fetch!(:bootstrap)
+
+    Keyword.fetch!(config, :poll_interval_ms)
   end
 
   @doc false

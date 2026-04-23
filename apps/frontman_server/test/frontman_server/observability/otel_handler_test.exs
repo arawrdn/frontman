@@ -22,8 +22,11 @@ defmodule FrontmanServer.Observability.OtelHandlerTest do
   import FrontmanServer.Test.Fixtures.Tasks
 
   alias Ecto.Adapters.SQL.Sandbox
+  alias FrontmanServer.Providers
   alias FrontmanServer.Tasks
   alias FrontmanServer.Tasks.Interaction
+  alias FrontmanServer.Test.Support.RepoAnalyses.StaticGitHubClient
+  alias FrontmanServer.Test.Support.Sandbox.IntegrationProvider
 
   require Record
   Record.defrecord(:span, Record.extract(:span, from_lib: "opentelemetry/include/otel_span.hrl"))
@@ -57,6 +60,9 @@ defmodule FrontmanServer.Observability.OtelHandlerTest do
 
     scope = user_scope_fixture()
 
+    {:ok, _oauth_token} =
+      Providers.upsert_oauth_token(scope, "github", "sandbox-mvp-github-token", nil, nil)
+
     ensure_ets_tables()
     :otel_simple_processor.set_exporter(:otel_exporter_pid, self())
 
@@ -82,7 +88,9 @@ defmodule FrontmanServer.Observability.OtelHandlerTest do
           task_id,
           [%{"type" => "text", "text" => "Show my todos"}],
           [],
-          agent: agent
+          agent: agent,
+          sandbox_provider: IntegrationProvider,
+          repo_analyses_github_client: StaticGitHubClient
         )
 
       assert_receive {:interaction, %Interaction.AgentCompleted{}}, 5_000
@@ -178,7 +186,9 @@ defmodule FrontmanServer.Observability.OtelHandlerTest do
           task_id,
           [%{"type" => "text", "text" => "Hi"}],
           [],
-          agent: agent_mod
+          agent: agent_mod,
+          sandbox_provider: IntegrationProvider,
+          repo_analyses_github_client: StaticGitHubClient
         )
 
       assert_receive {:interaction, %Interaction.AgentCompleted{}}, 5_000

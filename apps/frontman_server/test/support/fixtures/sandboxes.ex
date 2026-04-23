@@ -1,6 +1,9 @@
 defmodule FrontmanServer.Test.Fixtures.Sandboxes do
   @moduledoc "Test helpers for creating sandbox entities."
 
+  @default_repo_url "https://github.com/frontman-ai/frontman.git"
+  @default_repo_ref "main"
+
   import FrontmanServer.Test.Fixtures.Accounts, only: [user_scope_fixture: 0]
   import FrontmanServer.Test.Fixtures.Tasks, only: [task_fixture: 1]
 
@@ -18,7 +21,10 @@ defmodule FrontmanServer.Test.Fixtures.Sandboxes do
         "packageManager" => "pnpm",
         "forwardPorts" => [3000]
       },
-      "env" => %{}
+      "env" => %{
+        "FRONTMAN_SANDBOX_REPO_URL" => @default_repo_url,
+        "FRONTMAN_SANDBOX_REPO_REF" => @default_repo_ref
+      }
     }
   end
 

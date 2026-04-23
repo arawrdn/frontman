@@ -59,17 +59,17 @@ defmodule FrontmanServer.SandboxesOrchestratorIntegrationTest do
   end
 
   test "sync_repo setup step supports immutable commit refs", %{scope: scope, task: task} do
-    original_sandbox_mvp_config = Application.get_env(:frontman_server, :sandbox_mvp, [])
+    original_sandbox_config = Application.fetch_env!(:frontman_server, :sandbox)
 
-    sandbox_mvp_config =
-      original_sandbox_mvp_config
-      |> Keyword.put(:enabled, true)
-      |> Keyword.put(:project_root, "/workspace/frontman")
+    sandbox_config =
+      Keyword.update!(original_sandbox_config, :bootstrap, fn bootstrap ->
+        Keyword.put(bootstrap, :project_root, "/workspace/frontman")
+      end)
 
-    Application.put_env(:frontman_server, :sandbox_mvp, sandbox_mvp_config)
+    Application.put_env(:frontman_server, :sandbox, sandbox_config)
 
     on_exit(fn ->
-      Application.put_env(:frontman_server, :sandbox_mvp, original_sandbox_mvp_config)
+      Application.put_env(:frontman_server, :sandbox, original_sandbox_config)
     end)
 
     commit_sha = String.duplicate("a", 40)
@@ -166,15 +166,17 @@ defmodule FrontmanServer.SandboxesOrchestratorIntegrationTest do
     )
   end
 
-  test "returns task_start_failed when task supervisor cannot start exec task", %{
+  test "returns task_start_failed when task supervisor is unavailable for exec", %{
     scope: scope,
     task: task
   } do
+    task_supervisor = start_supervised!({Task.Supervisor, []})
+
     assert {:ok, sandbox} =
              Sandboxes.provision_and_start(scope, unique_env_spec(),
                task_id: task.id,
                provider: IntegrationProvider,
-               task_supervisor: FrontmanServer.Sandbox.MissingTaskSupervisor,
+               task_supervisor: task_supervisor,
                heartbeat_interval_ms: 10,
                provision_timeout_ms: 5_000
              )
@@ -182,6 +184,10 @@ defmodule FrontmanServer.SandboxesOrchestratorIntegrationTest do
     assert_eventually(fn ->
       Repo.get!(SandboxSchema, sandbox.id).status == :running
     end)
+
+    ref = Process.monitor(task_supervisor)
+    :ok = Supervisor.stop(task_supervisor)
+    assert_receive {:DOWN, ^ref, :process, ^task_supervisor, :normal}, 1_000
 
     assert {:error, {:task_start_failed, _reason}} =
              Sandboxes.exec(scope, sandbox.id, "echo", ["hello"])

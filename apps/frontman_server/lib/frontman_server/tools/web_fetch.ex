@@ -400,6 +400,6 @@ defmodule FrontmanServer.Tools.WebFetch do
 
   # Overridden in tests to inject Req.Test as the adapter.
   defp req_options do
-    Application.get_env(:frontman_server, :web_fetch_req_options, [])
+    Application.fetch_env!(:frontman_server, :web_fetch_req_options)
   end
 end

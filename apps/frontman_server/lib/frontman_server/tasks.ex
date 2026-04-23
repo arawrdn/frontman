@@ -47,6 +47,8 @@ defmodule FrontmanServer.Tasks do
 
   require Logger
 
+  @default_list_tasks_limit 100
+
   alias FrontmanServer.Accounts
   alias FrontmanServer.Providers
   alias FrontmanServer.Repo
@@ -63,42 +65,24 @@ defmodule FrontmanServer.Tasks do
   alias FrontmanServer.Workers.GenerateTitle
   alias ReqLLM.ToolCall
 
-  # --- Authorization Helpers ---
-
-  @spec get_task_by_id(Accounts.scope(), String.t()) ::
-          {:ok, TaskSchema.t()} | {:error, :not_found}
-  defp get_task_by_id(scope, task_id) do
-    user_id = Accounts.scope_user_id(scope)
-
-    query =
-      TaskSchema
-      |> TaskSchema.by_id(task_id)
-      |> TaskSchema.for_user(user_id)
-
-    case Repo.one(query) do
-      nil -> {:error, :not_found}
-      schema -> {:ok, schema}
-    end
-  end
-
   # --- Public API ---
-
   @doc """
   Lists all tasks for a user (lightweight, no interactions loaded).
 
   Returns task schemas ordered by most recently updated.
   """
-  @max_tasks 20
-
   @spec list_tasks(Accounts.scope()) :: {:ok, [TaskSchema.t()]}
-  def list_tasks(scope) do
+  def list_tasks(scope), do: list_tasks(scope, @default_list_tasks_limit)
+
+  @spec list_tasks(Accounts.scope(), integer()) :: {:ok, [TaskSchema.t()]}
+  def list_tasks(scope, max_results) do
     user_id = Accounts.scope_user_id(scope)
 
     tasks =
       TaskSchema
       |> TaskSchema.for_user(user_id)
       |> TaskSchema.ordered_by_updated()
-      |> TaskSchema.limited(@max_tasks)
+      |> TaskSchema.limited(max_results)
       |> Repo.all()
 
     {:ok, tasks}
@@ -483,13 +467,7 @@ defmodule FrontmanServer.Tasks do
     if execution_active?(scope, task_id) do
       :already_running
     else
-      case Execution.sandbox_mvp_enabled?() do
-        true ->
-          start_execution_async(scope, task_id, tools, opts)
-
-        false ->
-          start_execution_sync_internal(scope, task_id, tools, opts)
-      end
+      start_execution_async(scope, task_id, tools, opts)
     end
   end
 
@@ -556,6 +534,24 @@ defmodule FrontmanServer.Tasks do
 
       {:error, reason} ->
         {:error, reason}
+    end
+  end
+
+  # --- Authorization Helpers ---
+
+  @spec get_task_by_id(Accounts.scope(), String.t()) ::
+          {:ok, TaskSchema.t()} | {:error, :not_found}
+  defp get_task_by_id(scope, task_id) do
+    user_id = Accounts.scope_user_id(scope)
+
+    query =
+      TaskSchema
+      |> TaskSchema.by_id(task_id)
+      |> TaskSchema.for_user(user_id)
+
+    case Repo.one(query) do
+      nil -> {:error, :not_found}
+      schema -> {:ok, schema}
     end
   end
 end

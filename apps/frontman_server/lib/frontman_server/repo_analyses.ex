@@ -13,7 +13,7 @@ defmodule FrontmanServer.RepoAnalyses do
 
   use Boundary,
     deps: [FrontmanServer, FrontmanServer.Accounts, FrontmanServer.Providers],
-    exports: [{RepoAnalysis, []}]
+    exports: [{RepoAnalysis, []}, {GitHubClient, []}]
 
   alias FrontmanServer.Accounts
   alias FrontmanServer.Accounts.Scope
@@ -37,22 +37,43 @@ defmodule FrontmanServer.RepoAnalyses do
   @doc """
   Analyzes a GitHub repository and persists one immutable analysis run.
   """
-  @spec analyze_repository(Accounts.scope(), String.t(), keyword()) ::
+  @spec analyze_repository(Accounts.scope(), String.t()) ::
           {:ok, RepoAnalysis.t()} | {:error, analyze_error() | Ecto.Changeset.t()}
-  def analyze_repository(scope, repo_name, opts \\ [])
+  def analyze_repository(%Scope{} = scope, repo_name) when is_binary(repo_name) do
+    analyze_repository(scope, repo_name, nil)
+  end
 
-  def analyze_repository(%Scope{} = scope, repo_name, opts)
-      when is_binary(repo_name) and is_list(opts) do
-    opts = domain_opts(opts)
+  def analyze_repository(%Scope{}, _repo_name), do: {:error, :invalid_repo_name}
 
+  @spec analyze_repository(Accounts.scope(), String.t(), String.t() | nil) ::
+          {:ok, RepoAnalysis.t()} | {:error, analyze_error() | Ecto.Changeset.t()}
+  def analyze_repository(%Scope{} = scope, repo_name, requested_ref)
+      when is_binary(repo_name) do
+    analyze_repository(scope, repo_name, requested_ref, configured_github_client())
+  end
+
+  def analyze_repository(%Scope{}, _repo_name, _requested_ref), do: {:error, :invalid_repo_name}
+
+  @spec analyze_repository(Accounts.scope(), String.t(), String.t() | nil, module()) ::
+          {:ok, RepoAnalysis.t()} | {:error, analyze_error() | Ecto.Changeset.t()}
+  def analyze_repository(%Scope{} = scope, repo_name, requested_ref, github_client)
+      when is_binary(repo_name) and is_atom(github_client) do
     with :ok <- validate_repo_name(repo_name),
+         :ok <- validate_requested_ref(requested_ref),
          {:ok, github_access_token} <- fetch_github_access_token(scope),
-         {:ok, analysis} <- Analyzer.analyze_repository(github_access_token, repo_name, opts) do
+         {:ok, analysis} <-
+           Analyzer.analyze_repository(
+             github_access_token,
+             repo_name,
+             requested_ref,
+             github_client
+           ) do
       persist_analysis(scope, repo_name, analysis)
     end
   end
 
-  def analyze_repository(%Scope{}, _repo_name, _opts), do: {:error, :invalid_repo_name}
+  def analyze_repository(%Scope{}, _repo_name, _requested_ref, _github_client),
+    do: {:error, :invalid_repo_name}
 
   defp validate_repo_name(repo_name) when is_binary(repo_name) do
     case Regex.match?(@repo_name_regex, repo_name) do
@@ -63,9 +84,16 @@ defmodule FrontmanServer.RepoAnalyses do
 
   defp validate_repo_name(_repo_name), do: {:error, :invalid_repo_name}
 
-  defp domain_opts(opts) when is_list(opts) do
-    Keyword.take(opts, [:ref])
+  defp validate_requested_ref(nil), do: :ok
+
+  defp validate_requested_ref(requested_ref) when is_binary(requested_ref) do
+    case String.trim(requested_ref) do
+      "" -> {:error, :ref_not_found}
+      _ -> :ok
+    end
   end
+
+  defp validate_requested_ref(_requested_ref), do: {:error, :ref_not_found}
 
   defp fetch_github_access_token(%Scope{} = scope) do
     case Providers.get_oauth_access_token(scope, "github") do
@@ -75,6 +103,10 @@ defmodule FrontmanServer.RepoAnalyses do
       {:error, :no_oauth_token} ->
         {:error, :no_github_oauth_token}
     end
+  end
+
+  defp configured_github_client do
+    Application.fetch_env!(:frontman_server, :repo_analyses_github_client)
   end
 
   defp persist_analysis(%Scope{} = scope, repo_name, %Analysis{} = analysis) do

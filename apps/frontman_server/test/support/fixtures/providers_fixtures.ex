@@ -17,13 +17,11 @@ defmodule FrontmanServer.ProvidersFixtures do
   """
   def with_server_key(provider, value) do
     config_key = Registry.config_key(provider)
-    original = Application.get_env(:frontman_server, config_key)
+    original = Application.fetch_env(:frontman_server, config_key)
     Application.put_env(:frontman_server, config_key, value)
 
     ExUnit.Callbacks.on_exit(fn ->
-      if original,
-        do: Application.put_env(:frontman_server, config_key, original),
-        else: Application.delete_env(:frontman_server, config_key)
+      restore_env(:frontman_server, config_key, original)
     end)
 
     value
@@ -34,14 +32,16 @@ defmodule FrontmanServer.ProvidersFixtures do
   """
   def without_server_key(provider) do
     config_key = Registry.config_key(provider)
-    original = Application.get_env(:frontman_server, config_key)
-    Application.delete_env(:frontman_server, config_key)
+    original = Application.fetch_env(:frontman_server, config_key)
+    Application.put_env(:frontman_server, config_key, nil)
 
     ExUnit.Callbacks.on_exit(fn ->
-      if original,
-        do: Application.put_env(:frontman_server, config_key, original)
+      restore_env(:frontman_server, config_key, original)
     end)
   end
+
+  defp restore_env(app, key, {:ok, value}), do: Application.put_env(app, key, value)
+  defp restore_env(app, key, :error), do: Application.delete_env(app, key)
 
   # ── PNG fixtures ────────────────────────────────────────────────────
 

@@ -377,7 +377,7 @@ defmodule FrontmanServerWeb.UserAuth do
   end
 
   defp auth_cookie_domain do
-    Application.get_env(:frontman_server, :auth_cookie_domain)
+    Application.fetch_env!(:frontman_server, :auth_cookie_domain)
   end
 
   defp remember_me_delete_options do

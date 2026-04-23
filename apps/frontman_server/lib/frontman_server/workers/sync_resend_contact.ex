@@ -45,7 +45,8 @@ defmodule FrontmanServer.Workers.SyncResendContact do
   end
 
   defp enabled? do
-    Application.get_env(:frontman_server, __MODULE__)[:enabled] == true
+    config = Application.fetch_env!(:frontman_server, __MODULE__)
+    Keyword.fetch!(config, :enabled) == true
   end
 
   defp post_contact(%User{email: email, name: name}) do
@@ -76,7 +77,7 @@ defmodule FrontmanServer.Workers.SyncResendContact do
 
   # Extra Req options — overridden in tests to inject Req.Test as the adapter.
   defp req_options do
-    Application.get_env(:frontman_server, :sync_resend_contact_req_options, [])
+    Application.fetch_env!(:frontman_server, :sync_resend_contact_req_options)
   end
 
   # Extract the first word of the full name as first_name, falling back to the

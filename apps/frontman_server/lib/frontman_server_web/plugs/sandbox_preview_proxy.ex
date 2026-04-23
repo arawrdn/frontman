@@ -40,7 +40,10 @@ defmodule FrontmanServerWeb.Plugs.SandboxPreviewProxy do
 
   @impl true
   def init(opts) do
-    configured_opts = Application.get_env(:frontman_server, :sandbox_preview_proxy, [])
+    configured_opts =
+      Application.fetch_env!(:frontman_server, :sandbox)
+      |> Keyword.fetch!(:preview_proxy)
+
     Keyword.merge(configured_opts, opts)
   end
 

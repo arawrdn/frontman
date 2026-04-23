@@ -182,13 +182,13 @@ defmodule FrontmanServer.Providers.Registry do
   ## Examples
 
       iex> Registry.get_server_api_key("openrouter")
-      # value from Application.get_env(:frontman_server, :openrouter_api_key)
+      # value from Application.fetch_env!(:frontman_server, :openrouter_api_key)
   """
   @spec get_server_api_key(String.t()) :: String.t() | nil
   def get_server_api_key(provider) when is_binary(provider) do
     case config_key(provider) do
       nil -> nil
-      key -> Application.get_env(:frontman_server, key)
+      key -> Application.fetch_env!(:frontman_server, key)
     end
   end
 

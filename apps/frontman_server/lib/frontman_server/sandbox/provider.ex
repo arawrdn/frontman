@@ -14,7 +14,10 @@ defmodule FrontmanServer.Sandbox.Provider do
 
   The Orchestrator resolves the provider implementation at runtime:
 
-      provider = Application.get_env(:frontman_server, :sandbox_provider, Microsandbox)
+      provider =
+        Application.fetch_env!(:frontman_server, :sandbox)
+        |> Keyword.fetch!(:provider)
+
       provider.create(env_spec)
 
   This allows swapping providers per environment (test mock, local CLI, future

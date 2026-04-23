@@ -8,27 +8,18 @@ defmodule FrontmanServer.Tasks.Execution.SandboxInputsTest do
   alias FrontmanServer.Test.Support.RepoAnalyses.StaticGitHubClient
 
   @default_vm_image "ghcr.io/frontman-ai/frontman-dev:stable"
+  @default_repo_url "https://github.com/frontman-ai/frontman.git"
 
   setup do
     scope = user_scope_fixture()
 
-    original_sandbox_mvp_config = Application.get_env(:frontman_server, :sandbox_mvp, [])
-
-    original_repo_analyses_client =
-      Application.get_env(:frontman_server, :repo_analyses_github_client)
-
-    Application.put_env(:frontman_server, :repo_analyses_github_client, StaticGitHubClient)
+    original_sandbox_config = Application.fetch_env!(:frontman_server, :sandbox)
 
     {:ok, _oauth_token} =
       Providers.upsert_oauth_token(scope, "github", "sandbox-inputs-github-token", nil, nil)
 
     on_exit(fn ->
-      Application.put_env(:frontman_server, :sandbox_mvp, original_sandbox_mvp_config)
-
-      case original_repo_analyses_client do
-        nil -> Application.delete_env(:frontman_server, :repo_analyses_github_client)
-        client -> Application.put_env(:frontman_server, :repo_analyses_github_client, client)
-      end
+      Application.put_env(:frontman_server, :sandbox, original_sandbox_config)
     end)
 
     %{scope: scope, task_id: Ecto.UUID.generate()}
@@ -39,13 +30,12 @@ defmodule FrontmanServer.Tasks.Execution.SandboxInputsTest do
       scope: scope,
       task_id: task_id
     } do
-      put_sandbox_mvp_config(
-        image: @default_vm_image,
-        repo_url: "https://github.com/frontman-ai/frontman.git",
-        repo_ref: "main"
-      )
+      put_sandbox_config(image: @default_vm_image)
 
-      assert {:ok, env_spec} = SandboxInputs.build(scope, task_id)
+      assert {:ok, env_spec} =
+               SandboxInputs.build(scope, task_id,
+                 repo_analyses_github_client: StaticGitHubClient
+               )
 
       assert env_spec["image"] == @default_vm_image
 
@@ -53,59 +43,46 @@ defmodule FrontmanServer.Tasks.Execution.SandboxInputsTest do
                "mcr.microsoft.com/devcontainers/base:ubuntu-24.04"
 
       assert env_spec["env"]["FRONTMAN_SANDBOX_REPO_URL"] ==
-               "https://github.com/frontman-ai/frontman.git"
+               @default_repo_url
 
       assert env_spec["env"]["FRONTMAN_SANDBOX_REPO_REF"] == String.duplicate("a", 40)
       assert String.starts_with?(env_spec["name"], "task-")
     end
 
-    test "accepts ssh GitHub repo URLs", %{scope: scope, task_id: task_id} do
-      put_sandbox_mvp_config(
-        image: @default_vm_image,
-        repo_url: "git@github.com:frontman-ai/frontman.git",
-        repo_ref: "main"
-      )
-
-      assert {:ok, env_spec} = SandboxInputs.build(scope, task_id)
-
-      assert env_spec["env"]["FRONTMAN_SANDBOX_REPO_URL"] ==
-               "git@github.com:frontman-ai/frontman.git"
-    end
-
-    test "returns invalid_sandbox_repo_url when sandbox repo URL is not a GitHub URL", %{
+    test "returns invalid_sandbox_vm_image when sandbox image is blank", %{
       scope: scope,
       task_id: task_id
     } do
-      put_sandbox_mvp_config(
-        image: @default_vm_image,
-        repo_url: "https://gitlab.com/frontman-ai/frontman.git"
-      )
+      put_sandbox_config(image: "   ")
 
-      assert {:error, :invalid_sandbox_repo_url} = SandboxInputs.build(scope, task_id)
+      assert {:error, :invalid_sandbox_vm_image} =
+               SandboxInputs.build(scope, task_id,
+                 repo_analyses_github_client: StaticGitHubClient
+               )
     end
 
     test "returns no_github_oauth_token when GitHub OAuth token is missing", %{task_id: task_id} do
       scope_without_token = user_scope_fixture()
 
-      put_sandbox_mvp_config(
-        image: @default_vm_image,
-        repo_url: "https://github.com/frontman-ai/frontman.git"
-      )
+      put_sandbox_config(image: @default_vm_image)
 
-      assert {:error, :no_github_oauth_token} = SandboxInputs.build(scope_without_token, task_id)
+      assert {:error, :no_github_oauth_token} =
+               SandboxInputs.build(scope_without_token, task_id,
+                 repo_analyses_github_client: StaticGitHubClient
+               )
     end
   end
 
-  defp put_sandbox_mvp_config(overrides) do
-    config =
-      [
-        enabled: true,
-        image: @default_vm_image,
-        repo_url: "https://github.com/frontman-ai/frontman.git",
-        repo_ref: "main"
-      ]
-      |> Keyword.merge(overrides)
+  defp put_sandbox_config(overrides) do
+    sandbox_config = Application.fetch_env!(:frontman_server, :sandbox)
 
-    Application.put_env(:frontman_server, :sandbox_mvp, config)
+    sandbox_config =
+      Keyword.update!(sandbox_config, :bootstrap, fn bootstrap ->
+        bootstrap
+        |> Keyword.merge(image: @default_vm_image)
+        |> Keyword.merge(overrides)
+      end)
+
+    Application.put_env(:frontman_server, :sandbox, sandbox_config)
   end
 end

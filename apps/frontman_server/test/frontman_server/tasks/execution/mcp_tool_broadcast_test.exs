@@ -14,7 +14,10 @@ defmodule FrontmanServer.Tasks.Execution.MCPToolBroadcastTest do
   import FrontmanServer.Test.Fixtures.Tasks
 
   alias Ecto.Adapters.SQL.Sandbox
+  alias FrontmanServer.Providers
   alias FrontmanServer.Tasks
+  alias FrontmanServer.Test.Support.RepoAnalyses.StaticGitHubClient
+  alias FrontmanServer.Test.Support.Sandbox.IntegrationProvider
 
   describe "MCP tool call broadcast" do
     setup do
@@ -22,6 +25,10 @@ defmodule FrontmanServer.Tasks.Execution.MCPToolBroadcastTest do
       on_exit(fn -> Sandbox.stop_owner(pid) end)
 
       scope = user_scope_fixture()
+
+      {:ok, _oauth_token} =
+        Providers.upsert_oauth_token(scope, "github", "sandbox-mvp-github-token", nil, nil)
+
       task_id = task_with_pubsub_fixture(scope, framework: "test-framework")
 
       {:ok, task_id: task_id, scope: scope}
@@ -51,7 +58,9 @@ defmodule FrontmanServer.Tasks.Execution.MCPToolBroadcastTest do
       # Start agent via submit_user_message with custom agent
       {:ok, _} =
         Tasks.submit_user_message(scope, task_id, user_content("Please call the MCP tool"), [],
-          agent: agent
+          agent: agent,
+          sandbox_provider: IntegrationProvider,
+          repo_analyses_github_client: StaticGitHubClient
         )
 
       # Collect all tool call interactions broadcast via PubSub
@@ -93,6 +102,10 @@ defmodule FrontmanServer.Tasks.Execution.MCPToolBroadcastTest do
       on_exit(fn -> Sandbox.stop_owner(pid) end)
 
       scope = user_scope_fixture()
+
+      {:ok, _oauth_token} =
+        Providers.upsert_oauth_token(scope, "github", "sandbox-mvp-github-token", nil, nil)
+
       task_id = task_with_pubsub_fixture(scope, framework: "test-framework")
 
       {:ok, task_id: task_id, scope: scope}
@@ -119,7 +132,11 @@ defmodule FrontmanServer.Tasks.Execution.MCPToolBroadcastTest do
 
       # Start agent via submit_user_message with custom agent
       {:ok, _} =
-        Tasks.submit_user_message(scope, task_id, user_content("Call tool"), [], agent: agent)
+        Tasks.submit_user_message(scope, task_id, user_content("Call tool"), [],
+          agent: agent,
+          sandbox_provider: IntegrationProvider,
+          repo_analyses_github_client: StaticGitHubClient
+        )
 
       # Wait for the interaction broadcast
       assert_receive {:interaction, %Tasks.Interaction.ToolCall{tool_call_id: ^expected_id}},

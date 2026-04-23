@@ -22,16 +22,17 @@ defmodule FrontmanServerWeb.Plugs.SandboxPreviewProxyEndpointIntegrationTest do
   setup do
     endpoint_port = free_port()
 
-    original_preview_config = Application.get_env(:frontman_server, :sandbox_preview_proxy, [])
+    original_sandbox_config = Application.fetch_env!(:frontman_server, :sandbox)
 
-    Application.put_env(
-      :frontman_server,
-      :sandbox_preview_proxy,
-      Keyword.put(original_preview_config, :app_login_port, endpoint_port)
-    )
+    sandbox_config =
+      Keyword.update!(original_sandbox_config, :preview_proxy, fn preview_proxy ->
+        Keyword.put(preview_proxy, :app_login_port, endpoint_port)
+      end)
+
+    Application.put_env(:frontman_server, :sandbox, sandbox_config)
 
     on_exit(fn ->
-      Application.put_env(:frontman_server, :sandbox_preview_proxy, original_preview_config)
+      Application.put_env(:frontman_server, :sandbox, original_sandbox_config)
     end)
 
     start_supervised!(
@@ -399,18 +400,19 @@ defmodule FrontmanServerWeb.Plugs.SandboxPreviewProxyEndpointIntegrationTest do
   end
 
   defp with_proxy_config(overrides, run) when is_function(run, 0) do
-    original = Application.get_env(:frontman_server, :sandbox_preview_proxy, [])
+    original = Application.fetch_env!(:frontman_server, :sandbox)
 
-    Application.put_env(
-      :frontman_server,
-      :sandbox_preview_proxy,
-      Keyword.merge(original, overrides)
-    )
+    sandbox_config =
+      Keyword.update!(original, :preview_proxy, fn preview_proxy ->
+        Keyword.merge(preview_proxy, overrides)
+      end)
+
+    Application.put_env(:frontman_server, :sandbox, sandbox_config)
 
     try do
       run.()
     after
-      Application.put_env(:frontman_server, :sandbox_preview_proxy, original)
+      Application.put_env(:frontman_server, :sandbox, original)
     end
   end
 

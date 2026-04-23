@@ -12,26 +12,11 @@ defmodule FrontmanServer.RepoAnalysesTest do
   setup :verify_on_exit!
 
   setup do
-    original_github_client = Application.get_env(:frontman_server, :repo_analyses_github_client)
-    Application.put_env(:frontman_server, :repo_analyses_github_client, MockGitHubClient)
-
-    on_exit(fn ->
-      if original_github_client do
-        Application.put_env(
-          :frontman_server,
-          :repo_analyses_github_client,
-          original_github_client
-        )
-      else
-        Application.delete_env(:frontman_server, :repo_analyses_github_client)
-      end
-    end)
-
     scope = user_scope_fixture()
     %{scope: scope}
   end
 
-  describe "analyze_repository/3" do
+  describe "analyze_repository/4" do
     test "persists an immutable analysis run", %{scope: scope} do
       token = put_github_token(scope)
       repo_name = "owner/repo"
@@ -52,7 +37,7 @@ defmodule FrontmanServer.RepoAnalysesTest do
       end)
 
       assert {:ok, %RepoAnalysis{} = analysis} =
-               RepoAnalyses.analyze_repository(scope, repo_name)
+               RepoAnalyses.analyze_repository(scope, repo_name, nil, MockGitHubClient)
 
       assert analysis.provider == "github"
       assert analysis.repo_name == repo_name
@@ -89,7 +74,7 @@ defmodule FrontmanServer.RepoAnalysesTest do
       end)
 
       assert {:ok, analysis} =
-               RepoAnalyses.analyze_repository(scope, repo_name, ref: "release")
+               RepoAnalyses.analyze_repository(scope, repo_name, "release", MockGitHubClient)
 
       assert analysis.requested_ref == "release"
       assert analysis.resolved_ref_kind == "branch"
@@ -97,7 +82,7 @@ defmodule FrontmanServer.RepoAnalysesTest do
       assert analysis.resolved_commit_sha == commit_sha
     end
 
-    test "ignores unsupported options and only forwards domain opts", %{scope: scope} do
+    test "supports explicit github client and requested ref", %{scope: scope} do
       token = put_github_token(scope)
       repo_name = "owner/repo"
       commit_sha = sha("c")
@@ -117,11 +102,7 @@ defmodule FrontmanServer.RepoAnalysesTest do
       end)
 
       assert {:ok, analysis} =
-               RepoAnalyses.analyze_repository(scope, repo_name,
-                 ref: "main",
-                 github_client: :should_not_be_used,
-                 unexpected: :ignored
-               )
+               RepoAnalyses.analyze_repository(scope, repo_name, "main", MockGitHubClient)
 
       assert analysis.requested_ref == "main"
       assert analysis.resolved_commit_sha == commit_sha
@@ -147,7 +128,7 @@ defmodule FrontmanServer.RepoAnalysesTest do
       end)
 
       assert {:error, %Ecto.Changeset{} = changeset} =
-               RepoAnalyses.analyze_repository(scope, repo_name)
+               RepoAnalyses.analyze_repository(scope, repo_name, nil, MockGitHubClient)
 
       assert %{resolved_commit_sha: ["has invalid format"]} = errors_on(changeset)
       assert analysis_count_for_scope(scope) == 0
@@ -155,14 +136,14 @@ defmodule FrontmanServer.RepoAnalysesTest do
 
     test "returns :invalid_repo_name for invalid repository format", %{scope: scope} do
       assert {:error, :invalid_repo_name} =
-               RepoAnalyses.analyze_repository(scope, "owner-only")
+               RepoAnalyses.analyze_repository(scope, "owner-only", nil, MockGitHubClient)
 
       assert analysis_count_for_scope(scope) == 0
     end
 
     test "returns :no_github_oauth_token when scope has no token", %{scope: scope} do
       assert {:error, :no_github_oauth_token} =
-               RepoAnalyses.analyze_repository(scope, "owner/repo")
+               RepoAnalyses.analyze_repository(scope, "owner/repo", nil, MockGitHubClient)
 
       assert analysis_count_for_scope(scope) == 0
     end
@@ -177,7 +158,7 @@ defmodule FrontmanServer.RepoAnalysesTest do
       end)
 
       assert {:error, :repo_not_found} =
-               RepoAnalyses.analyze_repository(scope, repo_name)
+               RepoAnalyses.analyze_repository(scope, repo_name, nil, MockGitHubClient)
 
       assert analysis_count_for_scope(scope) == 0
     end
@@ -198,7 +179,12 @@ defmodule FrontmanServer.RepoAnalysesTest do
       end)
 
       assert {:error, :ref_not_found} =
-               RepoAnalyses.analyze_repository(scope, repo_name, ref: "does-not-exist")
+               RepoAnalyses.analyze_repository(
+                 scope,
+                 repo_name,
+                 "does-not-exist",
+                 MockGitHubClient
+               )
 
       assert analysis_count_for_scope(scope) == 0
     end
@@ -213,7 +199,7 @@ defmodule FrontmanServer.RepoAnalysesTest do
       end)
 
       assert {:error, :unauthorized} =
-               RepoAnalyses.analyze_repository(scope, repo_name)
+               RepoAnalyses.analyze_repository(scope, repo_name, nil, MockGitHubClient)
 
       assert analysis_count_for_scope(scope) == 0
     end

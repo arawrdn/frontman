@@ -20,20 +20,29 @@ defmodule FrontmanServer.Tools.Sandbox.Common do
 
   @spec project_root() :: String.t()
   def project_root do
-    config = Application.get_env(:frontman_server, :sandbox_mvp, [])
-    Keyword.get(config, :project_root, "/workspace/frontman")
+    config =
+      Application.fetch_env!(:frontman_server, :sandbox)
+      |> Keyword.fetch!(:bootstrap)
+
+    Keyword.fetch!(config, :project_root)
   end
 
   @spec app_port() :: pos_integer()
   def app_port do
-    config = Application.get_env(:frontman_server, :sandbox_mvp, [])
-    Keyword.get(config, :app_port, 4000)
+    config =
+      Application.fetch_env!(:frontman_server, :sandbox)
+      |> Keyword.fetch!(:bootstrap)
+
+    Keyword.fetch!(config, :app_port)
   end
 
   @spec health_path() :: String.t()
   def health_path do
-    config = Application.get_env(:frontman_server, :sandbox_mvp, [])
-    Keyword.get(config, :health_path, "/health/ready")
+    config =
+      Application.fetch_env!(:frontman_server, :sandbox)
+      |> Keyword.fetch!(:bootstrap)
+
+    Keyword.fetch!(config, :health_path)
   end
 
   @spec resolve_relative_path(String.t()) ::

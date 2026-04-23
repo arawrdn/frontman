@@ -17,8 +17,11 @@ defmodule FrontmanServer.Tasks.Execution.ErrorPropagationTest do
 
   alias Ecto.Adapters.SQL.Sandbox
   alias FrontmanServer.Accounts.Scope
+  alias FrontmanServer.Providers
   alias FrontmanServer.Tasks
   alias FrontmanServer.Tasks.ExecutionEvent
+  alias FrontmanServer.Test.Support.RepoAnalyses.StaticGitHubClient
+  alias FrontmanServer.Test.Support.Sandbox.IntegrationProvider
 
   describe "LLM stream error propagation" do
     setup do
@@ -26,6 +29,10 @@ defmodule FrontmanServer.Tasks.Execution.ErrorPropagationTest do
       on_exit(fn -> Sandbox.stop_owner(pid) end)
 
       scope = user_scope_fixture()
+
+      {:ok, _oauth_token} =
+        Providers.upsert_oauth_token(scope, "github", "sandbox-mvp-github-token", nil, nil)
+
       task_id = task_with_pubsub_fixture(scope, framework: "test-framework")
 
       {:ok, task_id: task_id, scope: scope}
@@ -51,7 +58,9 @@ defmodule FrontmanServer.Tasks.Execution.ErrorPropagationTest do
 
       {:ok, _} =
         Tasks.submit_user_message(scope, task_id, user_content("Take a screenshot"), [],
-          agent: agent
+          agent: agent,
+          sandbox_provider: IntegrationProvider,
+          repo_analyses_github_client: StaticGitHubClient
         )
 
       # Stream errors are now caught and surfaced as graceful failures
@@ -73,7 +82,11 @@ defmodule FrontmanServer.Tasks.Execution.ErrorPropagationTest do
       scope = Scope.with_env_api_keys(scope, %{"openrouter" => "sk-or-test"})
 
       {:ok, _} =
-        Tasks.submit_user_message(scope, task_id, user_content("Hello"), [], agent: agent)
+        Tasks.submit_user_message(scope, task_id, user_content("Hello"), [],
+          agent: agent,
+          sandbox_provider: IntegrationProvider,
+          repo_analyses_github_client: StaticGitHubClient
+        )
 
       # Should receive a failed event broadcast
       assert_receive {:execution_event,

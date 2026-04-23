@@ -273,7 +273,7 @@ defmodule FrontmanServer.Providers do
   """
   @spec usage_limit() :: non_neg_integer()
   def usage_limit do
-    Application.get_env(:frontman_server, :user_key_usage_limit, 10)
+    Application.fetch_env!(:frontman_server, :user_key_usage_limit)
   end
 
   @doc """
@@ -830,14 +830,16 @@ defmodule FrontmanServer.Providers do
   end
 
   defp github_req_options do
-    Application.get_env(:frontman_server, :github_oauth_req_options, [])
+    Application.fetch_env!(:frontman_server, :github_oauth_req_options)
   end
 
   defp github_client_id do
-    Application.get_env(:frontman_server, :github_oauth)[:client_id]
+    github_oauth = Application.fetch_env!(:frontman_server, :github_oauth)
+    Keyword.fetch!(github_oauth, :client_id)
   end
 
   defp github_client_secret do
-    Application.get_env(:frontman_server, :github_oauth)[:client_secret]
+    github_oauth = Application.fetch_env!(:frontman_server, :github_oauth)
+    Keyword.fetch!(github_oauth, :client_secret)
   end
 end
