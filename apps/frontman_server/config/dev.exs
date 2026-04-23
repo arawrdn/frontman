@@ -4,34 +4,29 @@ import Config
 config :frontman_server, env: :dev
 
 config :frontman_server,
-  auth_cookie_domain: System.get_env("AUTH_COOKIE_DOMAIN") || ".frontman.local",
+  auth_cookie_domain: ".frontman.local",
   sandbox_preview_proxy: [
-    preview_base_host: System.get_env("PREVIEW_BASE_HOST") || "preview.frontman.local",
+    preview_base_host: "preview.frontman.local",
     preview_scheme: "https",
-    app_login_host:
-      System.get_env("APP_LOGIN_HOST") || (System.get_env("PHX_HOST") || "frontman.local"),
+    app_login_host: "frontman.local",
     app_login_scheme: "https",
-    app_login_port:
-      String.to_integer(
-        System.get_env("PHX_URL_PORT") || if(System.get_env("E2E"), do: "4002", else: "4000")
-      ),
+    app_login_port: 4000,
     upstream_host: "127.0.0.1"
   ],
   sandbox_mvp: [
-    enabled: System.get_env("SANDBOX_MVP_ENABLED") in ["1", "true", "TRUE"],
-    image: System.get_env("SANDBOX_MVP_IMAGE") || "ghcr.io/frontman-ai/frontman-dev:latest",
-    project_root: System.get_env("SANDBOX_MVP_PROJECT_ROOT") || "/workspace/frontman",
-    repo_url:
-      System.get_env("SANDBOX_MVP_REPO_URL") || "https://github.com/frontman-ai/frontman.git",
-    repo_ref: System.get_env("SANDBOX_MVP_REPO_REF") || "main",
-    app_dir: System.get_env("SANDBOX_MVP_APP_DIR") || "apps/frontman_server",
-    install_command: System.get_env("SANDBOX_MVP_INSTALL_COMMAND") || "mix deps.get",
-    start_command: System.get_env("SANDBOX_MVP_START_COMMAND") || "mix phx.server",
-    app_port: String.to_integer(System.get_env("SANDBOX_MVP_APP_PORT") || "4000"),
-    health_path: System.get_env("SANDBOX_MVP_HEALTH_PATH") || "/health/ready",
-    wait_timeout_ms: String.to_integer(System.get_env("SANDBOX_MVP_WAIT_TIMEOUT_MS") || "600000"),
-    poll_interval_ms: String.to_integer(System.get_env("SANDBOX_MVP_POLL_INTERVAL_MS") || "1000"),
-    step_timeout_ms: String.to_integer(System.get_env("SANDBOX_MVP_STEP_TIMEOUT_MS") || "180000")
+    enabled: false,
+    image: "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
+    project_root: "/workspace/frontman",
+    repo_url: "https://github.com/frontman-ai/frontman.git",
+    repo_ref: "main",
+    app_dir: "apps/frontman_server",
+    install_command: "mix deps.get",
+    start_command: "mix phx.server",
+    app_port: 4000,
+    health_path: "/health/ready",
+    wait_timeout_ms: 600_000,
+    poll_interval_ms: 1000,
+    step_timeout_ms: 180_000
   ]
 
 # Configure your database
@@ -56,13 +51,13 @@ config :frontman_server, FrontmanServerWeb.Endpoint,
   # Binding to 0.0.0.0 allows access from containers/proxies
   # URL host can be overridden via PHX_HOST env var for remote development
   url: [
-    host: System.get_env("PHX_HOST") || "frontman.local",
-    port: String.to_integer(System.get_env("PHX_URL_PORT") || "4000"),
+    host: "frontman.local",
+    port: 4000,
     scheme: "https"
   ],
   https: [
     ip: {0, 0, 0, 0},
-    port: String.to_integer(System.get_env("PORT") || "4000"),
+    port: 4000,
     cipher_suite: :strong,
     keyfile: Path.expand("../../../.certs/frontman.local-key.pem", __DIR__),
     certfile: Path.expand("../../../.certs/frontman.local.pem", __DIR__)

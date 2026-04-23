@@ -18,7 +18,7 @@ defmodule FrontmanServerWeb.TaskChannel do
   alias AgentClientProtocol, as: ACP
   alias FrontmanServer.Accounts.Scope
   alias FrontmanServer.Providers
-  alias FrontmanServer.Providers.{Model, Registry}
+  alias FrontmanServer.Providers.Model
   alias FrontmanServer.Tasks
   alias FrontmanServer.Tasks.{Execution, ExecutionEvent, RetryCoordinator, Todos}
   alias FrontmanServer.Tools
@@ -48,7 +48,7 @@ defmodule FrontmanServerWeb.TaskChannel do
         # Tools are stored in socket assigns and passed through Backend.Context for agent access.
         #
         # Note: Phoenix channels prohibit push() during join/3, so we defer
-        # the initial MCP request push to handle_info(:start_mcp_init).
+        # the initial MCP request push to handle_info({:start_mcp_init, actions}).
         # All subsequent MCP responses are processed synchronously in handle_in.
         {init_state, init_actions} = MCPInitializer.start(task_id, scope)
 
@@ -56,10 +56,8 @@ defmodule FrontmanServerWeb.TaskChannel do
           socket
           |> assign(:task_id, task_id)
           |> assign(:mcp_init_state, init_state)
-          |> assign(:mcp_status, :pending)
-          |> assign(:mcp_init_actions, init_actions)
 
-        send(self(), :start_mcp_init)
+        send(self(), {:start_mcp_init, init_actions})
 
         {:ok, %{task_id: task_id}, socket}
 
@@ -246,7 +244,7 @@ defmodule FrontmanServerWeb.TaskChannel do
   end
 
   defp maybe_resume_agent(socket, scope, task_id, meta) do
-    scope = Scope.with_env_api_keys(scope, Registry.extract_env_keys(meta))
+    scope = Scope.with_env_api_keys(scope, Providers.extract_env_api_keys(meta))
 
     model =
       case Model.from_client_params(meta["model"]) do
@@ -268,7 +266,7 @@ defmodule FrontmanServerWeb.TaskChannel do
         backend_tool_modules: backend_tool_modules
       )
 
-    Tasks.maybe_start_execution(scope, task_id, all_tools, opts)
+    Tasks.start_execution(scope, task_id, all_tools, opts)
   end
 
   defp handle_mcp_error(id, error, socket) do
@@ -361,9 +359,10 @@ defmodule FrontmanServerWeb.TaskChannel do
 
   defp handle_prompt(id, params, socket) do
     task_id = socket.assigns.task_id
+    mcp_status = MCPInitializer.channel_status(socket.assigns[:mcp_init_state])
 
     # Check if MCP initialization is complete
-    case socket.assigns[:mcp_status] do
+    case mcp_status do
       :ready ->
         # MCP is ready, process the prompt immediately
         process_prompt(id, params, socket)
@@ -574,7 +573,10 @@ defmodule FrontmanServerWeb.TaskChannel do
 
   # Enrich scope with env API keys from params _meta (e.g., OPENROUTER_API_KEY, ANTHROPIC_API_KEY from project env)
   defp enrich_scope_from_params(scope, params) when is_map(params) do
-    Scope.with_env_api_keys(scope, params |> get_in(["_meta"]) |> Registry.extract_env_keys())
+    Scope.with_env_api_keys(
+      scope,
+      params |> get_in(["_meta"]) |> Providers.extract_env_api_keys()
+    )
   end
 
   defp enrich_scope_from_params(scope, _), do: scope
@@ -608,12 +610,10 @@ defmodule FrontmanServerWeb.TaskChannel do
   defp extract_model_from_params(_), do: nil
 
   @impl true
-  def handle_info(:start_mcp_init, socket) do
+  def handle_info({:start_mcp_init, actions}, socket) do
     # Deferred from join/3 because Phoenix channels prohibit push() during join.
-    # The init state and actions were already created in join — we just need
-    # to execute the deferred push actions now that the socket is fully joined.
-    actions = socket.assigns.mcp_init_actions
-    socket = assign(socket, :mcp_init_actions, nil)
+    # The init state was already created in join — we just need to execute
+    # the deferred push actions now that the socket is fully joined.
     socket = execute_init_actions(actions, socket)
     {:noreply, socket}
   end
@@ -737,7 +737,7 @@ defmodule FrontmanServerWeb.TaskChannel do
   end
 
   # Agent failed to start (e.g. no API key, usage limit). Broadcast by
-  # Tasks.maybe_start_execution when Execution.run returns an error.
+  # Tasks.start_execution when Execution.run returns an error.
   def handle_info({:execution_start_error, msg}, socket) do
     finalize_turn(socket, {:error, msg, "unknown"}, nil)
   end
@@ -756,7 +756,7 @@ defmodule FrontmanServerWeb.TaskChannel do
         mcp_tools
         |> Tools.prepare_for_task(task_id, backend_tool_modules: backend_tool_modules)
 
-      Tasks.maybe_start_execution(scope, task_id, all_tools, opts)
+      Tasks.start_execution(scope, task_id, all_tools, opts)
     end
 
     {:noreply, socket}
@@ -854,7 +854,7 @@ defmodule FrontmanServerWeb.TaskChannel do
         mcp_tools
         |> Tools.prepare_for_task(task_id, backend_tool_modules: backend_tool_modules)
 
-      Tasks.maybe_start_execution(scope, task_id, all_tools, opts)
+      Tasks.start_execution(scope, task_id, all_tools, opts)
     end
 
     {:noreply, socket}
@@ -965,7 +965,6 @@ defmodule FrontmanServerWeb.TaskChannel do
           Logger.info("MCP initialization complete for task #{task_id}")
 
           socket
-          |> assign(:mcp_status, :ready)
           |> assign(:mcp_capabilities, data.mcp_capabilities)
           |> assign(:mcp_server_info, data.mcp_server_info)
           |> assign(:mcp_tools, data.tools)
@@ -974,7 +973,6 @@ defmodule FrontmanServerWeb.TaskChannel do
           Logger.error("MCP initialization failed: #{inspect(error)}")
 
           socket
-          |> assign(:mcp_status, :failed)
           |> assign(:mcp_error, error)
       end
     end)
@@ -987,7 +985,9 @@ defmodule FrontmanServerWeb.TaskChannel do
   # NOT return {:reply, ...} — that would send the reply on the wrong channel
   # event. Any replies from process_prompt are converted to push + {:noreply}.
   defp maybe_process_queued_prompt(socket) do
-    case {socket.assigns[:mcp_status], socket.assigns[:queued_prompt]} do
+    mcp_status = MCPInitializer.channel_status(socket.assigns[:mcp_init_state])
+
+    case {mcp_status, socket.assigns[:queued_prompt]} do
       {:ready, {id, params}} ->
         task_id = socket.assigns.task_id
         Logger.info("Processing queued prompt after MCP initialization for task #{task_id}")

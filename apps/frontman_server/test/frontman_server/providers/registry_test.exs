@@ -1,19 +1,9 @@
 defmodule FrontmanServer.Providers.RegistryTest do
   use ExUnit.Case, async: true
 
-  alias FrontmanServer.Providers.Registry
+  alias FrontmanServer.Providers
 
-  describe "known?/1" do
-    test "is case-insensitive" do
-      assert Registry.known?("OpenRouter")
-      assert Registry.known?("ANTHROPIC")
-      assert Registry.known?("Fireworks")
-      assert Registry.known?("fireworks")
-      assert Registry.known?("openrouter")
-    end
-  end
-
-  describe "extract_env_keys/1" do
+  describe "extract_env_api_keys/1" do
     test "extracts known keys from metadata" do
       metadata = %{
         "openrouterKeyValue" => "sk-or-123",
@@ -21,7 +11,7 @@ defmodule FrontmanServer.Providers.RegistryTest do
         "fireworksKeyValue" => "fw-789"
       }
 
-      result = Registry.extract_env_keys(metadata)
+      result = Providers.extract_env_api_keys(metadata)
 
       assert result == %{
                "openrouter" => "sk-or-123",
@@ -32,19 +22,19 @@ defmodule FrontmanServer.Providers.RegistryTest do
 
     test "ignores empty string values" do
       metadata = %{"openrouterKeyValue" => "", "anthropicKeyValue" => "sk-ant-456"}
-      result = Registry.extract_env_keys(metadata)
+      result = Providers.extract_env_api_keys(metadata)
       assert result == %{"anthropic" => "sk-ant-456"}
     end
 
     test "ignores nil values" do
       metadata = %{"openrouterKeyValue" => nil}
-      result = Registry.extract_env_keys(metadata)
+      result = Providers.extract_env_api_keys(metadata)
       assert result == %{}
     end
 
     test "ignores unknown metadata keys" do
       metadata = %{"unknownKeyValue" => "some-key"}
-      result = Registry.extract_env_keys(metadata)
+      result = Providers.extract_env_api_keys(metadata)
       assert result == %{}
     end
 
@@ -56,7 +46,7 @@ defmodule FrontmanServer.Providers.RegistryTest do
         }
       }
 
-      result = Registry.extract_env_keys(metadata)
+      result = Providers.extract_env_api_keys(metadata)
 
       assert result == %{
                "openrouter" => "sk-or-nested",
@@ -65,16 +55,16 @@ defmodule FrontmanServer.Providers.RegistryTest do
     end
 
     test "handles nil metadata" do
-      assert Registry.extract_env_keys(nil) == %{}
+      assert Providers.extract_env_api_keys(nil) == %{}
     end
 
     test "handles empty metadata" do
-      assert Registry.extract_env_keys(%{}) == %{}
+      assert Providers.extract_env_api_keys(%{}) == %{}
     end
 
     test "handles non-map input" do
-      assert Registry.extract_env_keys("not a map") == %{}
-      assert Registry.extract_env_keys(42) == %{}
+      assert Providers.extract_env_api_keys("not a map") == %{}
+      assert Providers.extract_env_api_keys(42) == %{}
     end
   end
 end

@@ -54,6 +54,37 @@ defmodule FrontmanServerWeb.OAuthControllerTest do
     end
   end
 
+  describe "GET /auth/:provider" do
+    test "redirects to WorkOS authorization URL for supported provider", %{conn: conn} do
+      conn = get(conn, ~p"/auth/github")
+      redirect_url = redirected_to(conn, 302)
+
+      assert redirect_url =~ "workos.com"
+      assert redirect_url =~ "GitHubOAuth"
+    end
+
+    test "raises loudly when provider is unsupported", %{conn: conn} do
+      assert_raise MatchError, fn ->
+        get(conn, ~p"/auth/not-a-real-provider")
+      end
+    end
+
+    test "raises loudly when WorkOS credentials are missing", %{conn: conn} do
+      Application.put_env(:workos, WorkOS.Client, api_key: nil, client_id: nil)
+
+      on_exit(fn ->
+        Application.put_env(:workos, WorkOS.Client,
+          api_key: "sk_test_workos",
+          client_id: "client_test_workos"
+        )
+      end)
+
+      assert_raise RuntimeError, ~r/Missing required `client_id` parameter/, fn ->
+        get(conn, ~p"/auth/github")
+      end
+    end
+  end
+
   describe "GET /auth/callback - access_denied" do
     test "redirects with error message when user cancels", %{conn: conn} do
       conn = get(conn, ~p"/auth/callback", %{"error" => "access_denied"})

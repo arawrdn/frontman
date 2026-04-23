@@ -16,7 +16,12 @@ defmodule FrontmanServer.Tasks do
   """
 
   use Boundary,
-    deps: [FrontmanServer, FrontmanServer.Accounts, FrontmanServer.Providers],
+    deps: [
+      FrontmanServer,
+      FrontmanServer.Accounts,
+      FrontmanServer.Providers,
+      FrontmanServer.RepoAnalyses
+    ],
     exports: [
       Task,
       TaskSchema,
@@ -297,7 +302,7 @@ defmodule FrontmanServer.Tasks do
     with :ok <- guard_not_running(scope, task_id),
          {:ok, interaction} <- add_user_message(scope, task_id, content_blocks) do
       opts = Keyword.put(opts, :interaction_id, interaction.id)
-      maybe_start_execution(scope, task_id, tools, opts)
+      start_execution(scope, task_id, tools, opts)
       {:ok, interaction}
     end
   end
@@ -467,36 +472,38 @@ defmodule FrontmanServer.Tasks do
   end
 
   @doc """
-  Starts an execution if none is already running for this task.
+  Starts an execution for this task.
+
+  Returns `:already_running` when an execution is already active.
   Fetches the task and delegates to Execution.run.
   """
-  @spec maybe_start_execution(Accounts.scope(), String.t(), list(), keyword()) ::
+  @spec start_execution(Accounts.scope(), String.t(), list(), keyword()) ::
           :ok | :already_running
-  def maybe_start_execution(scope, task_id, tools, opts) do
+  def start_execution(scope, task_id, tools, opts) do
     if execution_active?(scope, task_id) do
       :already_running
     else
       case Execution.sandbox_mvp_enabled?() do
         true ->
-          maybe_start_execution_async(scope, task_id, tools, opts)
+          start_execution_async(scope, task_id, tools, opts)
 
         false ->
-          maybe_start_execution_sync(scope, task_id, tools, opts)
+          start_execution_sync_internal(scope, task_id, tools, opts)
       end
     end
   end
 
-  defp maybe_start_execution_async(scope, task_id, tools, opts) do
+  defp start_execution_async(scope, task_id, tools, opts) do
     ExecutionStarter.start_or_join(scope, task_id, tools, opts)
   end
 
   @doc false
   @spec start_execution_sync(Scope.t(), String.t(), list(), keyword()) :: :ok
   def start_execution_sync(scope, task_id, tools, opts) do
-    maybe_start_execution_sync(scope, task_id, tools, opts)
+    start_execution_sync_internal(scope, task_id, tools, opts)
   end
 
-  defp maybe_start_execution_sync(scope, task_id, tools, opts) do
+  defp start_execution_sync_internal(scope, task_id, tools, opts) do
     {:ok, task} = get_task(scope, task_id)
 
     case Execution.run(scope, task, Keyword.merge([tools: tools], opts)) do

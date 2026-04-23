@@ -1872,7 +1872,7 @@ defmodule FrontmanServerWeb.TaskChannelTest do
       %{assigns: %{retry_state: retry_state}} = :sys.get_state(socket.channel_pid)
       assert %FrontmanServer.Tasks.RetryCoordinator{} = retry_state
 
-      # Timer fires :fire_retry → channel calls maybe_start_execution
+      # Timer fires :fire_retry → channel calls start_execution
       # but execution fails to start (e.g. API key expired)
       send(socket.channel_pid, :fire_retry)
       :sys.get_state(socket.channel_pid)

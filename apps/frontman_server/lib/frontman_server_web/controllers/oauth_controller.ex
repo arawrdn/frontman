@@ -20,8 +20,8 @@ defmodule FrontmanServerWeb.OAuthController do
 
   def request(conn, %{"provider" => provider}) do
     redirect_uri = url(~p"/auth/callback")
-    {:ok, url} = Accounts.get_oauth_authorization_url(provider, redirect_uri)
-    redirect(conn, external: url)
+    {:ok, auth_url} = Accounts.get_oauth_authorization_url(provider, redirect_uri)
+    redirect(conn, external: auth_url)
   end
 
   def callback(conn, %{"code" => code}) do
@@ -119,11 +119,11 @@ defmodule FrontmanServerWeb.OAuthController do
   def link_request(%{assigns: %{current_scope: %{user: _user}}} = conn, %{"provider" => provider}) do
     redirect_uri = url(~p"/auth/link/callback")
     state = generate_state_token()
-    {:ok, url} = Accounts.get_oauth_authorization_url(provider, redirect_uri, state)
+    {:ok, auth_url} = Accounts.get_oauth_authorization_url(provider, redirect_uri, state)
 
     conn
     |> put_session(:oauth_state, state)
-    |> redirect(external: url)
+    |> redirect(external: auth_url)
   end
 
   def link_callback(%{assigns: %{current_scope: %{user: user}}} = conn, %{

@@ -76,13 +76,14 @@ defmodule FrontmanServer.Accounts.WorkOS do
   4. Checks if a user exists with matching email → links identity and logs in
   5. Creates a new user + identity → logs in
 
-  Returns `{:ok, user}` on success or `{:error, reason}` on failure.
+  Returns `{:ok, user, oauth_tokens}` on success or `{:error, reason}` on failure.
+  `oauth_tokens` is `%{provider: "github", ...}` or `nil`.
 
   Note: We use a raw HTTP call instead of the SDK to capture the full error
   response, including `pending_authentication_token` for email verification.
   """
   @spec authenticate_with_code(String.t(), signup_framework()) ::
-          {:ok, User.t()} | {:error, term()}
+          {:ok, User.t(), map() | nil} | {:error, term()}
   def authenticate_with_code(code, signup_framework \\ nil)
 
   def authenticate_with_code(code, nil) when is_binary(code) and code != "" do
@@ -105,7 +106,13 @@ defmodule FrontmanServer.Accounts.WorkOS do
   defp authenticate_with_code_internal(code, signup_framework) do
     with {:ok, auth_response} <- authenticate_with_code_raw(code),
          {:ok, profile} <- extract_profile(auth_response) do
-      find_or_create_user_from_oauth(profile, signup_framework)
+      case find_or_create_user_from_oauth(profile, signup_framework) do
+        {:ok, user} ->
+          {:ok, user, build_oauth_tokens(profile.provider, auth_response[:oauth_tokens])}
+
+        {:error, _} = error ->
+          error
+      end
     end
   end
 
@@ -117,7 +124,7 @@ defmodule FrontmanServer.Accounts.WorkOS do
   the pending authentication token to complete the flow.
   """
   @spec authenticate_with_email_verification(String.t(), String.t(), signup_framework()) ::
-          {:ok, User.t()} | {:error, term()}
+          {:ok, User.t(), map() | nil} | {:error, term()}
   def authenticate_with_email_verification(
         code,
         pending_authentication_token,
@@ -177,7 +184,13 @@ defmodule FrontmanServer.Accounts.WorkOS do
     with {:ok, response_body} <- post_authenticate_request(body, "email verify"),
          {:ok, auth_response} <- parse_auth_response(response_body),
          {:ok, profile} <- extract_profile(auth_response) do
-      find_or_create_user_from_oauth(profile, signup_framework)
+      case find_or_create_user_from_oauth(profile, signup_framework) do
+        {:ok, user} ->
+          {:ok, user, build_oauth_tokens(profile.provider, auth_response[:oauth_tokens])}
+
+        {:error, _} = error ->
+          error
+      end
     end
   end
 
@@ -235,7 +248,27 @@ defmodule FrontmanServer.Accounts.WorkOS do
     |> Repo.one()
   end
 
+  @doc """
+  Extracts provider OAuth tokens from the raw WorkOS authentication response body.
+
+  Returns a plain map of token fields when present, or `nil` when absent.
+  """
+  @spec extract_oauth_tokens(map()) :: map() | nil
+  def extract_oauth_tokens(%{"oauth_tokens" => %{"access_token" => _} = tokens}) do
+    %{
+      access_token: tokens["access_token"],
+      refresh_token: tokens["refresh_token"],
+      expires_at: tokens["expires_at"],
+      scopes: tokens["scopes"]
+    }
+  end
+
+  def extract_oauth_tokens(_body), do: nil
+
   # Private functions
+
+  defp build_oauth_tokens(provider, %{} = tokens), do: Map.put(tokens, :provider, provider)
+  defp build_oauth_tokens(_provider, nil), do: nil
 
   defp extract_profile(%{user: user, authentication_method: auth_method}) do
     with {:ok, provider} <- workos_to_provider(auth_method) do
@@ -351,9 +384,8 @@ defmodule FrontmanServer.Accounts.WorkOS do
   defp notify_discord_args(user_id, framework), do: %{user_id: user_id, framework: framework}
 
   defp build_identity_changeset(user, profile) do
-    %UserIdentity{}
+    %UserIdentity{user_id: user.id}
     |> UserIdentity.changeset(%{
-      user_id: user.id,
       provider: profile.provider,
       provider_id: profile.provider_id,
       provider_email: profile.provider_email,
@@ -403,11 +435,14 @@ defmodule FrontmanServer.Accounts.WorkOS do
   defp post_authenticate_request(body, context, attempt \\ 1) do
     require Logger
 
-    case Req.post("#{@workos_api_base}/user_management/authenticate",
-           json: body,
-           receive_timeout: @workos_auth_receive_timeout_ms,
-           connect_options: [timeout: @workos_auth_connect_timeout_ms]
-         ) do
+    opts =
+      [
+        json: body,
+        receive_timeout: @workos_auth_receive_timeout_ms,
+        connect_options: [timeout: @workos_auth_connect_timeout_ms]
+      ] ++ workos_req_options()
+
+    case Req.post("#{@workos_api_base}/user_management/authenticate", opts) do
       {:ok, %Req.Response{status: 200, body: response_body}} ->
         {:ok, response_body}
 
@@ -457,7 +492,8 @@ defmodule FrontmanServer.Accounts.WorkOS do
          },
          access_token: body["access_token"],
          refresh_token: body["refresh_token"],
-         authentication_method: auth_method
+         authentication_method: auth_method,
+         oauth_tokens: extract_oauth_tokens(body)
        }}
     end
   end
@@ -478,5 +514,9 @@ defmodule FrontmanServer.Accounts.WorkOS do
 
   defp workos_client_id do
     Application.get_env(:workos, WorkOS.Client)[:client_id]
+  end
+
+  defp workos_req_options do
+    Application.get_env(:frontman_server, :workos_req_options, [])
   end
 end

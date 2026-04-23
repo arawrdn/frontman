@@ -58,6 +58,8 @@ defmodule FrontmanServerWeb.TaskChannel.MCPInitializer do
           | {:initialization_complete, map()}
           | {:initialization_failed, any()}
 
+  @type channel_status :: :pending | :ready | :failed
+
   # Public API
 
   @doc """
@@ -85,6 +87,17 @@ defmodule FrontmanServerWeb.TaskChannel.MCPInitializer do
 
     {state, [{:push_mcp, request}]}
   end
+
+  @doc """
+  Returns the channel-facing MCP readiness status from initializer state.
+
+  Internal initializer phases collapse to `:pending`.
+  """
+  @spec channel_status(t() | nil) :: channel_status()
+  def channel_status(nil), do: :pending
+  def channel_status(%{status: :ready}), do: :ready
+  def channel_status(%{status: :failed}), do: :failed
+  def channel_status(_state), do: :pending
 
   @doc """
   Returns true if this initializer state is expecting a response with the given request_id.

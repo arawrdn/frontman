@@ -51,8 +51,8 @@ defmodule FrontmanServer.Providers.ProvidersOAuthTest do
       assert token.refresh_token == "refresh_2"
       assert token.expires_at == expires_at2
 
-      # Should only be one token in DB
-      assert Repo.aggregate(OAuthToken, :count) == 1
+      # Should only be one token for this user+provider in DB
+      assert Repo.aggregate(OAuthToken.for_user_and_provider(user.id, "anthropic"), :count) == 1
     end
 
     test "normalizes provider to lowercase" do
@@ -86,6 +86,25 @@ defmodule FrontmanServer.Providers.ProvidersOAuthTest do
       scope = %Scope{user: user}
 
       assert Providers.get_oauth_token(scope, "anthropic") == nil
+    end
+  end
+
+  describe "get_oauth_access_token/2" do
+    test "returns access token when token exists" do
+      user = user_fixture()
+      scope = %Scope{user: user}
+      expires_at = DateTime.utc_now() |> DateTime.add(3600, :second) |> DateTime.truncate(:second)
+
+      {:ok, _} = Providers.upsert_oauth_token(scope, "anthropic", "access", "refresh", expires_at)
+
+      assert {:ok, "access"} = Providers.get_oauth_access_token(scope, "anthropic")
+    end
+
+    test "returns no_oauth_token when token does not exist" do
+      user = user_fixture()
+      scope = %Scope{user: user}
+
+      assert {:error, :no_oauth_token} = Providers.get_oauth_access_token(scope, "anthropic")
     end
   end
 

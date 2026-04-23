@@ -20,12 +20,14 @@ defmodule FrontmanServer.Tasks.ExecutionIntegrationTest do
 
   alias Ecto.Adapters.SQL.Sandbox
   alias FrontmanServer.Accounts.Scope
+  alias FrontmanServer.Providers
   alias FrontmanServer.Repo
   alias FrontmanServer.Sandbox.EnvironmentSpec
   alias FrontmanServer.Sandboxes
   alias FrontmanServer.Tasks
   alias FrontmanServer.Tasks.{Execution, TaskSchema}
   alias FrontmanServer.Tasks.{ExecutionEvent, Interaction}
+  alias FrontmanServer.Test.Support.RepoAnalyses.StaticGitHubClient
   alias FrontmanServer.Test.Support.Sandbox.IntegrationProvider
   alias FrontmanServer.Tools.MCP
   alias FrontmanServer.Workers.GenerateTitle
@@ -121,8 +123,11 @@ defmodule FrontmanServer.Tasks.ExecutionIntegrationTest do
     {:ok, socket: socket}
   end
 
-  defp setup_sandbox_mvp_enabled(_context) do
+  defp setup_sandbox_mvp_enabled(%{scope: scope}) do
     original_config = Application.get_env(:frontman_server, :sandbox_mvp, [])
+
+    original_repo_analyses_client =
+      Application.get_env(:frontman_server, :repo_analyses_github_client)
 
     sandbox_mvp_config =
       original_config
@@ -131,10 +136,21 @@ defmodule FrontmanServer.Tasks.ExecutionIntegrationTest do
       |> Keyword.put(:poll_interval_ms, 10)
 
     Application.put_env(:frontman_server, :sandbox_mvp, sandbox_mvp_config)
+    Application.put_env(:frontman_server, :repo_analyses_github_client, StaticGitHubClient)
+
+    {:ok, _oauth_token} =
+      Providers.upsert_oauth_token(scope, "github", "sandbox-mvp-github-token", nil, nil)
+
     IntegrationProvider.reset!()
 
     on_exit(fn ->
       Application.put_env(:frontman_server, :sandbox_mvp, original_config)
+
+      case original_repo_analyses_client do
+        nil -> Application.delete_env(:frontman_server, :repo_analyses_github_client)
+        client -> Application.put_env(:frontman_server, :repo_analyses_github_client, client)
+      end
+
       IntegrationProvider.reset!()
 
       DynamicSupervisor.which_children(FrontmanServer.Sandbox.DynamicSupervisor)
@@ -240,7 +256,7 @@ defmodule FrontmanServer.Tasks.ExecutionIntegrationTest do
       {starter_pid, starter_ref} =
         spawn_monitor(fn ->
           result =
-            Tasks.maybe_start_execution(scope, task_id, [],
+            Tasks.start_execution(scope, task_id, [],
               agent: agent,
               sandbox_provider: StuckProvisionProvider,
               sandbox_wait_timeout_ms: 700
@@ -253,7 +269,7 @@ defmodule FrontmanServer.Tasks.ExecutionIntegrationTest do
       assert_receive {:DOWN, ^starter_ref, :process, ^starter_pid, :normal}, 500
 
       assert :already_running =
-               Tasks.maybe_start_execution(scope, task_id, [],
+               Tasks.start_execution(scope, task_id, [],
                  agent: agent,
                  sandbox_provider: StuckProvisionProvider,
                  sandbox_wait_timeout_ms: 700

@@ -29,7 +29,7 @@ defmodule FrontmanServer.Tasks.Execution do
   alias FrontmanServer.Providers
   alias FrontmanServer.Providers.ResolvedKey
   alias FrontmanServer.Sandboxes
-  alias FrontmanServer.Tasks.Execution.{Framework, RootAgent, ToolExecutor}
+  alias FrontmanServer.Tasks.Execution.{Framework, RootAgent, SandboxInputs, ToolExecutor}
   alias FrontmanServer.Tasks.{Interaction, Task}
   alias FrontmanServer.Tools
   alias SwarmAi.Message
@@ -378,13 +378,13 @@ defmodule FrontmanServer.Tasks.Execution do
         {:ok, sandbox}
 
       {:error, :not_found} ->
-        env_spec = sandbox_env_spec(task_id)
+        with {:ok, env_spec} <- sandbox_env_spec(scope, task_id) do
+          create_opts =
+            [task_id: task_id]
+            |> maybe_put_provider_override(opts)
 
-        create_opts =
-          [task_id: task_id]
-          |> maybe_put_provider_override(opts)
-
-        Sandboxes.provision_and_start(scope, env_spec, create_opts)
+          Sandboxes.provision_and_start(scope, env_spec, create_opts)
+        end
     end
   end
 
@@ -435,21 +435,8 @@ defmodule FrontmanServer.Tasks.Execution do
     end
   end
 
-  defp sandbox_env_spec(task_id) do
-    config = Application.get_env(:frontman_server, :sandbox_mvp, [])
-
-    app_port = Keyword.get(config, :app_port, 4000)
-
-    %{
-      "name" => sandbox_name(task_id),
-      "image" => Keyword.get(config, :image, "ghcr.io/frontman-ai/frontman-dev:latest"),
-      "devcontainer" => %{"forwardPorts" => [app_port]},
-      "env" => %{}
-    }
-  end
-
-  defp sandbox_name(task_id) when is_binary(task_id) do
-    "task-" <> String.slice(task_id, 0, 12)
+  defp sandbox_env_spec(%Scope{} = scope, task_id) when is_binary(task_id) do
+    SandboxInputs.build(scope, task_id)
   end
 
   defp sandbox_wait_timeout_ms do
@@ -471,6 +458,15 @@ defmodule FrontmanServer.Tasks.Execution do
 
   def error_message(%Scope{}, :registration_timeout),
     do: "Agent failed to start. Please try again."
+
+  def error_message(%Scope{}, :no_github_oauth_token),
+    do: "Connect GitHub in Settings to provision a sandbox for this task."
+
+  def error_message(%Scope{}, :invalid_sandbox_repo_url),
+    do: "Sandbox repo URL is invalid. Expected a GitHub repository URL."
+
+  def error_message(%Scope{}, :invalid_sandbox_vm_image),
+    do: "Sandbox VM image is not configured correctly."
 
   def error_message(%Scope{}, reason),
     do: inspect(reason)

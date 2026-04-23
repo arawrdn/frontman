@@ -107,8 +107,8 @@ defmodule JsonRpc do
   defp extract_id(%{"id" => id}), do: {:ok, id}
   defp extract_id(_), do: {:error, :invalid_message}
 
+  # JSON-RPC 2.0 spec: MUST NOT have both result and error
   defp extract_response_type(%{"result" => _result, "error" => _error}) do
-    # JSON-RPC 2.0 spec: MUST NOT have both result and error
     {:error, :invalid_message}
   end
 

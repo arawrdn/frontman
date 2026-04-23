@@ -58,6 +58,25 @@ defmodule FrontmanServerWeb.TaskChannel.MCPInitializerTest do
     }
   end
 
+  describe "channel_status/1" do
+    test "returns :pending for nil and intermediate statuses" do
+      assert MCPInitializer.channel_status(nil) == :pending
+      assert MCPInitializer.channel_status(tools_state(1)) == :pending
+      assert MCPInitializer.channel_status(rules_state(1)) == :pending
+      assert MCPInitializer.channel_status(structure_state(1)) == :pending
+    end
+
+    test "returns :ready for ready state" do
+      state = %{structure_state(1) | status: :ready}
+      assert MCPInitializer.channel_status(state) == :ready
+    end
+
+    test "returns :failed for failed state" do
+      state = %{tools_state(1) | status: :failed}
+      assert MCPInitializer.channel_status(state) == :failed
+    end
+  end
+
   describe "handle_response/3 for tools/list" do
     test "parses interactive tools with pause_agent policy from wire data" do
       request_id = 1

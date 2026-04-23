@@ -28,7 +28,6 @@ defmodule FrontmanServer.Providers do
       ChatGPTOAuth,
       Model,
       OAuthToken,
-      Registry,
       ResolvedKey
     ]
 
@@ -177,6 +176,14 @@ defmodule FrontmanServer.Providers do
   """
   @spec max_image_dimension(String.t()) :: pos_integer() | nil
   defdelegate max_image_dimension(provider), to: Registry
+
+  @doc """
+  Extracts client-forwarded env API keys from metadata.
+
+  Input is typically ACP/MCP `_meta`; output is `%{provider => api_key}`.
+  """
+  @spec extract_env_api_keys(term()) :: %{String.t() => String.t()}
+  defdelegate extract_env_api_keys(metadata), to: Registry, as: :extract_env_keys
 
   @doc """
   Returns a human-friendly model name for logs and telemetry.
@@ -530,6 +537,25 @@ defmodule FrontmanServer.Providers do
     OAuthToken
     |> OAuthToken.for_user_and_provider(user.id, provider)
     |> Repo.one()
+  end
+
+  @doc """
+  Returns the stored OAuth access token for a provider without refresh side effects.
+
+  This reads persisted token state only. For refresh-on-expiry behavior, use
+  `get_valid_oauth_token/2`.
+  """
+  @spec get_oauth_access_token(Scope.t(), String.t()) ::
+          {:ok, String.t()} | {:error, :no_oauth_token}
+  def get_oauth_access_token(%Scope{} = scope, provider) do
+    case get_oauth_token(scope, provider) do
+      %OAuthToken{access_token: access_token}
+      when is_binary(access_token) and access_token != "" ->
+        {:ok, access_token}
+
+      _ ->
+        {:error, :no_oauth_token}
+    end
   end
 
   @doc """

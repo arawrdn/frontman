@@ -31,7 +31,7 @@ defmodule FrontmanServer.Tasks.Task do
   Oban worker after the first user message.
   """
   @spec short_description(String.t()) :: String.t()
-  def short_description(_task_id) do
-    "New Task"
+  def short_description(task_id) do
+    "New Task" <> task_id
   end
 end

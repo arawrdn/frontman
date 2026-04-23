@@ -36,7 +36,7 @@ config :frontman_server,
   ],
   sandbox_mvp: [
     enabled: false,
-    image: "ghcr.io/frontman-ai/frontman-dev:latest",
+    image: "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
     project_root: "/workspace/frontman",
     repo_url: "https://github.com/frontman-ai/frontman.git",
     repo_ref: "main",

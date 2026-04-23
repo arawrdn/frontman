@@ -63,7 +63,7 @@ defmodule FrontmanServer.Sandbox.Provider.Microsandbox do
 
       {:ok,
        %{
-         running: status == "running",
+         running: running_status?(status),
          status: status,
          cpu_percent: Map.get(entry, "cpu_percent", 0.0),
          memory_bytes: Map.get(entry, "memory_bytes", 0)
@@ -117,6 +117,15 @@ defmodule FrontmanServer.Sandbox.Provider.Microsandbox do
   defp stopped_output?(output) do
     String.contains?(output, "not running")
   end
+
+  defp running_status?(status) when is_binary(status) do
+    status
+    |> String.trim()
+    |> String.downcase()
+    |> Kernel.==("running")
+  end
+
+  defp running_status?(_status), do: false
 
   # --- Microsandbox-specific file operations (not Provider callbacks) ---
 

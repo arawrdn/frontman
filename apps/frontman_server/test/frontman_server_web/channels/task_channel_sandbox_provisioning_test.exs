@@ -1,7 +1,9 @@
 defmodule FrontmanServerWeb.TaskChannelSandboxProvisioningTest do
   use FrontmanServerWeb.ChannelCase, async: false
 
+  alias FrontmanServer.Providers
   alias FrontmanServer.Sandbox.EnvironmentSpec
+  alias FrontmanServer.Test.Support.RepoAnalyses.StaticGitHubClient
 
   @moduletag :capture_log
 
@@ -29,9 +31,12 @@ defmodule FrontmanServerWeb.TaskChannelSandboxProvisioningTest do
     def destroy(_ref), do: :ok
   end
 
-  setup do
+  setup %{scope: scope} do
     original_mvp_config = Application.get_env(:frontman_server, :sandbox_mvp, [])
     original_provider = Application.get_env(:frontman_server, :sandbox_provider)
+
+    original_repo_analyses_client =
+      Application.get_env(:frontman_server, :repo_analyses_github_client)
 
     sandbox_mvp_config =
       original_mvp_config
@@ -41,6 +46,10 @@ defmodule FrontmanServerWeb.TaskChannelSandboxProvisioningTest do
 
     Application.put_env(:frontman_server, :sandbox_mvp, sandbox_mvp_config)
     Application.put_env(:frontman_server, :sandbox_provider, StuckProvisionProvider)
+    Application.put_env(:frontman_server, :repo_analyses_github_client, StaticGitHubClient)
+
+    {:ok, _oauth_token} =
+      Providers.upsert_oauth_token(scope, "github", "channel-sandbox-github-token", nil, nil)
 
     on_exit(fn ->
       Application.put_env(:frontman_server, :sandbox_mvp, original_mvp_config)
@@ -48,6 +57,11 @@ defmodule FrontmanServerWeb.TaskChannelSandboxProvisioningTest do
       case original_provider do
         nil -> Application.delete_env(:frontman_server, :sandbox_provider)
         provider -> Application.put_env(:frontman_server, :sandbox_provider, provider)
+      end
+
+      case original_repo_analyses_client do
+        nil -> Application.delete_env(:frontman_server, :repo_analyses_github_client)
+        client -> Application.put_env(:frontman_server, :repo_analyses_github_client, client)
       end
 
       DynamicSupervisor.which_children(FrontmanServer.Sandbox.DynamicSupervisor)

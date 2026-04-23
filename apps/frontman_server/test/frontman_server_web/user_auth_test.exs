@@ -27,6 +27,60 @@ defmodule FrontmanServerWeb.UserAuthTest do
       assert Accounts.get_user_by_session_token(token)
     end
 
+    test "stores csrf state in session on login", %{conn: conn, user: user} do
+      conn = UserAuth.log_in_user(conn, user)
+
+      assert csrf_state = get_session(conn, "_csrf_token")
+      assert is_binary(csrf_state)
+      assert byte_size(csrf_state) == 24
+    end
+
+    test "expires host-only auth cookies on login when domain cookie mode is enabled", %{
+      conn: conn,
+      user: user
+    } do
+      conn = conn |> fetch_cookies() |> UserAuth.log_in_user(user, %{"remember_me" => "true"})
+      set_cookie_headers = get_resp_header(conn, "set-cookie")
+
+      assert Enum.any?(set_cookie_headers, fn header ->
+               String.starts_with?(header, "_frontman_server_key=") and
+                 String.contains?(header, "max-age=0") and
+                 String.contains?(header, "SameSite=None") and
+                 not String.contains?(header, "; domain=")
+             end)
+
+      assert Enum.any?(set_cookie_headers, fn header ->
+               String.starts_with?(header, "_frontman_server_web_user_remember_me=") and
+                 String.contains?(header, "max-age=0") and
+                 String.contains?(header, "SameSite=Lax") and
+                 not String.contains?(header, "; domain=")
+             end)
+    end
+
+    test "logout interstitial token validates against login session cookie", %{
+      conn: conn,
+      user: user
+    } do
+      logged_in_conn =
+        conn
+        |> fetch_cookies()
+        |> UserAuth.log_in_user(user)
+
+      conn =
+        logged_in_conn
+        |> recycle()
+        |> Map.replace!(:secret_key_base, FrontmanServerWeb.Endpoint.config(:secret_key_base))
+
+      interstitial_conn = get(conn, ~p"/users/log-out")
+      html = html_response(interstitial_conn, 200)
+
+      [_, csrf_token] = Regex.run(~r/name="_csrf_token"[^>]*value="([^"]+)"/, html)
+
+      conn = post(conn, ~p"/users/log-out", %{"_method" => "delete", "_csrf_token" => csrf_token})
+
+      assert redirected_to(conn) == ~p"/users/log-in"
+    end
+
     test "clears everything previously stored in the session", %{conn: conn, user: user} do
       conn = conn |> put_session(:to_be_removed, "value") |> UserAuth.log_in_user(user)
       refute get_session(conn, :to_be_removed)

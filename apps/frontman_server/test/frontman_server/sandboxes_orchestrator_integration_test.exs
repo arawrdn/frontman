@@ -14,15 +14,18 @@ defmodule FrontmanServer.SandboxesOrchestratorIntegrationTest do
   alias FrontmanServer.Sandbox.SandboxSchema
   alias FrontmanServer.Sandboxes
   alias FrontmanServer.Test.Support.Sandbox.IntegrationProvider
+  alias FrontmanServer.Test.Support.Sandbox.ScriptCaptureProvider
 
   setup do
     scope = user_scope_fixture()
     task = task_with_project_fixture(scope)
 
     IntegrationProvider.reset!()
+    ScriptCaptureProvider.reset!()
 
     on_exit(fn ->
       IntegrationProvider.reset!()
+      ScriptCaptureProvider.reset!()
 
       DynamicSupervisor.which_children(FrontmanServer.Sandbox.DynamicSupervisor)
       |> Enum.each(fn {_, pid, _, _} ->
@@ -53,6 +56,73 @@ defmodule FrontmanServer.SandboxesOrchestratorIntegrationTest do
 
     assert {:ok, %{exit_code: 0, stdout: "ok\n"}} =
              Sandboxes.exec(scope, sandbox.id, "echo", ["hello"])
+  end
+
+  test "sync_repo setup step supports immutable commit refs", %{scope: scope, task: task} do
+    original_sandbox_mvp_config = Application.get_env(:frontman_server, :sandbox_mvp, [])
+
+    sandbox_mvp_config =
+      original_sandbox_mvp_config
+      |> Keyword.put(:enabled, true)
+      |> Keyword.put(:project_root, "/workspace/frontman")
+
+    Application.put_env(:frontman_server, :sandbox_mvp, sandbox_mvp_config)
+
+    on_exit(fn ->
+      Application.put_env(:frontman_server, :sandbox_mvp, original_sandbox_mvp_config)
+    end)
+
+    commit_sha = String.duplicate("a", 40)
+
+    env_spec =
+      unique_env_spec(%{
+        "FRONTMAN_SANDBOX_REPO_REF" => commit_sha,
+        "FRONTMAN_SANDBOX_REPO_URL" => "https://github.com/frontman-ai/frontman.git"
+      })
+      |> Map.put("devcontainer", %{
+        "postCreateCommand" => "bash .devcontainer/post-create.sh",
+        "forwardPorts" => [3000]
+      })
+
+    assert {:ok, sandbox} =
+             Sandboxes.provision_and_start(scope, env_spec,
+               task_id: task.id,
+               provider: ScriptCaptureProvider,
+               heartbeat_interval_ms: 10,
+               provision_timeout_ms: 5_000
+             )
+
+    assert_eventually(fn ->
+      Repo.get!(SandboxSchema, sandbox.id).status == :running
+    end)
+
+    provider_ref = Repo.get!(SandboxSchema, sandbox.id).provider_ref
+
+    scripts =
+      provider_ref
+      |> ScriptCaptureProvider.exec_calls()
+      |> Enum.flat_map(fn
+        %{command: "bash", args: ["-lc", script]} -> [script]
+        _ -> []
+      end)
+
+    assert Enum.any?(scripts, &String.contains?(&1, "fetch --depth 1 origin '#{commit_sha}'"))
+
+    refute Enum.any?(scripts, fn script ->
+             String.contains?(script, "clone --depth 1 --branch")
+           end)
+
+    assert Enum.any?(scripts, fn script ->
+             String.contains?(
+               script,
+               "cd '/workspace/frontman' && bash .devcontainer/post-create.sh"
+             )
+           end)
+
+    assert Enum.any?(scripts, fn script ->
+             String.contains?(script, "cd '/workspace/frontman/apps/frontman_server'") and
+               String.contains?(script, "nohup mix phx.server")
+           end)
   end
 
   test "marks sandbox as error when provider.create fails", %{scope: scope, task: task} do

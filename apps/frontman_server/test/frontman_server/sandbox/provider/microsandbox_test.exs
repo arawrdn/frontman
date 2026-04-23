@@ -177,6 +177,27 @@ defmodule FrontmanServer.Sandbox.Provider.MicrosandboxTest do
       assert metrics.memory_bytes == 268_435_456
     end
 
+    test "treats status matching as case-insensitive" do
+      json_output =
+        Jason.encode!([
+          %{
+            "name" => "sb-abc123",
+            "status" => "Running",
+            "cpu_percent" => 0.0,
+            "memory_bytes" => 0
+          }
+        ])
+
+      MockCommandRunner
+      |> expect(:run, fn "msb", ["list", "--format", "json"], _opts ->
+        {json_output, 0}
+      end)
+
+      assert {:ok, metrics} = Microsandbox.metrics("sb-abc123", microsandbox())
+      assert metrics.running
+      assert metrics.status == "Running"
+    end
+
     test "returns error when sandbox not found in list" do
       MockCommandRunner
       |> expect(:run, fn "msb", ["list", "--format", "json"], _opts ->

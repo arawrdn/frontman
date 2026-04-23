@@ -19,7 +19,6 @@ defmodule FrontmanServerWeb.TasksChannel do
   alias AgentClientProtocol, as: ACP
   alias FrontmanServer.Accounts.Scope
   alias FrontmanServer.Providers
-  alias FrontmanServer.Providers.Registry
   alias FrontmanServer.Tasks
   alias FrontmanServer.Tasks.Execution.Framework
   alias FrontmanServerWeb.ACPHistory
@@ -38,9 +37,8 @@ defmodule FrontmanServerWeb.TasksChannel do
     if Map.has_key?(socket.assigns, :scope) do
       Logger.info("Client joining tasks channel (authenticated)")
 
-      user_id = socket.assigns.scope.user.id
+      user_id = socket.assigns.scope |> FrontmanServer.Accounts.scope_user_id()
 
-      # Subscribe to config option updates (triggered by key saves/OAuth)
       Phoenix.PubSub.subscribe(
         FrontmanServer.PubSub,
         Providers.config_pubsub_topic(user_id)
@@ -234,7 +232,7 @@ defmodule FrontmanServerWeb.TasksChannel do
 
   # Extract env API keys from clientInfo _meta (e.g., OPENROUTER_API_KEY, ANTHROPIC_API_KEY from project env)
   defp extract_env_api_keys(client_info) when is_map(client_info) do
-    client_info |> get_in(["_meta"]) |> Registry.extract_env_keys()
+    client_info |> get_in(["_meta"]) |> Providers.extract_env_api_keys()
   end
 
   defp extract_env_api_keys(_), do: %{}

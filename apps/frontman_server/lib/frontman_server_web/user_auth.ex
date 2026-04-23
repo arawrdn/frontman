@@ -16,10 +16,12 @@ defmodule FrontmanServerWeb.UserAuth do
 
   alias FrontmanServer.Accounts
   alias FrontmanServer.Accounts.Scope
+  alias Plug.Conn.Cookies
 
   # Make the remember me cookie valid for 14 days. This should match
   # the session validity setting in UserToken.
   @max_cookie_age_in_days 14
+  @session_cookie "_frontman_server_key"
   @remember_me_cookie "_frontman_server_web_user_remember_me"
   @remember_me_base_options [
     sign: true,
@@ -280,7 +282,42 @@ defmodule FrontmanServerWeb.UserAuth do
     conn
     |> renew_session(user)
     |> put_token_in_session(token)
+    |> maybe_expire_host_only_auth_cookies()
     |> maybe_write_remember_me_cookie(token, params, remember_me)
+    |> seed_csrf_token()
+  end
+
+  defp maybe_expire_host_only_auth_cookies(conn) do
+    case auth_cookie_domain() do
+      domain when is_binary(domain) and byte_size(domain) > 0 ->
+        conn
+        |> prepend_resp_headers([
+          {"set-cookie", expired_host_only_cookie_header(@session_cookie, "None")}
+        ])
+        |> prepend_resp_headers([
+          {"set-cookie", expired_host_only_cookie_header(@remember_me_cookie, "Lax")}
+        ])
+
+      _ ->
+        conn
+    end
+  end
+
+  defp expired_host_only_cookie_header(cookie_name, same_site) do
+    Cookies.encode(cookie_name, %{
+      value: "",
+      path: "/",
+      max_age: 0,
+      secure: true,
+      http_only: true,
+      same_site: same_site
+    })
+  end
+
+  defp seed_csrf_token(conn) do
+    Plug.CSRFProtection.get_csrf_token()
+    csrf_state = Plug.CSRFProtection.dump_state()
+    put_session(conn, "_csrf_token", csrf_state)
   end
 
   # Do not renew session if the user is already logged in
@@ -328,7 +365,7 @@ defmodule FrontmanServerWeb.UserAuth do
   end
 
   defp remember_me_options do
-    auth_cookie_domain = Application.get_env(:frontman_server, :auth_cookie_domain)
+    auth_cookie_domain = auth_cookie_domain()
 
     case auth_cookie_domain do
       domain when is_binary(domain) and byte_size(domain) > 0 ->
@@ -337,6 +374,10 @@ defmodule FrontmanServerWeb.UserAuth do
       _ ->
         @remember_me_base_options
     end
+  end
+
+  defp auth_cookie_domain do
+    Application.get_env(:frontman_server, :auth_cookie_domain)
   end
 
   defp remember_me_delete_options do

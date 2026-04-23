@@ -65,6 +65,65 @@ if config_env() in [:dev, :test, :e2e] do
   config :frontman_server, api_key_config
 end
 
+if config_env() != :prod do
+  config :workos, WorkOS.Client,
+    api_key: env!("WORKOS_API_KEY", :string?, nil),
+    client_id: env!("WORKOS_CLIENT_ID", :string?, nil)
+
+  config :frontman_server, :github_oauth,
+    client_id: env!("GITHUB_OAUTH_CLIENT_ID", :string?, nil),
+    client_secret: env!("GITHUB_OAUTH_CLIENT_SECRET", :string?, nil)
+end
+
+if config_env() == :dev do
+  e2e_enabled = env_boolean.("E2E", false)
+  phx_host = env!("PHX_HOST", :string!, "frontman.local")
+  phx_url_port = env!("PHX_URL_PORT", :integer, if(e2e_enabled, do: 4002, else: 4000))
+  https_port = env!("PORT", :integer, 4000)
+
+  preview_base_host = env!("PREVIEW_BASE_HOST", :string!, "preview.frontman.local")
+  auth_cookie_domain = env!("AUTH_COOKIE_DOMAIN", :string!, ".frontman.local")
+  app_login_host = env!("APP_LOGIN_HOST", :string!, phx_host)
+
+  sandbox_mvp_enabled = env_boolean.("SANDBOX_MVP_ENABLED", false)
+  sandbox_mvp_app_port = env!("SANDBOX_MVP_APP_PORT", :integer, 4000)
+  sandbox_mvp_wait_timeout_ms = env!("SANDBOX_MVP_WAIT_TIMEOUT_MS", :integer, 600_000)
+  sandbox_mvp_poll_interval_ms = env!("SANDBOX_MVP_POLL_INTERVAL_MS", :integer, 1000)
+  sandbox_mvp_step_timeout_ms = env!("SANDBOX_MVP_STEP_TIMEOUT_MS", :integer, 180_000)
+
+  config :frontman_server,
+    auth_cookie_domain: auth_cookie_domain,
+    sandbox_preview_proxy: [
+      preview_base_host: preview_base_host,
+      preview_scheme: "https",
+      app_login_host: app_login_host,
+      app_login_scheme: "https",
+      app_login_port: phx_url_port,
+      upstream_host: "127.0.0.1"
+    ],
+    sandbox_mvp: [
+      enabled: sandbox_mvp_enabled,
+      image:
+        env!("SANDBOX_MVP_IMAGE", :string!, "mcr.microsoft.com/devcontainers/base:ubuntu-24.04"),
+      project_root: env!("SANDBOX_MVP_PROJECT_ROOT", :string!, "/workspace/frontman"),
+      repo_url:
+        env!("SANDBOX_MVP_REPO_URL", :string!, "https://github.com/frontman-ai/frontman.git"),
+      repo_ref: env!("SANDBOX_MVP_REPO_REF", :string!, "main"),
+      app_dir: env!("SANDBOX_MVP_APP_DIR", :string!, "apps/frontman_server"),
+      install_command: env!("SANDBOX_MVP_INSTALL_COMMAND", :string!, "mix deps.get"),
+      start_command: env!("SANDBOX_MVP_START_COMMAND", :string!, "mix phx.server"),
+      app_port: sandbox_mvp_app_port,
+      health_path: env!("SANDBOX_MVP_HEALTH_PATH", :string!, "/health/ready"),
+      wait_timeout_ms: sandbox_mvp_wait_timeout_ms,
+      poll_interval_ms: sandbox_mvp_poll_interval_ms,
+      step_timeout_ms: sandbox_mvp_step_timeout_ms
+    ]
+
+  config :frontman_server, FrontmanServerWeb.Endpoint,
+    url: [host: phx_host, port: phx_url_port, scheme: "https"],
+    https: [port: https_port]
+end
+
 # OpenTelemetry configuration
 # Arize export enabled if both ARIZE_API_KEY and ARIZE_SPACE_ID are set
 # Optional in all environments - when not set, tracing export is disabled
@@ -199,23 +258,17 @@ if config_env() == :prod do
       You can generate one by calling: mix phx.gen.secret
       """
 
-  host = System.get_env("PHX_HOST") || "example.com"
+  host = env!("PHX_HOST", :string!, "example.com")
   port = String.to_integer(System.get_env("PORT") || "4000")
 
-  preview_base_host = System.get_env("PREVIEW_BASE_HOST") || "preview.frontman.sh"
-  auth_cookie_domain = System.get_env("AUTH_COOKIE_DOMAIN") || ".frontman.sh"
-  app_login_host = System.get_env("APP_LOGIN_HOST") || host
-  sandbox_mvp_enabled = System.get_env("SANDBOX_MVP_ENABLED") in ["1", "true", "TRUE"]
-  sandbox_mvp_app_port = String.to_integer(System.get_env("SANDBOX_MVP_APP_PORT") || "4000")
-
-  sandbox_mvp_wait_timeout_ms =
-    String.to_integer(System.get_env("SANDBOX_MVP_WAIT_TIMEOUT_MS") || "600000")
-
-  sandbox_mvp_poll_interval_ms =
-    String.to_integer(System.get_env("SANDBOX_MVP_POLL_INTERVAL_MS") || "1000")
-
-  sandbox_mvp_step_timeout_ms =
-    String.to_integer(System.get_env("SANDBOX_MVP_STEP_TIMEOUT_MS") || "180000")
+  preview_base_host = env!("PREVIEW_BASE_HOST", :string!, "preview.frontman.sh")
+  auth_cookie_domain = env!("AUTH_COOKIE_DOMAIN", :string!, ".frontman.sh")
+  app_login_host = env!("APP_LOGIN_HOST", :string!, host)
+  sandbox_mvp_enabled = env_boolean.("SANDBOX_MVP_ENABLED", false)
+  sandbox_mvp_app_port = env!("SANDBOX_MVP_APP_PORT", :integer, 4000)
+  sandbox_mvp_wait_timeout_ms = env!("SANDBOX_MVP_WAIT_TIMEOUT_MS", :integer, 600_000)
+  sandbox_mvp_poll_interval_ms = env!("SANDBOX_MVP_POLL_INTERVAL_MS", :integer, 1000)
+  sandbox_mvp_step_timeout_ms = env!("SANDBOX_MVP_STEP_TIMEOUT_MS", :integer, 180_000)
 
   app_login_port =
     case System.get_env("APP_LOGIN_PORT") do
@@ -235,16 +288,17 @@ if config_env() == :prod do
     ],
     sandbox_mvp: [
       enabled: sandbox_mvp_enabled,
-      image: System.get_env("SANDBOX_MVP_IMAGE") || "ghcr.io/frontman-ai/frontman-dev:latest",
-      project_root: System.get_env("SANDBOX_MVP_PROJECT_ROOT") || "/workspace/frontman",
+      image:
+        env!("SANDBOX_MVP_IMAGE", :string!, "mcr.microsoft.com/devcontainers/base:ubuntu-24.04"),
+      project_root: env!("SANDBOX_MVP_PROJECT_ROOT", :string!, "/workspace/frontman"),
       repo_url:
-        System.get_env("SANDBOX_MVP_REPO_URL") || "https://github.com/frontman-ai/frontman.git",
-      repo_ref: System.get_env("SANDBOX_MVP_REPO_REF") || "main",
-      app_dir: System.get_env("SANDBOX_MVP_APP_DIR") || "apps/frontman_server",
-      install_command: System.get_env("SANDBOX_MVP_INSTALL_COMMAND") || "mix deps.get",
-      start_command: System.get_env("SANDBOX_MVP_START_COMMAND") || "mix phx.server",
+        env!("SANDBOX_MVP_REPO_URL", :string!, "https://github.com/frontman-ai/frontman.git"),
+      repo_ref: env!("SANDBOX_MVP_REPO_REF", :string!, "main"),
+      app_dir: env!("SANDBOX_MVP_APP_DIR", :string!, "apps/frontman_server"),
+      install_command: env!("SANDBOX_MVP_INSTALL_COMMAND", :string!, "mix deps.get"),
+      start_command: env!("SANDBOX_MVP_START_COMMAND", :string!, "mix phx.server"),
       app_port: sandbox_mvp_app_port,
-      health_path: System.get_env("SANDBOX_MVP_HEALTH_PATH") || "/health/ready",
+      health_path: env!("SANDBOX_MVP_HEALTH_PATH", :string!, "/health/ready"),
       wait_timeout_ms: sandbox_mvp_wait_timeout_ms,
       poll_interval_ms: sandbox_mvp_poll_interval_ms,
       step_timeout_ms: sandbox_mvp_step_timeout_ms

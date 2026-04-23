@@ -19,8 +19,6 @@ defmodule FrontmanServer.Accounts.UserIdentity do
 
   @providers ~w(github google)
 
-  @type t :: %__MODULE__{}
-
   @primary_key {:id, :binary_id, autogenerate: true}
   @foreign_key_type :binary_id
   schema "user_identities" do

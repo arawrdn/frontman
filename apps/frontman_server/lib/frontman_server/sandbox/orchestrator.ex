@@ -23,6 +23,9 @@ defmodule FrontmanServer.Sandbox.Orchestrator do
   @default_provision_timeout_ms 300_000
   @default_exec_call_timeout_ms 120_000
   @exec_call_timeout_buffer_ms 5_000
+  @sandbox_env_repo_url_key "FRONTMAN_SANDBOX_REPO_URL"
+  @sandbox_env_repo_ref_key "FRONTMAN_SANDBOX_REPO_REF"
+  @env_var_name_regex ~r/^[A-Za-z_][A-Za-z0-9_]*$/
 
   defstruct [
     :sandbox_id,
@@ -144,12 +147,17 @@ defmodule FrontmanServer.Sandbox.Orchestrator do
       heartbeat_interval_ms: heartbeat_interval_ms,
       provision_timeout_ms: provision_timeout_ms,
       task_supervisor: task_supervisor,
-      bootstrap_config: sandbox_bootstrap_config()
+      bootstrap_config: %{}
     }
 
     case EnvironmentSpec.from_map(sandbox.env_spec) do
       {:ok, environment_spec} ->
-        {:ok, %{state | environment_spec: environment_spec}, {:continue, :provision}}
+        {:ok,
+         %{
+           state
+           | environment_spec: environment_spec,
+             bootstrap_config: sandbox_bootstrap_config(environment_spec)
+         }, {:continue, :provision}}
 
       {:error, reason} ->
         Logger.error("[Orchestrator] invalid env_spec for #{sandbox_id}: #{inspect(reason)}")
@@ -470,15 +478,25 @@ defmodule FrontmanServer.Sandbox.Orchestrator do
 
   defp run_setup_sequence(provider, provider_ref, config) do
     step_timeout_ms = Map.fetch!(config, :step_timeout_ms)
-    project_root = Map.fetch!(config, :project_root)
-    app_dir = Map.fetch!(config, :app_dir)
-
-    app_root = Path.join(project_root, app_dir)
 
     with :ok <- wait_for_vm_running(provider, provider_ref, step_timeout_ms),
          :ok <- sync_repo(provider, provider_ref, config, step_timeout_ms),
-         :ok <- run_install_command(provider, provider_ref, app_root, config, step_timeout_ms),
-         :ok <- run_start_command(provider, provider_ref, app_root, config, step_timeout_ms) do
+         :ok <-
+           run_post_create_command(
+             provider,
+             provider_ref,
+             config.post_create_workdir,
+             config,
+             step_timeout_ms
+           ),
+         :ok <-
+           run_post_start_command(
+             provider,
+             provider_ref,
+             config.post_start_workdir,
+             config,
+             step_timeout_ms
+           ) do
       wait_for_health(provider, provider_ref, config, step_timeout_ms)
     end
   end
@@ -508,50 +526,75 @@ defmodule FrontmanServer.Sandbox.Orchestrator do
   end
 
   defp sync_repo(provider, provider_ref, config, timeout_ms) do
+    escaped_project_root = shell_escape(config.project_root)
+    escaped_git_dir = shell_escape(Path.join(config.project_root, ".git"))
+    escaped_repo_url = shell_escape(config.repo_url)
+    escaped_repo_ref = shell_escape(config.repo_ref)
+
     script =
       "if [ -d " <>
-        shell_escape(Path.join(config.project_root, ".git")) <>
+        escaped_git_dir <>
         " ]; then " <>
         "git -C " <>
-        shell_escape(config.project_root) <>
+        escaped_project_root <>
+        " remote set-url origin " <>
+        escaped_repo_url <>
+        " >/dev/null 2>&1 || git -C " <>
+        escaped_project_root <>
+        " remote add origin " <>
+        escaped_repo_url <>
+        " >/dev/null 2>&1; " <>
+        "git -C " <>
+        escaped_project_root <>
         " fetch --depth 1 origin " <>
-        shell_escape(config.repo_ref) <>
+        escaped_repo_ref <>
         " && git -C " <>
-        shell_escape(config.project_root) <>
+        escaped_project_root <>
         " checkout -f FETCH_HEAD; " <>
         "else " <>
         "rm -rf " <>
-        shell_escape(config.project_root) <>
-        " && git clone --depth 1 --branch " <>
-        shell_escape(config.repo_ref) <>
-        " " <>
-        shell_escape(config.repo_url) <>
-        " " <>
-        shell_escape(config.project_root) <>
-        "; fi"
+        escaped_project_root <>
+        " && git init " <>
+        escaped_project_root <>
+        " && git -C " <>
+        escaped_project_root <>
+        " remote add origin " <>
+        escaped_repo_url <>
+        " && git -C " <>
+        escaped_project_root <>
+        " fetch --depth 1 origin " <>
+        escaped_repo_ref <>
+        " && git -C " <>
+        escaped_project_root <>
+        " checkout -f FETCH_HEAD; " <>
+        "fi"
 
     run_setup_step(provider, provider_ref, :sync_repo, script, timeout_ms)
   end
 
-  defp run_install_command(provider, provider_ref, app_root, config, timeout_ms) do
-    script = "cd " <> shell_escape(app_root) <> " && " <> config.install_command
+  defp run_post_create_command(provider, provider_ref, workdir, config, timeout_ms) do
+    script =
+      ("cd " <> shell_escape(workdir) <> " && " <> config.post_create_command)
+      |> script_with_remote_env(config.remote_env)
+
     run_setup_step(provider, provider_ref, :install_dependencies, script, timeout_ms)
   end
 
-  defp run_start_command(provider, provider_ref, app_root, config, timeout_ms) do
+  defp run_post_start_command(provider, provider_ref, workdir, config, timeout_ms) do
     stop_existing_process_script =
       "if [ -f /tmp/frontman-app.pid ]; then " <>
         "kill $(cat /tmp/frontman-app.pid) >/dev/null 2>&1 || true; " <>
         "fi"
 
     script =
-      "cd " <>
-        shell_escape(app_root) <>
-        " && " <>
-        stop_existing_process_script <>
-        " && nohup " <>
-        config.start_command <>
-        " >/tmp/frontman-app.log 2>&1 & echo $! > /tmp/frontman-app.pid"
+      ("cd " <>
+         shell_escape(workdir) <>
+         " && " <>
+         stop_existing_process_script <>
+         " && nohup " <>
+         config.post_start_command <>
+         " >/tmp/frontman-app.log 2>&1 & echo $! > /tmp/frontman-app.pid")
+      |> script_with_remote_env(config.remote_env)
 
     run_setup_step(provider, provider_ref, :start_application, script, timeout_ms)
   end
@@ -591,21 +634,202 @@ defmodule FrontmanServer.Sandbox.Orchestrator do
     end
   end
 
-  defp sandbox_bootstrap_config do
+  defp sandbox_bootstrap_config(environment_spec) do
     config = Application.get_env(:frontman_server, :sandbox_mvp, [])
+    env = environment_spec_env(environment_spec)
+    devcontainer = environment_spec.devcontainer
+    project_root = Keyword.get(config, :project_root, "/workspace/frontman")
+    app_dir = Keyword.get(config, :app_dir, "apps/frontman_server")
+    app_root = Path.join(project_root, app_dir)
+
+    default_install_command =
+      normalize_command(
+        Keyword.get(config, :install_command, "mix deps.get"),
+        "mix deps.get"
+      )
+
+    default_start_command =
+      normalize_command(
+        Keyword.get(config, :start_command, "mix phx.server"),
+        "mix phx.server"
+      )
+
+    default_app_port = Keyword.get(config, :app_port, 4000)
+
+    default_repo_url =
+      Keyword.get(config, :repo_url, "https://github.com/frontman-ai/frontman.git")
+
+    default_repo_ref = Keyword.get(config, :repo_ref, "main")
+
+    {post_create_command, post_create_workdir} =
+      resolve_setup_command_and_workdir(
+        devcontainer,
+        "postCreateCommand",
+        :postCreateCommand,
+        default_install_command,
+        project_root,
+        app_root
+      )
+
+    {post_start_command, post_start_workdir} =
+      resolve_setup_command_and_workdir(
+        devcontainer,
+        "postStartCommand",
+        :postStartCommand,
+        default_start_command,
+        project_root,
+        app_root
+      )
 
     %{
       enabled: Keyword.get(config, :enabled, false),
-      repo_url: Keyword.get(config, :repo_url, "https://github.com/frontman-ai/frontman.git"),
-      repo_ref: Keyword.get(config, :repo_ref, "main"),
-      project_root: Keyword.get(config, :project_root, "/workspace/frontman"),
-      app_dir: Keyword.get(config, :app_dir, "apps/frontman_server"),
-      install_command: Keyword.get(config, :install_command, "mix deps.get"),
-      start_command: Keyword.get(config, :start_command, "mix phx.server"),
-      app_port: Keyword.get(config, :app_port, 4000),
+      repo_url: env_override(env, @sandbox_env_repo_url_key, default_repo_url),
+      repo_ref: env_override(env, @sandbox_env_repo_ref_key, default_repo_ref),
+      project_root: project_root,
+      app_dir: app_dir,
+      post_create_workdir: post_create_workdir,
+      post_create_command: post_create_command,
+      post_start_workdir: post_start_workdir,
+      post_start_command: post_start_command,
+      remote_env: devcontainer_remote_env(devcontainer),
+      app_port: devcontainer_app_port(devcontainer, default_app_port),
       health_path: Keyword.get(config, :health_path, "/health/ready"),
       step_timeout_ms: Keyword.get(config, :step_timeout_ms, 180_000)
     }
+  end
+
+  defp normalize_command(command, fallback) when is_binary(command) and is_binary(fallback) do
+    trimmed_command = String.trim(command)
+
+    case trimmed_command do
+      "" -> fallback
+      _ -> trimmed_command
+    end
+  end
+
+  defp normalize_command(_command, fallback), do: fallback
+
+  defp resolve_setup_command_and_workdir(
+         devcontainer,
+         key,
+         atom_key,
+         fallback,
+         project_root,
+         app_root
+       )
+       when is_map(devcontainer) and is_binary(key) and is_atom(atom_key) and is_binary(fallback) and
+              is_binary(project_root) and is_binary(app_root) do
+    command = Map.get_lazy(devcontainer, key, fn -> Map.get(devcontainer, atom_key) end)
+
+    case normalize_devcontainer_command(command) do
+      nil -> {fallback, app_root}
+      normalized_command -> {normalized_command, project_root}
+    end
+  end
+
+  defp resolve_setup_command_and_workdir(
+         _devcontainer,
+         _key,
+         _atom_key,
+         fallback,
+         _project_root,
+         app_root
+       ),
+       do: {fallback, app_root}
+
+  defp normalize_devcontainer_command(command) when is_binary(command) do
+    trimmed_command = String.trim(command)
+
+    case trimmed_command do
+      "" -> nil
+      _ -> trimmed_command
+    end
+  end
+
+  defp normalize_devcontainer_command(command) when is_list(command) do
+    case command do
+      [] ->
+        nil
+
+      _ ->
+        case Enum.all?(command, &is_binary/1) do
+          true ->
+            Enum.map_join(command, " ", &shell_escape/1)
+
+          false ->
+            nil
+        end
+    end
+  end
+
+  defp normalize_devcontainer_command(_command), do: nil
+
+  defp devcontainer_remote_env(devcontainer) when is_map(devcontainer) do
+    remote_env =
+      Map.get_lazy(devcontainer, "remoteEnv", fn ->
+        Map.get(devcontainer, :remoteEnv)
+      end)
+
+    case remote_env do
+      remote_env when is_map(remote_env) ->
+        Enum.reduce(remote_env, %{}, &put_valid_remote_env_entry/2)
+
+      _ ->
+        %{}
+    end
+  end
+
+  defp devcontainer_remote_env(_devcontainer), do: %{}
+
+  defp put_valid_remote_env_entry({key, value}, acc) do
+    case valid_remote_env_entry?(key, value) do
+      true -> Map.put(acc, key, value)
+      false -> acc
+    end
+  end
+
+  defp put_valid_remote_env_entry(_entry, acc), do: acc
+
+  defp valid_remote_env_entry?(key, value)
+       when is_binary(key) and is_binary(value) do
+    Regex.match?(@env_var_name_regex, key)
+  end
+
+  defp valid_remote_env_entry?(_key, _value), do: false
+
+  defp devcontainer_app_port(devcontainer, default_app_port)
+       when is_map(devcontainer) and is_integer(default_app_port) do
+    case devcontainer_forward_ports(devcontainer) do
+      [port | _] -> port
+      [] -> default_app_port
+    end
+  end
+
+  defp devcontainer_app_port(_devcontainer, default_app_port), do: default_app_port
+
+  defp environment_spec_env(%EnvironmentSpec{env: env}) when is_map(env), do: env
+  defp environment_spec_env(_), do: %{}
+
+  defp env_override(env, key, default) do
+    case Map.get(env, key) do
+      value when is_binary(value) and byte_size(value) > 0 -> value
+      _ -> default
+    end
+  end
+
+  defp script_with_remote_env(script, remote_env) when is_binary(script) and is_map(remote_env) do
+    case remote_env_exports(remote_env) do
+      "" -> script
+      exports -> exports <> " && " <> script
+    end
+  end
+
+  defp remote_env_exports(remote_env) when map_size(remote_env) == 0, do: ""
+
+  defp remote_env_exports(remote_env) do
+    remote_env
+    |> Enum.sort_by(fn {key, _value} -> key end)
+    |> Enum.map_join(" && ", fn {key, value} -> "export " <> key <> "=" <> shell_escape(value) end)
   end
 
   defp shell_escape(value) when is_binary(value) do
