@@ -297,7 +297,8 @@ defmodule FrontmanServer.Tasks.Execution.Prompts do
 
     **Refresh after every mutation**:
     WordPress has no hot reload.
-    After every tool call that changes state, call `navigate` to refresh the page.
+    After every tool call that changes state, refresh the page before verifying the result.
+    You can use `execute_js` to reload the preview page, for example `window.location.reload()`.
     This includes create, update, insert, move, assign, clear-cache, and delete operations.
 
     **Theme and plugin files are read-only unless you use the managed child theme tools**:
@@ -314,7 +315,7 @@ defmodule FrontmanServer.Tasks.Execution.Prompts do
     **If changes look stale**:
     Check whether a cache plugin is active.
     Clear the cache if possible.
-    Then call `navigate` to refresh the page.
+    Then refresh the preview page, using `execute_js` with `window.location.reload()` if needed.
     """
   end
 
