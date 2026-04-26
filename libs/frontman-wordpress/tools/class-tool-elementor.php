@@ -49,7 +49,15 @@ class Frontman_Tool_Elementor {
 				'additionalProperties' => false,
 				'properties'           => [
 					'post_id' => [ 'type' => 'integer' ],
-					'data'    => [ 'type' => 'array', 'description' => 'Full Elementor element tree.' ],
+					'data'    => [
+						'type'        => 'array',
+						'description' => 'Full Elementor element tree.',
+						'items'       => [
+							'type'                 => 'object',
+							'additionalProperties' => true,
+							'properties'           => new \stdClass(),
+						],
+					],
 				],
 				'required'             => [ 'post_id', 'data' ],
 			],
@@ -72,7 +80,12 @@ class Frontman_Tool_Elementor {
 				'properties'           => [
 					'post_id'    => [ 'type' => 'integer' ],
 					'element_id' => [ 'type' => 'string' ],
-					'settings'   => [ 'type' => 'object', 'description' => 'Elementor settings keys to merge.' ],
+					'settings'   => [
+						'type'                 => 'object',
+						'description'          => 'Elementor settings keys to merge.',
+						'additionalProperties' => true,
+						'properties'           => new \stdClass(),
+					],
 				],
 				'required'             => [ 'post_id', 'element_id', 'settings' ],
 			],
@@ -87,7 +100,11 @@ class Frontman_Tool_Elementor {
 				'additionalProperties' => false,
 				'properties'           => [
 					'post_id'    => [ 'type' => 'integer' ],
-					'element'    => [ 'type' => 'object' ],
+					'element'    => [
+						'type'                 => 'object',
+						'additionalProperties' => true,
+						'properties'           => new \stdClass(),
+					],
 					'parent_id'  => [ 'type' => 'string' ],
 					'position'   => [ 'type' => 'integer', 'default' => -1 ],
 				],
@@ -141,12 +158,34 @@ class Frontman_Tool_Elementor {
 			'Generates a valid Elementor element JSON object. Supports container, row, column, heading, text, image, button, and generic widget.',
 			[
 				'type'                 => 'object',
-				'additionalProperties' => true,
+				'additionalProperties' => false,
 				'properties'           => [
-					'type'        => [ 'type' => 'string', 'enum' => [ 'container', 'row', 'column', 'heading', 'text', 'image', 'button', 'widget' ] ],
-					'settings'    => [ 'type' => 'object' ],
-					'children'    => [ 'type' => 'array' ],
-					'widget_type' => [ 'type' => 'string' ],
+					'type'          => [
+						'type' => 'string',
+						'enum' => [ 'container', 'row', 'column', 'heading', 'text', 'image', 'button', 'widget' ],
+					],
+					'settings'      => [
+						'type'                 => 'object',
+						'additionalProperties' => true,
+						'properties'           => new \stdClass(),
+					],
+					'children'      => [
+						'type'  => 'array',
+						'items' => [
+							'type'                 => 'object',
+							'additionalProperties' => true,
+							'properties'           => new \stdClass(),
+						],
+					],
+					'widget_type'   => [ 'type' => 'string' ],
+					'is_inner'      => [ 'type' => 'boolean', 'default' => false ],
+					'width'         => [ 'type' => 'number', 'default' => 50 ],
+					'title'         => [ 'type' => 'string' ],
+					'tag'           => [ 'type' => 'string', 'default' => 'h2' ],
+					'content'       => [ 'type' => 'string' ],
+					'attachment_id' => [ 'type' => 'integer' ],
+					'button_text'   => [ 'type' => 'string', 'default' => 'Click' ],
+					'url'           => [ 'type' => 'string', 'default' => '#' ],
 				],
 				'required'             => [ 'type' ],
 			],
@@ -156,7 +195,7 @@ class Frontman_Tool_Elementor {
 		$tools->add( new Frontman_Tool_Definition(
 			'wp_elementor_list_widgets',
 			'Lists registered Elementor widgets with names, titles, icons, and categories.',
-			[ 'type' => 'object', 'additionalProperties' => false, 'properties' => [] ],
+			[ 'type' => 'object', 'additionalProperties' => false, 'properties' => new \stdClass() ],
 			[ $this, 'list_widgets' ]
 		) );
 

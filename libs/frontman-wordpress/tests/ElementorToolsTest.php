@@ -157,6 +157,9 @@ class Frontman_Elementor_Tools_Test_Runner {
 	public function run(): void {
 		$this->seed_page();
 		$this->test_tools_registered();
+		$this->test_tool_object_schemas_have_properties_objects();
+		$this->test_tool_array_schemas_have_items();
+		$this->test_generate_element_schema_declares_handler_inputs();
 		$this->test_structure_and_get_element();
 		$this->test_update_duplicate_and_flush();
 		$this->test_generate_element();
@@ -193,6 +196,116 @@ class Frontman_Elementor_Tools_Test_Runner {
 		$names = array_column( $this->tools->all_definitions(), 'name' );
 		$this->assert_true( in_array( 'wp_elementor_get_page_structure', $names, true ), 'Elementor structure tool is registered' );
 		$this->assert_true( in_array( 'wp_elementor_update_element', $names, true ), 'Elementor update tool is registered' );
+	}
+
+	private function test_tool_object_schemas_have_properties_objects(): void {
+		$definitions = json_decode( wp_json_encode( $this->tools->all_definitions() ) );
+
+		foreach ( $definitions as $definition ) {
+			$this->assert_object_schemas_have_properties_objects(
+				$definition->inputSchema,
+				$definition->name . '.inputSchema'
+			);
+		}
+	}
+
+	private function assert_object_schemas_have_properties_objects( $schema, string $path ): void {
+		if ( is_object( $schema ) ) {
+			if ( isset( $schema->type ) && 'object' === $schema->type ) {
+				$this->assert_true( isset( $schema->properties ), $path . ' object schema has properties' );
+				$this->assert_true(
+					$schema->properties instanceof stdClass,
+					$path . ' properties serialize as an object'
+				);
+
+				if ( isset( $schema->required ) && is_array( $schema->required ) ) {
+					foreach ( $schema->required as $field ) {
+						$this->assert_true(
+							property_exists( $schema->properties, $field ),
+							$path . ' required field exists in properties: ' . $field
+						);
+					}
+				}
+			}
+
+			foreach ( get_object_vars( $schema ) as $key => $value ) {
+				$this->assert_object_schemas_have_properties_objects( $value, $path . '.' . $key );
+			}
+		}
+
+		if ( is_array( $schema ) ) {
+			foreach ( $schema as $key => $value ) {
+				$this->assert_object_schemas_have_properties_objects( $value, $path . '[' . $key . ']' );
+			}
+		}
+	}
+
+	private function test_tool_array_schemas_have_items(): void {
+		$definitions = json_decode( wp_json_encode( $this->tools->all_definitions() ) );
+
+		foreach ( $definitions as $definition ) {
+			$this->assert_array_schemas_have_items(
+				$definition->inputSchema,
+				$definition->name . '.inputSchema'
+			);
+		}
+	}
+
+	private function assert_array_schemas_have_items( $schema, string $path ): void {
+		if ( is_object( $schema ) ) {
+			if ( isset( $schema->type ) && 'array' === $schema->type ) {
+				$this->assert_true( isset( $schema->items ), $path . ' array schema has items' );
+			}
+
+			foreach ( get_object_vars( $schema ) as $key => $value ) {
+				$this->assert_array_schemas_have_items( $value, $path . '.' . $key );
+			}
+		}
+
+		if ( is_array( $schema ) ) {
+			foreach ( $schema as $key => $value ) {
+				$this->assert_array_schemas_have_items( $value, $path . '[' . $key . ']' );
+			}
+		}
+	}
+
+	private function test_generate_element_schema_declares_handler_inputs(): void {
+		$definition = $this->decoded_tool_definition( 'wp_elementor_generate_element' );
+		$properties = $definition->inputSchema->properties;
+
+		$expected_fields = [
+			'type',
+			'settings',
+			'children',
+			'widget_type',
+			'is_inner',
+			'width',
+			'title',
+			'tag',
+			'content',
+			'attachment_id',
+			'button_text',
+			'url',
+		];
+
+		foreach ( $expected_fields as $field ) {
+			$this->assert_true(
+				property_exists( $properties, $field ),
+				'wp_elementor_generate_element schema declares ' . $field
+			);
+		}
+	}
+
+	private function decoded_tool_definition( string $name ) {
+		$definitions = json_decode( wp_json_encode( $this->tools->all_definitions() ) );
+
+		foreach ( $definitions as $definition ) {
+			if ( $name === $definition->name ) {
+				return $definition;
+			}
+		}
+
+		throw new RuntimeException( 'Tool definition not found: ' . $name );
 	}
 
 	private function test_structure_and_get_element(): void {
