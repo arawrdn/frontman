@@ -31,12 +31,20 @@ if ( ! function_exists( 'wp_json_encode' ) ) {
 
 if ( ! function_exists( 'wp_slash' ) ) {
 	function wp_slash( $value ) {
+		if ( is_array( $value ) ) {
+			return array_map( 'wp_slash', $value );
+		}
+
 		return is_string( $value ) ? addslashes( $value ) : $value;
 	}
 }
 
 if ( ! function_exists( 'wp_unslash' ) ) {
 	function wp_unslash( $value ) {
+		if ( is_array( $value ) ) {
+			return array_map( 'wp_unslash', $value );
+		}
+
 		return is_string( $value ) ? stripslashes( $value ) : $value;
 	}
 }
@@ -103,7 +111,7 @@ if ( ! function_exists( 'get_post_meta' ) ) {
 
 if ( ! function_exists( 'update_post_meta' ) ) {
 	function update_post_meta( int $post_id, string $key, $value ): bool {
-		$GLOBALS['frontman_test_meta'][ $post_id ][ $key ] = $value;
+		$GLOBALS['frontman_test_meta'][ $post_id ][ $key ] = wp_unslash( $value );
 		return true;
 	}
 }
@@ -160,8 +168,13 @@ class Frontman_Elementor_Tools_Test_Runner {
 		$this->test_tool_object_schemas_have_properties_objects();
 		$this->test_tool_array_schemas_have_items();
 		$this->test_generate_element_schema_declares_handler_inputs();
+		$this->test_rollback_tool_schemas();
 		$this->test_structure_and_get_element();
 		$this->test_update_duplicate_and_flush();
+		$this->test_remove_preserves_private_rollback();
+		$this->test_removed_rollback_refuses_same_id_conflict();
+		$this->test_save_page_data_preserves_page_rollback();
+		$this->test_rollback_preserves_backslash_newline_styles();
 		$this->test_generate_element();
 
 		fwrite( STDOUT, "OK ({$this->assertions} assertions)\n" );
@@ -185,6 +198,88 @@ class Frontman_Elementor_Tools_Test_Runner {
 								'settings'   => [ 'title' => 'Hello' ],
 								'elements'   => [],
 							],
+							[
+								'id'         => 'text3333',
+								'elType'     => 'widget',
+								'widgetType' => 'text-editor',
+								'settings'   => [ 'editor' => 'Remove me' ],
+								'elements'   => [],
+							],
+							[
+								'id'         => 'button4444',
+								'elType'     => 'widget',
+								'widgetType' => 'button',
+								'settings'   => [ 'text' => 'After' ],
+								'elements'   => [],
+							],
+						],
+					],
+				]
+			),
+		];
+
+		$GLOBALS['frontman_test_posts'][43] = new WP_Post( 43, 'Landing', 'landing' );
+		$GLOBALS['frontman_test_meta'][43]  = [
+			'_elementor_edit_mode' => 'builder',
+			'_elementor_data'      => wp_json_encode(
+				[
+					[
+						'id'       => 'root4300',
+						'elType'   => 'container',
+						'settings' => [ 'flex_direction' => 'column' ],
+						'elements' => [],
+					],
+				]
+			),
+		];
+
+		$GLOBALS['frontman_test_posts'][44] = new WP_Post( 44, 'Conflict', 'conflict' );
+		$GLOBALS['frontman_test_meta'][44]  = [
+			'_elementor_edit_mode' => 'builder',
+			'_elementor_data'      => wp_json_encode(
+				[
+					[
+						'id'       => 'root4400',
+						'elType'   => 'container',
+						'settings' => [],
+						'elements' => [
+							[
+								'id'         => 'text4401',
+								'elType'     => 'widget',
+								'widgetType' => 'text-editor',
+								'settings'   => [ 'editor' => 'Original' ],
+								'elements'   => [],
+							],
+						],
+					],
+					[
+						'id'       => 'root4410',
+						'elType'   => 'container',
+						'settings' => [],
+						'elements' => [],
+					],
+				]
+			),
+		];
+
+		$html_with_line_continuations = ".checkbox::after {\n  background: url(\"data:image/svg+xml;utf8," . "\\" . "\n" . "<svg></svg>" . "\\" . "\n" . "\");\n}";
+		$GLOBALS['frontman_test_posts'][45] = new WP_Post( 45, 'Backslash Styles', 'backslash-styles' );
+		$GLOBALS['frontman_test_meta'][45]  = [
+			'_elementor_edit_mode' => 'builder',
+			'_elementor_data'      => wp_json_encode(
+				[
+					[
+						'id'       => 'root4500',
+						'elType'   => 'container',
+						'settings' => [],
+						'elements' => [
+							[
+								'id'         => 'html4501',
+								'elType'     => 'widget',
+								'widgetType' => 'html',
+								'settings'   => [ 'html' => $html_with_line_continuations ],
+								'elements'   => [],
+							],
 						],
 					],
 				]
@@ -196,6 +291,8 @@ class Frontman_Elementor_Tools_Test_Runner {
 		$names = array_column( $this->tools->all_definitions(), 'name' );
 		$this->assert_true( in_array( 'wp_elementor_get_page_structure', $names, true ), 'Elementor structure tool is registered' );
 		$this->assert_true( in_array( 'wp_elementor_update_element', $names, true ), 'Elementor update tool is registered' );
+		$this->assert_true( in_array( 'wp_elementor_list_rollbacks', $names, true ), 'Elementor rollback list tool is registered' );
+		$this->assert_true( in_array( 'wp_elementor_restore_rollback', $names, true ), 'Elementor rollback restore tool is registered' );
 	}
 
 	private function test_tool_object_schemas_have_properties_objects(): void {
@@ -296,6 +393,18 @@ class Frontman_Elementor_Tools_Test_Runner {
 		}
 	}
 
+	private function test_rollback_tool_schemas(): void {
+		$save = $this->decoded_tool_definition( 'wp_elementor_save_page_data' );
+		$this->assert_true( property_exists( $save->inputSchema->properties, 'confirm' ), 'wp_elementor_save_page_data schema declares confirm' );
+		$this->assert_true( in_array( 'confirm', $save->inputSchema->required, true ), 'wp_elementor_save_page_data requires confirm' );
+
+		$restore = $this->decoded_tool_definition( 'wp_elementor_restore_rollback' );
+		$this->assert_true( property_exists( $restore->inputSchema->properties, 'rollback_id' ), 'wp_elementor_restore_rollback schema declares rollback_id' );
+		$this->assert_true( property_exists( $restore->inputSchema->properties, 'confirm' ), 'wp_elementor_restore_rollback schema declares confirm' );
+		$this->assert_same( [ 'post_id', 'rollback_id', 'confirm' ], $restore->inputSchema->required, 'wp_elementor_restore_rollback required fields are exact' );
+		$this->assert_same( false, $restore->inputSchema->additionalProperties, 'wp_elementor_restore_rollback disallows extra fields' );
+	}
+
 	private function decoded_tool_definition( string $name ) {
 		$definitions = json_decode( wp_json_encode( $this->tools->all_definitions() ) );
 
@@ -320,15 +429,117 @@ class Frontman_Elementor_Tools_Test_Runner {
 	private function test_update_duplicate_and_flush(): void {
 		$updated = $this->call_success( 'wp_elementor_update_element', [ 'post_id' => 42, 'element_id' => 'head2222', 'settings' => [ 'title' => 'Updated' ] ] );
 		$this->assert_true( true === $updated['success'], 'Update returns success' );
+		$this->assert_true( ! empty( $updated['rollback_id'] ), 'Update returns rollback ID' );
 
 		$data = Frontman_Elementor_Data::get_page_data( 42 );
+		$this->assert_same( 3, count( $data[0]['elements'] ), 'Update does not insert live rollback elements' );
 		$this->assert_same( 'Updated', $data[0]['elements'][0]['settings']['title'], 'Update merges settings into Elementor data' );
+
+		$rollbacks = $this->call_success( 'wp_elementor_list_rollbacks', [ 'post_id' => 42 ] );
+		$this->assert_same( 1, count( $rollbacks['rollbacks'] ), 'Update stores one private rollback' );
+		$this->assert_same( 'updated', $rollbacks['rollbacks'][0]['action'], 'Update rollback records update action' );
+		$this->assert_same( 'head2222', $rollbacks['rollbacks'][0]['element_id'], 'Update rollback records original element ID' );
+
+		$restored = $this->call_success( 'wp_elementor_restore_rollback', [ 'post_id' => 42, 'rollback_id' => $updated['rollback_id'], 'confirm' => true ] );
+		$this->assert_true( true === $restored['success'], 'Update rollback restore returns success' );
+		$this->assert_true( ! empty( $restored['undo_rollback_id'] ), 'Update rollback restore returns an undo rollback ID' );
+		$data = Frontman_Elementor_Data::get_page_data( 42 );
+		$this->assert_same( 'Hello', $data[0]['elements'][0]['settings']['title'], 'Update rollback restores previous settings' );
+		$this->assert_same( 3, count( $data[0]['elements'] ), 'Update rollback restore does not insert live rollback elements' );
 
 		$duplicated = $this->call_success( 'wp_elementor_duplicate_element', [ 'post_id' => 42, 'element_id' => 'head2222' ] );
 		$this->assert_true( ! empty( $duplicated['new_element_id'] ), 'Duplicate returns new element ID' );
+		$this->assert_true( ! empty( $duplicated['rollback_id'] ), 'Duplicate returns rollback ID' );
 
 		$flushed = $this->call_success( 'wp_elementor_flush_css', [ 'post_id' => 42 ] );
 		$this->assert_same( 'post-42', $flushed['scope'], 'Flush reports post scope' );
+	}
+
+	private function test_remove_preserves_private_rollback(): void {
+		$removed = $this->call_success( 'wp_elementor_remove_element', [ 'post_id' => 42, 'element_id' => 'text3333', 'confirm' => true ] );
+		$this->assert_true( true === $removed['success'], 'Remove returns success' );
+		$this->assert_true( ! empty( $removed['rollback_id'] ), 'Remove returns rollback ID' );
+
+		$data = Frontman_Elementor_Data::get_page_data( 42 );
+		$this->assert_same( null, Frontman_Elementor_Data::get_element( $data, 'text3333' ), 'Removed element is no longer active' );
+		$this->assert_same( 3, count( $data[0]['elements'] ), 'Remove does not insert live rollback elements' );
+
+		$rollbacks = $this->call_success( 'wp_elementor_list_rollbacks', [ 'post_id' => 42 ] );
+		$this->assert_same( 'removed', $rollbacks['rollbacks'][0]['action'], 'Remove rollback records remove action' );
+		$this->assert_same( 'text3333', $rollbacks['rollbacks'][0]['element_id'], 'Remove rollback records original element ID' );
+
+		$restored = $this->call_success( 'wp_elementor_restore_rollback', [ 'post_id' => 42, 'rollback_id' => $removed['rollback_id'], 'confirm' => true ] );
+		$this->assert_true( true === $restored['success'], 'Remove rollback restore returns success' );
+		$this->assert_true( ! empty( $restored['undo_rollback_id'] ), 'Remove rollback restore returns an undo rollback ID' );
+		$data = Frontman_Elementor_Data::get_page_data( 42 );
+		$element = Frontman_Elementor_Data::get_element( $data, 'text3333' );
+		$this->assert_same( 'Remove me', $element['settings']['editor'], 'Remove rollback restores previous element settings' );
+		$this->assert_same( 4, count( $data[0]['elements'] ), 'Remove rollback restores the active element without marker nodes' );
+		$this->assert_same( 'text3333', $data[0]['elements'][2]['id'], 'Remove rollback restores element at its original position' );
+		$this->assert_same( 'button4444', $data[0]['elements'][3]['id'], 'Remove rollback preserves following sibling position' );
+	}
+
+	private function test_removed_rollback_refuses_same_id_conflict(): void {
+		$removed = $this->call_success( 'wp_elementor_remove_element', [ 'post_id' => 44, 'element_id' => 'text4401', 'confirm' => true ] );
+		$this->assert_true( ! empty( $removed['rollback_id'] ), 'Conflict fixture removal returns rollback ID' );
+
+		$this->call_success(
+			'wp_elementor_add_element',
+			[
+				'post_id'   => 44,
+				'parent_id' => 'root4410',
+				'element'   => [
+					'id'         => 'text4401',
+					'elType'     => 'widget',
+					'widgetType' => 'text-editor',
+					'settings'   => [ 'editor' => 'Conflicting' ],
+					'elements'   => [],
+				],
+			]
+		);
+
+		$error = $this->call_error( 'wp_elementor_restore_rollback', [ 'post_id' => 44, 'rollback_id' => $removed['rollback_id'], 'confirm' => true ] );
+		$this->assert_true( false !== strpos( $error, 'same ID already exists' ), 'Removed rollback refuses same-ID conflicts' );
+	}
+
+	private function test_save_page_data_preserves_page_rollback(): void {
+		$new_data = [
+			[
+				'id'       => 'newroot43',
+				'elType'   => 'container',
+				'settings' => [ 'flex_direction' => 'row' ],
+				'elements' => [],
+			],
+		];
+
+		$saved = $this->call_success( 'wp_elementor_save_page_data', [ 'post_id' => 43, 'data' => $new_data, 'confirm' => true ] );
+		$this->assert_true( true === $saved['success'], 'Save page data returns success' );
+		$this->assert_true( ! empty( $saved['rollback_id'] ), 'Save page data returns rollback ID' );
+
+		$data = Frontman_Elementor_Data::get_page_data( 43 );
+		$this->assert_same( 'newroot43', $data[0]['id'], 'Save page data replaces active Elementor data' );
+
+		$rollbacks = $this->call_success( 'wp_elementor_list_rollbacks', [ 'post_id' => 43 ] );
+		$this->assert_same( 'saved_page_data', $rollbacks['rollbacks'][0]['action'], 'Save page data rollback records page save action' );
+		$this->assert_same( 1, $rollbacks['rollbacks'][0]['sections'], 'Save page data rollback records previous section count' );
+
+		$restored = $this->call_success( 'wp_elementor_restore_rollback', [ 'post_id' => 43, 'rollback_id' => $saved['rollback_id'], 'confirm' => true ] );
+		$this->assert_true( true === $restored['success'], 'Save page data rollback restore returns success' );
+		$this->assert_true( ! empty( $restored['undo_rollback_id'] ), 'Save page data rollback restore returns an undo rollback ID' );
+		$data = Frontman_Elementor_Data::get_page_data( 43 );
+		$this->assert_same( 'root4300', $data[0]['id'], 'Save page data rollback restores previous page tree' );
+	}
+
+	private function test_rollback_preserves_backslash_newline_styles(): void {
+		$original = Frontman_Elementor_Data::get_element( Frontman_Elementor_Data::get_page_data( 45 ), 'html4501' )['settings']['html'];
+		$updated = $this->call_success( 'wp_elementor_update_element', [ 'post_id' => 45, 'element_id' => 'html4501', 'settings' => [ 'html' => '<div>changed</div>' ] ] );
+		$this->assert_true( ! empty( $updated['rollback_id'] ), 'Backslash style update returns rollback ID' );
+
+		$restored = $this->call_success( 'wp_elementor_restore_rollback', [ 'post_id' => 45, 'rollback_id' => $updated['rollback_id'], 'confirm' => true ] );
+		$this->assert_true( true === $restored['success'], 'Backslash style rollback restore succeeds' );
+
+		$element = Frontman_Elementor_Data::get_element( Frontman_Elementor_Data::get_page_data( 45 ), 'html4501' );
+		$this->assert_same( $original, $element['settings']['html'], 'Rollback preserves backslash-newline CSS data URI content' );
 	}
 
 	private function test_generate_element(): void {
@@ -345,6 +556,15 @@ class Frontman_Elementor_Tools_Test_Runner {
 		}
 
 		return json_decode( $result['content'][0]['text'], true );
+	}
+
+	private function call_error( string $name, array $input ): string {
+		$result = $this->tools->call( $name, $input );
+		if ( empty( $result['isError'] ) ) {
+			throw new RuntimeException( 'Tool returned success when error was expected: ' . $result['content'][0]['text'] );
+		}
+
+		return $result['content'][0]['text'];
 	}
 
 	private function assert_same( $expected, $actual, string $message ): void {

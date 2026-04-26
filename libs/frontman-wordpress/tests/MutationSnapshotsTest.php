@@ -67,6 +67,26 @@ if ( ! function_exists( 'wp_json_encode' ) ) {
 	}
 }
 
+if ( ! function_exists( 'wp_slash' ) ) {
+	function wp_slash( $value ) {
+		if ( is_array( $value ) ) {
+			return array_map( 'wp_slash', $value );
+		}
+
+		return is_string( $value ) ? addslashes( $value ) : $value;
+	}
+}
+
+if ( ! function_exists( 'wp_unslash' ) ) {
+	function wp_unslash( $value ) {
+		if ( is_array( $value ) ) {
+			return array_map( 'wp_unslash', $value );
+		}
+
+		return is_string( $value ) ? stripslashes( $value ) : $value;
+	}
+}
+
 if ( ! function_exists( '__' ) ) {
 	function __( string $value ): string {
 		return $value;
@@ -93,7 +113,8 @@ if ( ! function_exists( 'get_post' ) ) {
 }
 
 if ( ! function_exists( 'wp_insert_post' ) ) {
-	function wp_insert_post( array $post_data ) {
+	function wp_insert_post( array $post_data, bool $wp_error = false ) {
+		$post_data = wp_unslash( $post_data );
 		$id = $post_data['ID'] ?? ( count( $GLOBALS['frontman_test_posts'] ) + 1 );
 		$post = $GLOBALS['frontman_test_posts'][ $id ] ?? new WP_Post();
 		$post->ID = $id;
@@ -140,7 +161,8 @@ if ( ! function_exists( 'wp_insert_post' ) ) {
 }
 
 if ( ! function_exists( 'wp_update_post' ) ) {
-	function wp_update_post( array $post_data ) {
+	function wp_update_post( array $post_data, bool $wp_error = false ) {
+		$post_data = wp_unslash( $post_data );
 		$id = $post_data['ID'];
 		$post = $GLOBALS['frontman_test_posts'][ $id ];
 		foreach ( $post_data as $key => $value ) {
@@ -302,6 +324,7 @@ if ( ! function_exists( 'wp_get_nav_menu_items' ) ) {
 
 if ( ! function_exists( 'wp_update_nav_menu_item' ) ) {
 	function wp_update_nav_menu_item( int $term_id, int $menu_item_id, array $menu_data ) {
+		$menu_data = wp_unslash( $menu_data );
 		if ( 0 === $menu_item_id ) {
 			$menu_item_id = count( $GLOBALS['frontman_test_posts'] ) + 1;
 			$item = new WP_Post();
@@ -440,6 +463,19 @@ class Frontman_Mutation_Snapshots_Test_Runner {
 		$post->post_name = 'before';
 		$GLOBALS['frontman_test_posts'][10] = $post;
 
+		$slash_post = new WP_Post();
+		$slash_post->ID = 11;
+		$slash_post->post_title = 'Slash Before';
+		$slash_post->post_content = '<p>Slash Before</p>';
+		$slash_post->post_excerpt = '';
+		$slash_post->post_status = 'draft';
+		$slash_post->post_type = 'post';
+		$slash_post->post_date = '2026-03-24 09:00:00';
+		$slash_post->post_modified = '2026-03-24 09:00:00';
+		$slash_post->post_author = 1;
+		$slash_post->post_name = 'slash-before';
+		$GLOBALS['frontman_test_posts'][11] = $slash_post;
+
 		$GLOBALS['frontman_test_menu_terms'][7] = (object) [
 			'term_id' => 7,
 			'name' => 'Primary Menu',
@@ -502,16 +538,22 @@ class Frontman_Mutation_Snapshots_Test_Runner {
 		$this->assert_same( 'Before', $updated['before']['title'], 'wp_update_post returns previous post snapshot' );
 		$this->assert_same( 'After', $updated['after']['title'], 'wp_update_post returns updated post snapshot' );
 
+		$slash_sensitive_content = '<style>.icon:before{content:"\\A";background:url("C:\\tmp\\icon.svg");}</style>';
+		$updated_content = $tool->update_post( [ 'id' => 11, 'content' => $slash_sensitive_content ] );
+		$this->assert_same( $slash_sensitive_content, $updated_content['after']['content'], 'wp_update_post preserves backslashes through WordPress unslashing' );
+
 		$deleted = $tool->delete_post( [ 'id' => 10, 'force' => false, 'confirm' => true ] );
 		$this->assert_same( 'After', $deleted['before']['title'], 'wp_delete_post returns previous post snapshot' );
 
+		$created_content = '<script>const path="C:\\Users\\itay"; const re=/\\d+/;</script>';
 		$created = $tool->create_post( [
 			'title'   => 'Created',
-			'content' => '<p>Created</p>',
+			'content' => $created_content,
 			'status'  => 'publish',
 			'post_type' => 'post',
 		] );
 		$this->assert_same( 'Created', $created['after']['title'], 'wp_create_post returns created post snapshot as after' );
+		$this->assert_same( $created_content, $created['after']['content'], 'wp_create_post preserves backslashes through WordPress unslashing' );
 
 		$this->assert_error_contains(
 			static function() use ( $tool ) {
@@ -536,6 +578,14 @@ class Frontman_Mutation_Snapshots_Test_Runner {
 		$this->assert_same( '<p>Updated Block</p>', $updated['after']['block']['markup'], 'wp_update_block returns updated block snapshot' );
 		$this->assert_true( false !== strpos( $updated['after']['post_content'], '<div>Loose HTML</div>' ), 'wp_update_block preserves freeform HTML blocks' );
 
+		$slash_sensitive_block = '<p>Path C:\\tmp\\file and regex /\\d+/</p>';
+		$updated_backslash_block = $tool->update_block( [
+			'post_id' => 10,
+			'index' => 1,
+			'block_markup' => $slash_sensitive_block,
+		] );
+		$this->assert_true( false !== strpos( $updated_backslash_block['after']['post_content'], $slash_sensitive_block ), 'wp_update_block preserves backslashes through WordPress unslashing' );
+
 		$inserted = $tool->insert_block( [
 			'post_id' => 10,
 			'index' => 1,
@@ -544,6 +594,7 @@ class Frontman_Mutation_Snapshots_Test_Runner {
 		$this->assert_same( 2, $inserted['before']['blocks']['block_count'], 'wp_insert_block returns prior block list summary' );
 		$this->assert_same( 3, $inserted['after']['blocks']['block_count'], 'wp_insert_block returns updated block list summary' );
 		$this->assert_true( false !== strpos( $inserted['after']['post_content'], '<div>Loose HTML</div>' ), 'wp_insert_block preserves freeform HTML blocks' );
+		$this->assert_true( false !== strpos( $inserted['after']['post_content'], $slash_sensitive_block ), 'wp_insert_block preserves existing backslash-sensitive block markup' );
 	}
 
 	private function test_block_move_and_delete_snapshots(): void {
@@ -552,6 +603,7 @@ class Frontman_Mutation_Snapshots_Test_Runner {
 		$moved = $tool->move_block( [ 'post_id' => 10, 'from_index' => 0, 'to_index' => 2 ] );
 		$this->assert_same( 3, $moved['before']['blocks']['block_count'], 'wp_move_block captures prior block list' );
 		$this->assert_same( 3, $moved['after']['blocks']['block_count'], 'wp_move_block captures updated block list' );
+		$this->assert_true( false !== strpos( $moved['after']['post_content'], 'C:\\tmp\\file' ), 'wp_move_block preserves existing backslash-sensitive block markup' );
 
 		$this->assert_error_contains(
 			static function() use ( $tool ) {
@@ -565,6 +617,7 @@ class Frontman_Mutation_Snapshots_Test_Runner {
 		$this->assert_same( 3, $deleted['before']['blocks']['block_count'], 'wp_delete_block captures prior block list' );
 		$this->assert_same( 2, $deleted['after']['blocks']['block_count'], 'wp_delete_block captures updated block list' );
 		$this->assert_true( false !== strpos( $deleted['after']['post_content'], '<div>Loose HTML</div>' ), 'wp_delete_block preserves freeform HTML blocks' );
+		$this->assert_true( false !== strpos( $deleted['after']['post_content'], 'C:\\tmp\\file' ), 'wp_delete_block preserves existing backslash-sensitive block markup' );
 	}
 
 	private function test_menu_management_snapshots(): void {
@@ -598,6 +651,10 @@ class Frontman_Mutation_Snapshots_Test_Runner {
 		$this->assert_same( 'Old Label', $menu['before']['title'], 'wp_update_menu_item returns previous menu item snapshot' );
 		$this->assert_same( 'New Label', $menu['after']['title'], 'wp_update_menu_item returns updated menu item snapshot' );
 
+		$slash_sensitive_title = "Bob's C:\\Tools";
+		$menu = $menu_tool->update_menu_item( [ 'menu_item_id' => 25, 'title' => $slash_sensitive_title ] );
+		$this->assert_same( $slash_sensitive_title, $menu['after']['title'], 'wp_update_menu_item preserves backslashes through WordPress unslashing' );
+
 		$option_tool = new Frontman_Tool_Options();
 		$option = $option_tool->update_option( [ 'name' => 'blogname', 'value' => 'New Blog Name' ] );
 		$this->assert_same( 'Old Blog Name', $option['before'], 'wp_update_option returns previous option value' );
@@ -628,7 +685,7 @@ class Frontman_Mutation_Snapshots_Test_Runner {
 		);
 
 		$deleted_item = $menu_tool->delete_menu_item( [ 'menu_item_id' => 25, 'confirm' => true ] );
-		$this->assert_same( 'New Label', $deleted_item['before']['item']['title'], 'wp_delete_menu_item returns previous item snapshot' );
+		$this->assert_same( $slash_sensitive_title, $deleted_item['before']['item']['title'], 'wp_delete_menu_item returns previous item snapshot' );
 		$this->assert_same( 1, count( $deleted_item['after']['items'] ), 'wp_delete_menu_item returns updated menu snapshot' );
 	}
 
@@ -636,13 +693,13 @@ class Frontman_Mutation_Snapshots_Test_Runner {
 		$menu_tool = new Frontman_Tool_Menus();
 		$created = $menu_tool->create_menu_item( [
 			'menu_id' => 7,
-			'title' => 'Awesome',
+			'title' => "Awesome C:\\Tools",
 			'url' => 'https://www.category-creation.com/',
 		] );
 
 		$this->assert_same( 1, count( $created['before']['items'] ), 'wp_create_menu_item returns menu state before insertion' );
 		$this->assert_same( 2, count( $created['after']['items'] ), 'wp_create_menu_item returns menu state after insertion' );
-		$this->assert_same( 'Awesome', $created['item']['title'], 'wp_create_menu_item returns the created menu item' );
+		$this->assert_same( "Awesome C:\\Tools", $created['item']['title'], 'wp_create_menu_item returns the created menu item and preserves backslashes' );
 	}
 
 	private function test_widget_management_snapshots(): void {
@@ -731,6 +788,14 @@ class Frontman_Mutation_Snapshots_Test_Runner {
 		] );
 		$this->assert_same( 'theme', $updated['before']['source'], 'wp_update_template captures previous template source' );
 		$this->assert_same( 'custom', $updated['after']['source'], 'wp_update_template captures updated template source' );
+
+		$slash_sensitive_template = '<!-- wp:html --><style>.x:before{content:"\\A";background:url("C:\\theme\\icon.svg");}</style><!-- /wp:html -->';
+		$updated_with_backslashes = $tool->update_template( [
+			'slug' => 'home',
+			'type' => 'wp_template',
+			'content' => $slash_sensitive_template,
+		] );
+		$this->assert_same( $slash_sensitive_template, $updated_with_backslashes['after']['content'], 'wp_update_template preserves backslashes through WordPress unslashing' );
 	}
 
 	private function test_cache_tools(): void {

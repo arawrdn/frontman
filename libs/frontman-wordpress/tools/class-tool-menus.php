@@ -423,7 +423,7 @@ class Frontman_Tool_Menus {
 			$menu_data['menu-item-position'] = absint( $input['position'] );
 		}
 
-		$result = wp_update_nav_menu_item( $menu_id, 0, $menu_data );
+		$result = wp_update_nav_menu_item( $menu_id, 0, wp_slash( $menu_data ) );
 
 		if ( is_wp_error( $result ) ) {
 			throw new Frontman_Tool_Error( $result->get_error_message() );
@@ -474,7 +474,7 @@ class Frontman_Tool_Menus {
 
 		$before = $this->serialize_menu_item( wp_setup_nav_menu_item( $item ) );
 
-		$result = wp_update_nav_menu_item( $menus[0]->term_id, $menu_item_id, $menu_data );
+		$result = wp_update_nav_menu_item( $menus[0]->term_id, $menu_item_id, wp_slash( $menu_data ) );
 
 		if ( is_wp_error( $result ) ) {
 			throw new Frontman_Tool_Error( $result->get_error_message() );

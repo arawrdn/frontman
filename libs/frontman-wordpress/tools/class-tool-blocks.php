@@ -287,7 +287,7 @@ class Frontman_Tool_Blocks {
 		$all_blocks[ $entry['raw_index'] ] = $new_block[0];
 		$content = $this->serialize_blocks( $all_blocks );
 
-		$result = wp_update_post( [ 'ID' => $post_id, 'post_content' => $content ], true );
+		$result = wp_update_post( wp_slash( [ 'ID' => $post_id, 'post_content' => $content ] ), true );
 
 		if ( is_wp_error( $result ) ) {
 			throw new Frontman_Tool_Error( $result->get_error_message() );
@@ -344,7 +344,7 @@ class Frontman_Tool_Blocks {
 		array_splice( $all_blocks, $raw_index, 0, [ $new_block[0] ] );
 		$content = $this->serialize_blocks( $all_blocks );
 
-		$result = wp_update_post( [ 'ID' => $post_id, 'post_content' => $content ], true );
+		$result = wp_update_post( wp_slash( [ 'ID' => $post_id, 'post_content' => $content ] ), true );
 
 		if ( is_wp_error( $result ) ) {
 			throw new Frontman_Tool_Error( $result->get_error_message() );
@@ -397,7 +397,7 @@ class Frontman_Tool_Blocks {
 		array_splice( $all_blocks, $to_raw_index, 0, [ $block ] );
 		$content = $this->serialize_blocks( $all_blocks );
 
-		$result = wp_update_post( [ 'ID' => $post_id, 'post_content' => $content ], true );
+		$result = wp_update_post( wp_slash( [ 'ID' => $post_id, 'post_content' => $content ] ), true );
 		if ( is_wp_error( $result ) ) {
 			throw new Frontman_Tool_Error( $result->get_error_message() );
 		}
@@ -445,7 +445,7 @@ class Frontman_Tool_Blocks {
 		array_splice( $all_blocks, $visible[ $index ]['raw_index'], 1 );
 		$content = $this->serialize_blocks( $all_blocks );
 
-		$result = wp_update_post( [ 'ID' => $post_id, 'post_content' => $content ], true );
+		$result = wp_update_post( wp_slash( [ 'ID' => $post_id, 'post_content' => $content ] ), true );
 		if ( is_wp_error( $result ) ) {
 			throw new Frontman_Tool_Error( $result->get_error_message() );
 		}

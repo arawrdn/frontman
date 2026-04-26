@@ -43,7 +43,7 @@ class Frontman_Tool_Elementor {
 
 		$tools->add( new Frontman_Tool_Definition(
 			'wp_elementor_save_page_data',
-			'Replaces the full Elementor element tree for a post. Use granular element tools when possible; call wp_elementor_flush_css after visual changes.',
+			'Replaces the full Elementor element tree for a post after saving the previous tree as a private rollback snapshot. Ask the user for confirmation first and only call with confirm=true after approval. Use granular element tools when possible; call wp_elementor_flush_css after visual changes.',
 			[
 				'type'                 => 'object',
 				'additionalProperties' => false,
@@ -58,8 +58,9 @@ class Frontman_Tool_Elementor {
 							'properties'           => new \stdClass(),
 						],
 					],
+					'confirm' => [ 'type' => 'boolean', 'description' => 'Must be true only after the user explicitly confirms replacing the full Elementor page data.' ],
 				],
-				'required'             => [ 'post_id', 'data' ],
+				'required'             => [ 'post_id', 'data', 'confirm' ],
 			],
 			[ $this, 'save_page_data' ]
 		) );
@@ -73,7 +74,7 @@ class Frontman_Tool_Elementor {
 
 		$tools->add( new Frontman_Tool_Definition(
 			'wp_elementor_update_element',
-			'Updates one Elementor element settings object by merging provided settings into the existing settings. Never send the whole page for a small widget/style edit.',
+			'Updates one Elementor element settings object by merging provided settings into the existing settings after saving the previous element as a private rollback snapshot. Never send the whole page for a small widget/style edit.',
 			[
 				'type'                 => 'object',
 				'additionalProperties' => false,
@@ -115,7 +116,7 @@ class Frontman_Tool_Elementor {
 
 		$tools->add( new Frontman_Tool_Definition(
 			'wp_elementor_remove_element',
-			'Removes an Elementor element and its children. Ask the user for confirmation first and only call with confirm=true after approval.',
+			'Removes an Elementor element and its children after saving the previous element as a private rollback snapshot. Ask the user for confirmation first and only call with confirm=true after approval.',
 			[
 				'type'                 => 'object',
 				'additionalProperties' => false,
@@ -127,6 +128,29 @@ class Frontman_Tool_Elementor {
 				'required'             => [ 'post_id', 'element_id', 'confirm' ],
 			],
 			[ $this, 'remove_element' ]
+		) );
+
+		$tools->add( new Frontman_Tool_Definition(
+			'wp_elementor_list_rollbacks',
+			'Lists private Elementor rollback snapshots for a post. Use this to find rollback_id values before restoring.',
+			$this->post_id_schema(),
+			[ $this, 'list_rollbacks' ]
+		) );
+
+		$tools->add( new Frontman_Tool_Definition(
+			'wp_elementor_restore_rollback',
+			'Restores a private Elementor rollback snapshot by rollback_id. Ask the user for confirmation first and only call with confirm=true after approval.',
+			[
+				'type'                 => 'object',
+				'additionalProperties' => false,
+				'properties'           => [
+					'post_id'     => [ 'type' => 'integer' ],
+					'rollback_id' => [ 'type' => 'string' ],
+					'confirm'     => [ 'type' => 'boolean' ],
+				],
+				'required'             => [ 'post_id', 'rollback_id', 'confirm' ],
+			],
+			[ $this, 'restore_rollback' ]
 		) );
 
 		$tools->add( new Frontman_Tool_Definition(
@@ -270,14 +294,24 @@ class Frontman_Tool_Elementor {
 	}
 
 	public function save_page_data( array $input ): array {
+		if ( true !== ( $input['confirm'] ?? false ) ) {
+			throw new Frontman_Tool_Error( 'Full Elementor page replacement requires confirm=true after user approval.' );
+		}
+
 		$post_id = $this->require_post_id( $input );
 		$data    = $input['data'] ?? null;
 		if ( ! is_array( $data ) ) {
 			throw new Frontman_Tool_Error( 'data must be an Elementor element tree array.' );
 		}
 
-		Frontman_Elementor_Data::save_page_data( $post_id, $data );
-		return [ 'success' => true, 'post_id' => $post_id, 'sections' => count( $data ) ];
+		$current  = Frontman_Elementor_Data::get_page_data( $post_id );
+		$rollback = is_array( $current ) ? Frontman_Elementor_Data::make_page_rollback( 'saved_page_data', $current ) : null;
+		if ( null !== $rollback ) {
+			Frontman_Elementor_Data::save_rollback( $post_id, $rollback );
+		}
+		$this->save_elementor_data( $post_id, $data );
+
+		return [ 'success' => true, 'post_id' => $post_id, 'sections' => count( $data ), 'rollback_id' => $rollback['rollback_id'] ?? null ];
 	}
 
 	public function get_element( array $input ): array {
@@ -299,13 +333,18 @@ class Frontman_Tool_Elementor {
 			throw new Frontman_Tool_Error( 'settings must be an object.' );
 		}
 
-		$data = $this->require_page_data( $post_id );
+		$data     = $this->require_page_data( $post_id );
+		$rollback = Frontman_Elementor_Data::make_element_rollback( 'updated', $data, $element_id );
+		if ( null === $rollback ) {
+			throw new Frontman_Tool_Error( 'Element not found: ' . $element_id );
+		}
 		if ( ! Frontman_Elementor_Data::update_element_settings( $data, $element_id, $settings ) ) {
 			throw new Frontman_Tool_Error( 'Element not found: ' . $element_id );
 		}
 
-		Frontman_Elementor_Data::save_page_data( $post_id, $data );
-		return [ 'success' => true, 'post_id' => $post_id, 'element_id' => $element_id ];
+		Frontman_Elementor_Data::save_rollback( $post_id, $rollback );
+		$this->save_elementor_data( $post_id, $data );
+		return [ 'success' => true, 'post_id' => $post_id, 'element_id' => $element_id, 'rollback_id' => $rollback['rollback_id'] ];
 	}
 
 	public function add_element( array $input ): array {
@@ -319,14 +358,16 @@ class Frontman_Tool_Elementor {
 		}
 
 		$data      = Frontman_Elementor_Data::get_page_data( $post_id ) ?? [];
+		$rollback  = Frontman_Elementor_Data::make_page_rollback( 'added_element', $data );
 		$parent_id = isset( $input['parent_id'] ) ? sanitize_text_field( $input['parent_id'] ) : null;
 		$position  = (int) ( $input['position'] ?? -1 );
 		if ( ! Frontman_Elementor_Data::insert_element( $data, $element, $parent_id, $position ) ) {
 			throw new Frontman_Tool_Error( 'Parent element not found: ' . $parent_id );
 		}
 
-		Frontman_Elementor_Data::save_page_data( $post_id, $data );
-		return [ 'success' => true, 'post_id' => $post_id, 'element_id' => $element['id'] ?? '' ];
+		Frontman_Elementor_Data::save_rollback( $post_id, $rollback );
+		$this->save_elementor_data( $post_id, $data );
+		return [ 'success' => true, 'post_id' => $post_id, 'element_id' => $element['id'] ?? '', 'rollback_id' => $rollback['rollback_id'] ];
 	}
 
 	public function remove_element( array $input ): array {
@@ -337,25 +378,55 @@ class Frontman_Tool_Elementor {
 		$post_id    = $this->require_post_id( $input );
 		$element_id = $this->require_element_id( $input );
 		$data       = $this->require_page_data( $post_id );
+		$rollback   = Frontman_Elementor_Data::make_element_rollback( 'removed', $data, $element_id );
+		if ( null === $rollback ) {
+			throw new Frontman_Tool_Error( 'Element not found: ' . $element_id );
+		}
 		if ( ! Frontman_Elementor_Data::remove_element( $data, $element_id ) ) {
 			throw new Frontman_Tool_Error( 'Element not found: ' . $element_id );
 		}
 
-		Frontman_Elementor_Data::save_page_data( $post_id, $data );
-		return [ 'success' => true, 'post_id' => $post_id, 'element_id' => $element_id ];
+		Frontman_Elementor_Data::save_rollback( $post_id, $rollback );
+		$this->save_elementor_data( $post_id, $data );
+		return [ 'success' => true, 'post_id' => $post_id, 'element_id' => $element_id, 'rollback_id' => $rollback['rollback_id'] ];
+	}
+
+	public function list_rollbacks( array $input ): array {
+		$post_id = $this->require_post_id( $input );
+		return [ 'post_id' => $post_id, 'rollbacks' => Frontman_Elementor_Data::list_rollbacks( $post_id ) ];
+	}
+
+	public function restore_rollback( array $input ): array {
+		if ( true !== ( $input['confirm'] ?? false ) ) {
+			throw new Frontman_Tool_Error( 'Rollback restore requires confirm=true after user approval.' );
+		}
+
+		$post_id     = $this->require_post_id( $input );
+		$rollback_id = $this->require_rollback_id( $input );
+		$result      = Frontman_Elementor_Data::restore_rollback( $post_id, $rollback_id );
+		if ( null === $result ) {
+			throw new Frontman_Tool_Error( 'Rollback not found: ' . $rollback_id );
+		}
+		if ( empty( $result['success'] ) ) {
+			throw new Frontman_Tool_Error( $result['error'] ?? 'Unable to restore rollback.' );
+		}
+
+		return array_merge( [ 'post_id' => $post_id ], $result );
 	}
 
 	public function duplicate_element( array $input ): array {
 		$post_id    = $this->require_post_id( $input );
 		$element_id = $this->require_element_id( $input );
 		$data       = $this->require_page_data( $post_id );
+		$rollback   = Frontman_Elementor_Data::make_page_rollback( 'duplicated_element', $data );
 		$new_id     = Frontman_Elementor_Data::duplicate_element( $data, $element_id );
 		if ( null === $new_id ) {
 			throw new Frontman_Tool_Error( 'Element not found: ' . $element_id );
 		}
 
-		Frontman_Elementor_Data::save_page_data( $post_id, $data );
-		return [ 'success' => true, 'post_id' => $post_id, 'element_id' => $element_id, 'new_element_id' => $new_id ];
+		Frontman_Elementor_Data::save_rollback( $post_id, $rollback );
+		$this->save_elementor_data( $post_id, $data );
+		return [ 'success' => true, 'post_id' => $post_id, 'element_id' => $element_id, 'new_element_id' => $new_id, 'rollback_id' => $rollback['rollback_id'] ];
 	}
 
 	public function move_element( array $input ): array {
@@ -364,12 +435,14 @@ class Frontman_Tool_Elementor {
 		$parent_id  = isset( $input['parent_id'] ) ? sanitize_text_field( $input['parent_id'] ) : null;
 		$position   = (int) ( $input['position'] ?? -1 );
 		$data       = $this->require_page_data( $post_id );
+		$rollback   = Frontman_Elementor_Data::make_page_rollback( 'moved_element', $data );
 		if ( ! Frontman_Elementor_Data::move_element( $data, $element_id, $parent_id, $position ) ) {
 			throw new Frontman_Tool_Error( 'Unable to move element: ' . $element_id );
 		}
 
-		Frontman_Elementor_Data::save_page_data( $post_id, $data );
-		return [ 'success' => true, 'post_id' => $post_id, 'element_id' => $element_id, 'parent_id' => $parent_id, 'position' => $position ];
+		Frontman_Elementor_Data::save_rollback( $post_id, $rollback );
+		$this->save_elementor_data( $post_id, $data );
+		return [ 'success' => true, 'post_id' => $post_id, 'element_id' => $element_id, 'parent_id' => $parent_id, 'position' => $position, 'rollback_id' => $rollback['rollback_id'] ];
 	}
 
 	public function generate_element( array $input ): array {
@@ -432,6 +505,23 @@ class Frontman_Tool_Elementor {
 		}
 
 		return $element_id;
+	}
+
+	private function require_rollback_id( array $input ): string {
+		$rollback_id = sanitize_text_field( $input['rollback_id'] ?? '' );
+		if ( '' === $rollback_id ) {
+			throw new Frontman_Tool_Error( 'rollback_id is required.' );
+		}
+
+		return $rollback_id;
+	}
+
+	private function save_elementor_data( int $post_id, array $data ): void {
+		try {
+			Frontman_Elementor_Data::save_page_data( $post_id, $data );
+		} catch ( \Throwable $e ) {
+			throw new Frontman_Tool_Error( 'Failed to save Elementor data: ' . $e->getMessage() );
+		}
 	}
 
 	private function require_page_data( int $post_id ): array {

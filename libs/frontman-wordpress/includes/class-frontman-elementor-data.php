@@ -10,6 +10,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 class Frontman_Elementor_Data {
+    private const ROLLBACK_META_KEY = '_frontman_elementor_rollbacks';
+    private const MAX_ROLLBACKS = 20;
+
     public static function post_uses_elementor( int $post_id ): bool {
         if ( 'builder' === get_post_meta( $post_id, '_elementor_edit_mode', true ) ) {
             return true;
@@ -134,6 +137,9 @@ class Frontman_Elementor_Data {
 
         foreach ( $elements as &$element ) {
             if ( (string) ( $element['id'] ?? '' ) === $parent_id ) {
+                if ( ! self::element_can_contain_children( $element ) ) {
+                    return false;
+                }
                 if ( ! isset( $element['elements'] ) || ! is_array( $element['elements'] ) ) {
                     $element['elements'] = [];
                 }
@@ -192,6 +198,130 @@ class Frontman_Elementor_Data {
         }
 
         return self::insert_element( $elements, $element, $parent_id, $position );
+    }
+
+    public static function make_element_rollback( string $action, array $elements, string $element_id ): ?array {
+        $contexts = self::element_contexts( $elements, $element_id );
+        if ( empty( $contexts ) ) {
+            return null;
+        }
+        if ( count( $contexts ) > 1 ) {
+            throw new Frontman_Tool_Error( 'Element ID is duplicated; refusing to create an ambiguous rollback: ' . $element_id );
+        }
+
+        $context = $contexts[0];
+
+        return [
+            'rollback_id'        => self::generate_id(),
+            'action'             => $action,
+            'created_at'         => gmdate( 'c' ),
+            'element_id'         => $element_id,
+            'parent_id'          => $context['parent_id'],
+            'parent_el_type'     => $context['parent_el_type'],
+            'parent_widget_type' => $context['parent_widget_type'],
+            'position'           => $context['position'],
+            'element'            => $context['element'],
+        ];
+    }
+
+    public static function make_page_rollback( string $action, array $data ): array {
+        return [
+            'rollback_id' => self::generate_id(),
+            'action'      => $action,
+            'created_at'  => gmdate( 'c' ),
+            'sections'    => count( $data ),
+            'data'        => $data,
+        ];
+    }
+
+    public static function save_rollback( int $post_id, array $rollback ): array {
+        $rollbacks = self::get_rollbacks( $post_id );
+        array_unshift( $rollbacks, $rollback );
+        $rollbacks = array_slice( $rollbacks, 0, self::MAX_ROLLBACKS );
+        update_post_meta( $post_id, self::ROLLBACK_META_KEY, function_exists( 'wp_slash' ) ? wp_slash( $rollbacks ) : $rollbacks );
+
+        $rollback_id = (string) ( $rollback['rollback_id'] ?? '' );
+        if ( '' === $rollback_id || ! self::rollback_exists( self::get_rollbacks( $post_id ), $rollback_id ) ) {
+            throw new Frontman_Tool_Error( 'Failed to persist Elementor rollback snapshot.' );
+        }
+
+        return $rollback;
+    }
+
+    public static function list_rollbacks( int $post_id ): array {
+        return array_map( [ self::class, 'summarize_rollback' ], self::get_rollbacks( $post_id ) );
+    }
+
+    public static function restore_rollback( int $post_id, string $rollback_id ): ?array {
+        $rollback = self::get_rollback( $post_id, $rollback_id );
+        if ( null === $rollback ) {
+            return null;
+        }
+
+        $action = (string) ( $rollback['action'] ?? '' );
+        if ( isset( $rollback['data'] ) ) {
+            $data = isset( $rollback['data'] ) && is_array( $rollback['data'] ) ? $rollback['data'] : null;
+            if ( null === $data || ! self::is_element_list( $data ) ) {
+                return [ 'success' => false, 'error' => 'Rollback does not contain valid page data.' ];
+            }
+
+            $before = self::get_page_data( $post_id );
+            $undo   = is_array( $before ) ? self::save_rollback( $post_id, self::make_page_rollback( 'pre_restore_page_data', $before ) ) : null;
+            try {
+                self::save_page_data( $post_id, $data );
+            } catch ( \Throwable $e ) {
+                return [ 'success' => false, 'error' => 'Failed to restore page rollback: ' . $e->getMessage() ];
+            }
+
+            return [ 'success' => true, 'restored' => 'page_data', 'rollback_id' => $rollback_id, 'undo_rollback_id' => $undo['rollback_id'] ?? null ];
+        }
+
+        $element = isset( $rollback['element'] ) && is_array( $rollback['element'] ) ? $rollback['element'] : null;
+        if ( null === $element || ! self::is_element( $element ) ) {
+            return [ 'success' => false, 'error' => 'Rollback does not contain valid element data.' ];
+        }
+
+        $data       = self::get_page_data( $post_id ) ?? [];
+        $before     = $data;
+        $element_id = (string) ( $rollback['element_id'] ?? ( $element['id'] ?? '' ) );
+        $matches    = self::element_contexts( $data, $element_id );
+        $restored   = false;
+
+        if ( 'removed' === $action ) {
+            if ( ! empty( $matches ) ) {
+                return [ 'success' => false, 'error' => 'Cannot restore removed element because an element with the same ID already exists.' ];
+            }
+            $parent_id = self::rollback_parent_id( $rollback );
+            $position  = isset( $rollback['position'] ) ? (int) $rollback['position'] : -1;
+            if ( ! self::can_insert_into_rollback_parent( $data, $parent_id, $rollback ) ) {
+                return [ 'success' => false, 'error' => 'Cannot restore removed element because the original parent is missing or no longer accepts children.' ];
+            }
+            $restored = self::insert_element( $data, $element, $parent_id, $position );
+        } else {
+            if ( 0 === count( $matches ) ) {
+                return [ 'success' => false, 'error' => 'Cannot restore element rollback because the target element no longer exists.' ];
+            }
+            if ( count( $matches ) > 1 ) {
+                return [ 'success' => false, 'error' => 'Cannot restore element rollback because the target element ID is duplicated.' ];
+            }
+            if ( ! self::context_matches_rollback( $matches[0], $rollback ) ) {
+                return [ 'success' => false, 'error' => 'Cannot restore element rollback because the target element moved since the rollback was created.' ];
+            }
+            $restored = self::replace_element_at_context( $data, $element_id, $matches[0]['parent_id'], (int) $matches[0]['position'], $element );
+        }
+
+        if ( ! $restored ) {
+            return [ 'success' => false, 'error' => 'Unable to restore rollback because the original parent element was not found.' ];
+        }
+
+        $undo = self::save_rollback( $post_id, self::make_page_rollback( 'pre_restore_page_data', $before ) );
+        try {
+            self::save_page_data( $post_id, $data );
+        } catch ( \Throwable $e ) {
+            return [ 'success' => false, 'error' => 'Failed to restore element rollback: ' . $e->getMessage() ];
+        }
+
+        return [ 'success' => true, 'restored' => 'element', 'rollback_id' => $rollback_id, 'undo_rollback_id' => $undo['rollback_id'], 'element_id' => $element_id ];
     }
 
     public static function generate_id(): string {
@@ -320,7 +450,6 @@ class Frontman_Elementor_Data {
         if ( ! empty( $element['isInner'] ) ) {
             $summary['isInner'] = true;
         }
-
         $settings = isset( $element['settings'] ) && is_array( $element['settings'] ) ? $element['settings'] : [];
         $hint     = [];
         foreach ( [ 'title', 'editor', 'text', 'button_text', 'content_width', 'flex_direction' ] as $key ) {
@@ -338,6 +467,194 @@ class Frontman_Elementor_Data {
         }
 
         return $summary;
+    }
+
+    private static function summarize_rollback( array $rollback ): array {
+        $summary = [
+            'rollback_id' => (string) ( $rollback['rollback_id'] ?? '' ),
+            'action'      => (string) ( $rollback['action'] ?? '' ),
+            'created_at'  => (string) ( $rollback['created_at'] ?? '' ),
+        ];
+
+        if ( isset( $rollback['element_id'] ) ) {
+            $summary['element_id'] = (string) $rollback['element_id'];
+        }
+        if ( array_key_exists( 'parent_id', $rollback ) ) {
+            $summary['parent_id'] = $rollback['parent_id'];
+        }
+        if ( isset( $rollback['position'] ) ) {
+            $summary['position'] = (int) $rollback['position'];
+        }
+        if ( isset( $rollback['sections'] ) ) {
+            $summary['sections'] = (int) $rollback['sections'];
+        }
+        if ( isset( $rollback['element'] ) && is_array( $rollback['element'] ) ) {
+            $summary['summary'] = self::summarize_element_metadata( $rollback['element'] );
+        }
+        if ( isset( $rollback['data'] ) && is_array( $rollback['data'] ) ) {
+            $summary['summary'] = array_map( [ self::class, 'summarize_element_metadata' ], array_values( array_filter( $rollback['data'], 'is_array' ) ) );
+        }
+
+        return $summary;
+    }
+
+    private static function summarize_element_metadata( array $element ): array {
+        $summary = [
+            'id'          => (string) ( $element['id'] ?? '' ),
+            'elType'      => (string) ( $element['elType'] ?? '' ),
+            'child_count' => isset( $element['elements'] ) && is_array( $element['elements'] ) ? count( $element['elements'] ) : 0,
+        ];
+        if ( ! empty( $element['widgetType'] ) ) {
+            $summary['widgetType'] = (string) $element['widgetType'];
+        }
+
+        return $summary;
+    }
+
+    private static function get_rollbacks( int $post_id ): array {
+        $rollbacks = get_post_meta( $post_id, self::ROLLBACK_META_KEY, true );
+        if ( is_string( $rollbacks ) ) {
+            $decoded = json_decode( $rollbacks, true );
+            $rollbacks = is_array( $decoded ) ? $decoded : [];
+        }
+
+        return is_array( $rollbacks ) ? array_values( array_filter( $rollbacks, 'is_array' ) ) : [];
+    }
+
+    private static function get_rollback( int $post_id, string $rollback_id ): ?array {
+        foreach ( self::get_rollbacks( $post_id ) as $rollback ) {
+            if ( $rollback_id === (string) ( $rollback['rollback_id'] ?? '' ) ) {
+                return $rollback;
+            }
+        }
+
+        return null;
+    }
+
+    private static function rollback_exists( array $rollbacks, string $rollback_id ): bool {
+        foreach ( $rollbacks as $rollback ) {
+            if ( $rollback_id === (string) ( $rollback['rollback_id'] ?? '' ) ) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static function is_element_list( array $elements ): bool {
+        foreach ( $elements as $element ) {
+            if ( ! is_array( $element ) || ! self::is_element( $element ) ) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static function is_element( array $element ): bool {
+        if ( isset( $element['settings'] ) && ! is_array( $element['settings'] ) ) {
+            return false;
+        }
+        if ( isset( $element['elements'] ) ) {
+            if ( ! is_array( $element['elements'] ) ) {
+                return false;
+            }
+
+            return self::is_element_list( $element['elements'] );
+        }
+
+        return true;
+    }
+
+    private static function element_contexts( array $elements, string $element_id, ?string $parent_id = null, ?array $parent = null ): array {
+        $matches = [];
+        foreach ( $elements as $index => $element ) {
+            if ( ! is_array( $element ) ) {
+                continue;
+            }
+            if ( (string) ( $element['id'] ?? '' ) === $element_id ) {
+                $matches[] = [
+                    'element'            => $element,
+                    'parent_id'          => $parent_id,
+                    'parent_el_type'     => is_array( $parent ) ? (string) ( $parent['elType'] ?? '' ) : null,
+                    'parent_widget_type' => is_array( $parent ) ? (string) ( $parent['widgetType'] ?? '' ) : null,
+                    'position'           => $index,
+                ];
+            }
+
+            if ( ! empty( $element['elements'] ) && is_array( $element['elements'] ) ) {
+                $matches = array_merge( $matches, self::element_contexts( $element['elements'], $element_id, (string) ( $element['id'] ?? '' ), $element ) );
+            }
+        }
+
+        return $matches;
+    }
+
+    private static function rollback_parent_id( array $rollback ): ?string {
+        if ( ! array_key_exists( 'parent_id', $rollback ) || null === $rollback['parent_id'] || '' === $rollback['parent_id'] ) {
+            return null;
+        }
+
+        return (string) $rollback['parent_id'];
+    }
+
+    private static function can_insert_into_rollback_parent( array $elements, ?string $parent_id, array $rollback ): bool {
+        if ( null === $parent_id ) {
+            return true;
+        }
+
+        $matches = self::element_contexts( $elements, $parent_id );
+        if ( 1 !== count( $matches ) ) {
+            return false;
+        }
+
+        $parent = $matches[0]['element'];
+        if ( ! self::element_can_contain_children( $parent ) ) {
+            return false;
+        }
+
+        $el_type = (string) ( $parent['elType'] ?? '' );
+        $rollback_parent_type = (string) ( $rollback['parent_el_type'] ?? '' );
+        return '' === $rollback_parent_type || $rollback_parent_type === $el_type;
+    }
+
+    private static function element_can_contain_children( array $element ): bool {
+        return in_array( (string) ( $element['elType'] ?? '' ), [ 'container', 'section', 'column' ], true );
+    }
+
+    private static function context_matches_rollback( array $context, array $rollback ): bool {
+        $parent_id = self::rollback_parent_id( $rollback );
+        return $parent_id === $context['parent_id'] && (int) ( $rollback['position'] ?? -1 ) === (int) $context['position'];
+    }
+
+    private static function replace_element_at_context( array &$elements, string $element_id, ?string $parent_id, int $position, array $replacement ): bool {
+        if ( null === $parent_id ) {
+            if ( isset( $elements[ $position ] ) && (string) ( $elements[ $position ]['id'] ?? '' ) === $element_id ) {
+                $elements[ $position ] = $replacement;
+                return true;
+            }
+
+            return false;
+        }
+
+        foreach ( $elements as &$element ) {
+            if ( ! is_array( $element ) ) {
+                continue;
+            }
+            if ( (string) ( $element['id'] ?? '' ) === $parent_id ) {
+                if ( isset( $element['elements'][ $position ] ) && (string) ( $element['elements'][ $position ]['id'] ?? '' ) === $element_id ) {
+                    $element['elements'][ $position ] = $replacement;
+                    return true;
+                }
+
+                return false;
+            }
+            if ( ! empty( $element['elements'] ) && is_array( $element['elements'] ) && self::replace_element_at_context( $element['elements'], $element_id, $parent_id, $position, $replacement ) ) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static function container( array $settings = [], array $children = [], bool $is_inner = false ): array {

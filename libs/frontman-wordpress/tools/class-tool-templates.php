@@ -251,7 +251,7 @@ class Frontman_Tool_Templates {
 			$post_data['ID'] = (int) $template->wp_id;
 		}
 
-		$post_id = wp_insert_post( $post_data, true );
+		$post_id = wp_insert_post( wp_slash( $post_data ), true );
 		if ( is_wp_error( $post_id ) ) {
 			throw new Frontman_Tool_Error( $post_id->get_error_message() );
 		}

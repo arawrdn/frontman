@@ -257,7 +257,7 @@ class Frontman_Tool_Posts {
 			'post_status'  => sanitize_key( $input['status'] ?? 'draft' ),
 		];
 
-		$post_id = wp_insert_post( $post_data, true );
+		$post_id = wp_insert_post( wp_slash( $post_data ), true );
 
 		if ( is_wp_error( $post_id ) ) {
 			throw new Frontman_Tool_Error( $post_id->get_error_message() );
@@ -301,7 +301,7 @@ class Frontman_Tool_Posts {
 			$post_data['post_excerpt'] = sanitize_textarea_field( $input['excerpt'] );
 		}
 
-		$result = wp_update_post( $post_data, true );
+		$result = wp_update_post( wp_slash( $post_data ), true );
 
 		if ( is_wp_error( $result ) ) {
 			throw new Frontman_Tool_Error( $result->get_error_message() );
