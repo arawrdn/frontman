@@ -1304,6 +1304,7 @@ describe("Client State Reducer - Annotations on Messages", () => {
       sourceLocation: Ok(None),
       boundingBox: None,
       nearbyText: Some("Submit"),
+      elementorContext: None,
     },
     {
       id: "ann-2",
@@ -1315,6 +1316,7 @@ describe("Client State Reducer - Annotations on Messages", () => {
       sourceLocation: Ok(None),
       boundingBox: None,
       nearbyText: Some("Welcome"),
+      elementorContext: None,
     },
   ]
 

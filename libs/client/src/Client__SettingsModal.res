@@ -667,9 +667,9 @@ let make = (~open_: bool, ~onOpenChange: bool => unit, ~initialTab: option<strin
                       : React.null}
                   </div>
                   <div className="rounded-lg border border-zinc-800 bg-zinc-900/40 px-4 py-4">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-semibold text-zinc-100">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-semibold text-zinc-100">
                           {React.string("OpenRouter")}
                         </span>
                         {sourceBadge}

@@ -871,6 +871,7 @@ let _sampleMessageAnnotations: array<MessageAnnotation.t> = [
     sourceLocation: Ok(None),
     boundingBox: None,
     nearbyText: Some("Submit"),
+    elementorContext: None,
   },
   {
     id: "ann-2",
@@ -882,6 +883,7 @@ let _sampleMessageAnnotations: array<MessageAnnotation.t> = [
     sourceLocation: Ok(None),
     boundingBox: None,
     nearbyText: Some("Welcome"),
+    elementorContext: None,
   },
 ]
 
@@ -1319,6 +1321,7 @@ describe("Task - Annotation Enrichment Lifecycle (Issue #582)", () => {
     ~cssClasses: option<string>=?,
     ~nearbyText: option<string>=?,
     ~boundingBox: option<Annotation.boundingBox>=?,
+    ~elementorContext: option<Client__ElementorDetection.t>=?,
     ~enrichmentStatus: Annotation.enrichmentStatus=Enriched,
   ): TaskReducer.action => AnnotationDetailsResolved({
     id,
@@ -1328,6 +1331,7 @@ describe("Task - Annotation Enrichment Lifecycle (Issue #582)", () => {
     cssClasses,
     nearbyText,
     boundingBox,
+    elementorContext,
     enrichmentStatus,
   })
 

@@ -364,6 +364,7 @@ type action =
       cssClasses: option<string>,
       nearbyText: option<string>,
       boundingBox: option<Annotation.boundingBox>,
+      elementorContext: option<Client__ElementorDetection.t>,
       enrichmentStatus: Annotation.enrichmentStatus,
     })
   | AddAnnotations({elements: array<annotationElement>})
@@ -765,6 +766,7 @@ let next = (task: Task.t, action: action): (Task.t, array<effect>) => {
         cssClasses,
         nearbyText,
         boundingBox,
+        elementorContext,
         enrichmentStatus,
       }),
     ) => (
@@ -776,6 +778,7 @@ let next = (task: Task.t, action: action): (Task.t, array<effect>) => {
         cssClasses,
         nearbyText,
         boundingBox,
+        elementorContext,
         enrichmentStatus,
       }),
       [],
@@ -1528,6 +1531,11 @@ let fetchAnnotationDetails = (
     height: rect.height,
   }
 
+  let elementorContext =
+    document->Option.flatMap(doc =>
+      Client__ElementorDetection.getElementorContext(~element, ~document=doc)
+    )
+
   // Wait for all promises and update state once
   let _ =
     Promise.all3((selectorPromise, screenshotPromise, sourceLocationPromise))
@@ -1576,6 +1584,7 @@ let fetchAnnotationDetails = (
             cssClasses,
             nearbyText,
             boundingBox: Some(boundingBox),
+            elementorContext,
             enrichmentStatus: Enriched,
           }),
         )
@@ -1599,6 +1608,7 @@ let fetchAnnotationDetails = (
           cssClasses,
           nearbyText,
           boundingBox: Some(boundingBox),
+          elementorContext,
           enrichmentStatus: Failed({error: errorMsg}),
         }),
       )

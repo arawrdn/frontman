@@ -54,6 +54,7 @@ module MessageAnnotation = {
     sourceLocation: result<option<sourceLocation>, string>,
     boundingBox: option<boundingBox>,
     nearbyText: option<string>,
+    elementorContext: option<Client__ElementorDetection.t>,
   }
 
   // Convert a SourceLocation.t to the local sourceLocation type (same shape, just decoupled)
@@ -88,6 +89,7 @@ module MessageAnnotation = {
       height: bb.height,
     }),
     nearbyText: annotation.nearbyText,
+    elementorContext: annotation.elementorContext,
   }
 }
 

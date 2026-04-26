@@ -784,6 +784,7 @@ type annotationMeta = {
   parent: option<JSON.t>,
   cssClasses: option<string>,
   nearbyText: option<string>,
+  elementorContext: option<Client__ElementorDetection.t>,
   boundingBox: option<boundingBoxMeta>,
 }
 
@@ -801,8 +802,12 @@ let annotationMetaSchema: S.t<annotationMeta> = S.object(s => {
   parent: s.field("parent", S.option(S.json)),
   cssClasses: s.field("css_classes", S.option(S.string)),
   nearbyText: s.field("nearby_text", S.option(S.string)),
+  elementorContext: s.field("elementor", S.option(Client__ElementorDetection.schema)),
   boundingBox: s.field("bounding_box", S.option(boundingBoxMetaSchema)),
 })
+
+let elementorText = (context: Client__ElementorDetection.t, ~tagName: string): string =>
+  Client__ElementorDetection.summary(context, ~tagName)
 
 type screenshotMeta = {
   annotationScreenshot: bool,
@@ -861,6 +866,7 @@ let makeAnnotationMeta = (
       parent,
       cssClasses: annotation.cssClasses,
       nearbyText: annotation.nearbyText,
+      elementorContext: annotation.elementorContext,
       boundingBox: annotation.boundingBox->Option.map(bb => {
         x: bb.x,
         y: bb.y,
@@ -906,7 +912,7 @@ let annotationToContentBlocks = (annotation: Annotation.t, ~index: int): array<
 
   let _meta = makeAnnotationMeta(annotation, ~index, ~sourceLocation)
 
-  // Build text description and URI from source location, falling back to selector
+  // Build text description and URI from source location, falling back to Elementor or selector
   let (uri, text) = switch sourceLocation {
   | Some(loc) => {
       let f = stripFileUriPrefix(loc.file)
@@ -915,12 +921,19 @@ let annotationToContentBlocks = (annotation: Annotation.t, ~index: int): array<
       (`file://${f}:${l}:${c}`, `Annotated element: <${annotation.tagName}> at ${f}:${l}:${c}`)
     }
   | None =>
-    switch selector {
-    | Some(sel) => (
-        `selector://${sel}`,
-        `Annotated element: <${annotation.tagName}> matching ${sel}`,
+    switch annotation.elementorContext {
+    | Some(context) => (
+        Client__ElementorDetection.uri(context),
+        elementorText(context, ~tagName=annotation.tagName),
       )
-    | None => (`element://${annotation.tagName}`, `Annotated element: <${annotation.tagName}>`)
+    | None =>
+      switch selector {
+      | Some(sel) => (
+          `selector://${sel}`,
+          `Annotated element: <${annotation.tagName}> matching ${sel}`,
+        )
+      | None => (`element://${annotation.tagName}`, `Annotated element: <${annotation.tagName}>`)
+      }
     }
   }
 
@@ -1298,6 +1311,7 @@ let makeMessageAnnotationMeta = (annotation: Message.MessageAnnotation.t, ~index
       parent,
       cssClasses: annotation.cssClasses,
       nearbyText: annotation.nearbyText,
+      elementorContext: annotation.elementorContext,
       boundingBox: annotation.boundingBox->Option.map(bb => {
         x: bb.x,
         y: bb.y,
@@ -1372,6 +1386,7 @@ let annotationMetaToMessageAnnotation = (
       height: bb.height,
     }),
     nearbyText: meta.nearbyText,
+    elementorContext: meta.elementorContext,
   }
 }
 
@@ -1388,7 +1403,7 @@ let messageAnnotationToContentBlocks = (
 
   let _meta = makeMessageAnnotationMeta(annotation, ~index)
 
-  // Build text description and URI from source location, falling back to selector
+  // Build text description and URI from source location, falling back to Elementor or selector
   let (uri, text) = switch sourceLocation {
   | Some(loc) => {
       let f = stripFileUriPrefix(loc.file)
@@ -1397,12 +1412,19 @@ let messageAnnotationToContentBlocks = (
       (`file://${f}:${l}:${c}`, `Annotated element: <${annotation.tagName}> at ${f}:${l}:${c}`)
     }
   | None =>
-    switch selector {
-    | Some(sel) => (
-        `selector://${sel}`,
-        `Annotated element: <${annotation.tagName}> matching ${sel}`,
+    switch annotation.elementorContext {
+    | Some(context) => (
+        Client__ElementorDetection.uri(context),
+        elementorText(context, ~tagName=annotation.tagName),
       )
-    | None => (`element://${annotation.tagName}`, `Annotated element: <${annotation.tagName}>`)
+    | None =>
+      switch selector {
+      | Some(sel) => (
+          `selector://${sel}`,
+          `Annotated element: <${annotation.tagName}> matching ${sel}`,
+        )
+      | None => (`element://${annotation.tagName}`, `Annotated element: <${annotation.tagName}>`)
+      }
     }
   }
 

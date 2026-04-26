@@ -15,6 +15,7 @@ module Samples = {
     sourceLocation: Ok(None),
     boundingBox: None,
     nearbyText: Some("Submit"),
+    elementorContext: None,
   }
 
   let headerAnnotation: t = {
@@ -27,6 +28,7 @@ module Samples = {
     sourceLocation: Ok(None),
     boundingBox: None,
     nearbyText: Some("Welcome to the App"),
+    elementorContext: None,
   }
 
   let inputAnnotation: t = {
@@ -39,6 +41,7 @@ module Samples = {
     sourceLocation: Ok(None),
     boundingBox: None,
     nearbyText: Some("Enter your email"),
+    elementorContext: None,
   }
 
   let divAnnotation: t = {
@@ -51,6 +54,7 @@ module Samples = {
     sourceLocation: Ok(None),
     boundingBox: None,
     nearbyText: None,
+    elementorContext: None,
   }
 }
 

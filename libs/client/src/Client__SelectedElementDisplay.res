@@ -102,6 +102,20 @@ module AnnotationRow = {
           | Client__Annotation__Types.Enriched => React.null
           }}
         </div>
+        {annotation.elementorContext->Option.mapOr(React.null, context => {
+          let target = switch context.postId {
+          | Some(postId) => `post ${postId->Int.toString}, element ${context.elementId}`
+          | None => `element ${context.elementId}`
+          }
+          let kind = switch (context.elementType, context.widgetType) {
+          | (Some("widget"), Some(widgetType)) => `Elementor ${widgetType} widget`
+          | (Some(elementType), _) => `Elementor ${elementType}`
+          | _ => "Elementor element"
+          }
+          <div className="text-[11px] text-violet-300/80 mt-0.5 truncate">
+            {React.string(`${kind} (${target})`)}
+          </div>
+        })}
         // Comment display / edit
         {switch isEditingComment {
         | true =>

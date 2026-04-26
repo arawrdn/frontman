@@ -104,6 +104,7 @@ let convertSnapshotAnnotation = (
   sourceLocation: Ok(None), // Source locations not stored in snapshot annotations
   boundingBox: None, // Bounding boxes not stored in snapshot annotations
   nearbyText: ann.nearbyText,
+  elementorContext: None,
 }
 
 let convertMessage = (msg: Snapshot.Message.t): StateTypes.Message.t => {

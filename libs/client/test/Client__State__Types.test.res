@@ -46,6 +46,7 @@ let makeTestAnnotation = (
   cssClasses,
   boundingBox,
   nearbyText,
+  elementorContext: None,
   position: {xPercent: 50.0, yAbsolute: 100.0},
   timestamp: 0.0,
   enrichmentStatus: Enriched,
@@ -265,6 +266,7 @@ describe("Client__State__Types", () => {
           cssClasses: None,
           boundingBox: None,
           nearbyText: None,
+          elementorContext: None,
           position: {xPercent: 50.0, yAbsolute: 100.0},
           timestamp: 0.0,
           enrichmentStatus: Enriched,
@@ -298,6 +300,53 @@ describe("Client__State__Types", () => {
 
         t->expect(getMetaString(meta, "css_classes"))->Expect.toBe("btn btn-primary")
         t->expect(getMetaString(meta, "nearby_text"))->Expect.toBe("Click me")
+      },
+    )
+
+    test(
+      "uses Elementor context when selected element is Elementor-backed",
+      t => {
+        let annotation: Annotation.t = {
+          id: "test-elementor",
+          element: makeMockElement(),
+          comment: None,
+          selector: Ok(Some(".elementor-element-abc12345")),
+          screenshot: Ok(None),
+          sourceLocation: Ok(None),
+          tagName: "h2",
+          cssClasses: Some("elementor-heading-title"),
+          boundingBox: None,
+          nearbyText: Some("Hero title"),
+          elementorContext: Some({
+            postId: Some(42),
+            elementId: "abc12345",
+            elementType: Some("widget"),
+            widgetType: Some("heading"),
+            documentType: Some("wp-page"),
+            editHint: "Use Elementor tools",
+          }),
+          position: {xPercent: 50.0, yAbsolute: 100.0},
+          timestamp: 0.0,
+          enrichmentStatus: Enriched,
+        }
+
+        let blocks = Types.annotationToContentBlocks(annotation, ~index=0)
+        let embeddedResource = getEmbeddedResource(blocks->Array.getUnsafe(0))
+        let meta = getMeta(blocks->Array.getUnsafe(0))
+        let elementor = getMetaObject(meta, "elementor")
+
+        t
+        ->expect(
+          elementor->Dict.get("element_id")->Option.flatMap(JSON.Decode.string)->Option.getOrThrow,
+        )
+        ->Expect.toBe("abc12345")
+
+        switch embeddedResource.resource {
+        | TextResourceContents(textResource) =>
+          t->expect(textResource.uri)->Expect.toBe("elementor://post/42/element/abc12345")
+          t->expect(textResource.text->String.includes("Elementor"))->Expect.toBe(true)
+        | _ => failwith("Expected text resource")
+        }
       },
     )
 
@@ -506,6 +555,7 @@ describe("MessageAnnotation.fromAnnotation", () => {
       cssClasses: None,
       boundingBox: None,
       nearbyText: None,
+      elementorContext: None,
       position: {xPercent: 0.0, yAbsolute: 0.0},
       timestamp: 0.0,
       enrichmentStatus: Enriched,
@@ -547,6 +597,7 @@ describe("messageAnnotationsToContentBlocks", () => {
         ),
         boundingBox: None,
         nearbyText: Some("Submit"),
+        elementorContext: None,
       },
     ]
 
@@ -575,6 +626,7 @@ describe("messageAnnotationsToContentBlocks", () => {
         sourceLocation: Ok(None),
         boundingBox: None,
         nearbyText: None,
+        elementorContext: None,
       },
     ]
 
