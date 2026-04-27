@@ -34,9 +34,11 @@ Current main blocker:
 
 Current recommendation:
 
-- Continue CodeSandbox SDK evaluation.
-- Do not build product `WorkspaceProvider` code yet.
-- Next test should either prewarm `mise install` and `yarn install` into the template before retrying ReScript on Micro, or unlock/test a larger tier.
+- Continue CodeSandbox SDK evaluation, but change the spike shape.
+- Stop growing one-off Frontman-only scripts as the main path.
+- Do not build production Phoenix `WorkspaceProvider` code yet.
+- Build a spike-level `WorkspaceBootPlan` plus a CodeSandbox runner shaped like the future provider contract.
+- Keep Frontman as the hard dogfood boot plan, but make the runner generic enough that another repo is a different boot plan, not a different script.
 - Treat Micro as not yet viable for full-stack dogfood until ReScript build and full process boot are proven.
 
 ## Scope And Constraints
@@ -449,6 +451,136 @@ Open questions:
 | HMR/WebSockets | Pending | Not attempted. |
 | Cost viability | Pending | Micro cost is attractive, but runtime viability not proven. |
 
+## Corrected Spike Direction
+
+The initial disposable scripts were useful for provider physics: create, connect, private ports, templates, clone, Postgres, and cold setup stress. They are not the right shape for validating future customer workspaces.
+
+The next spike should validate this question instead:
+
+> Can CodeSandbox implement a generic Frontman workspace boot contract, with repo-specific behavior represented as data?
+
+That means the provider-specific code should be a reusable runner, not a growing pile of Frontman-specific shell commands.
+
+### Target Spike Abstractions
+
+Introduce a spike-only `WorkspaceBootPlan` JSON shape.
+
+Candidate shape:
+
+```json
+{
+  "name": "frontman-dogfood",
+  "repo": "https://github.com/frontman-ai/frontman.git",
+  "branch": "sandboxing_v2",
+  "workspaceDir": "/project/workspace/frontman",
+  "template": {
+    "provider": "codesandbox",
+    "id": "codesandbox-devcontainer-template@frontman-devcontainer-micro",
+    "vmTier": "Micro"
+  },
+  "clone": {
+    "method": "https-token",
+    "singleBranch": true,
+    "partialClone": true
+  },
+  "setup": [
+    {
+      "name": "install-toolchain",
+      "command": "mise trust --all && mise install --yes",
+      "timeoutSeconds": 1200
+    },
+    {
+      "name": "install-js-deps",
+      "command": "mise exec -- yarn install",
+      "timeoutSeconds": 1200
+    }
+  ],
+  "services": [
+    {
+      "name": "postgres",
+      "command": "docker compose up -d db",
+      "healthCheck": "pg_isready -h localhost -U postgres",
+      "required": true
+    },
+    {
+      "name": "vite",
+      "command": "mise exec -- make dev-client",
+      "port": 5173,
+      "required": true
+    }
+  ],
+  "ports": [
+    {"name": "phoenix", "port": 4000, "required": true},
+    {"name": "vite", "port": 5173, "required": true},
+    {"name": "nextjs", "port": 3000, "path": "/frontman", "required": true}
+  ],
+  "env": {
+    "FRONTMAN_INTERNAL_DEV": "true"
+  }
+}
+```
+
+This is still explicit and dogfood-friendly, but it changes what is being tested. CodeSandbox becomes the executor of a normalized boot plan rather than a hand-authored Frontman script.
+
+### Target Runner Contract
+
+Create a spike-only CodeSandbox runner with provider-shaped operations:
+
+```text
+createWorkspace(bootPlan, secrets)
+runSetup(workspace, bootPlan)
+startServices(workspace, bootPlan)
+getStatus(workspace)
+getLogs(workspace)
+getUrls(workspace)
+destroyWorkspace(workspace)
+```
+
+The runner should return normalized JSON that resembles a future `WorkspaceProvider` response:
+
+```json
+{
+  "provider": "codesandbox",
+  "workspaceId": "...",
+  "bootPlan": "frontman-dogfood",
+  "branch": "sandboxing_v2",
+  "status": "running",
+  "services": [
+    {"name": "vite", "port": 5173, "url": "https://...", "status": "ready"}
+  ],
+  "steps": [
+    {"name": "clone", "status": "passed", "durationMs": 12345},
+    {"name": "install-js-deps", "status": "passed", "durationMs": 93000}
+  ],
+  "logs": {
+    "setup": "...",
+    "services": "..."
+  }
+}
+```
+
+### What This Validates For Future Customers
+
+This adjusted plan validates the durable product thesis:
+
+- Customer-specific behavior can live in a boot plan.
+- CodeSandbox-specific behavior can live in a provider runner.
+- Frontman can later generate or edit boot plans from repo detection, devcontainers, package scripts, and user config.
+- Preview URL discovery, logs, lifecycle, secrets, and command execution can normalize into Frontman-owned concepts.
+- The same runner can be tested against both `frontman` and a small representative fixture repo.
+
+### What Remains Dogfood-Specific
+
+For now, these should stay explicit and narrow:
+
+- The `frontman` repo allowlist.
+- Existing branch start flow.
+- Frontman-specific setup commands.
+- Frontman-specific service list and ports.
+- Manual internal credentials.
+
+The point is not to build generic repo onboarding in the spike. The point is to avoid baking provider validation into Frontman-only imperative code.
+
 ## Current Conclusion
 
 CodeSandbox SDK remains a viable provider candidate, but the current Micro cold setup path is not enough to declare success.
@@ -470,15 +602,19 @@ The biggest concern is compute and control-plane behavior under Frontman build l
 
 ## Recommended Next Experiments
 
-1. Build a prewarmed devcontainer template that runs `mise install` during template build.
-2. Consider adding `yarn install` to template setup if template build time and cache behavior are acceptable.
-3. Retry ReScript build on Micro from the prewarmed template.
-4. If ReScript still times out, unblock/test `Small` because `Micro` is probably not viable for full-stack dogfood.
-5. Once setup completes, test Elixir deps and database migration.
-6. Then boot Phoenix, Vite, Next.js, and Marketing as separate background commands.
-7. Validate CodeSandbox host URLs, Phoenix WebSocket, Vite HMR, and Next.js HMR.
-8. Test filesystem APIs for read/write/list/watch and compare to expected sidecar semantics.
-9. Test lifecycle explicitly: hibernate, resume, restart, delete, and verify no running/billable VMs remain.
+1. Replace the current Frontman-specific setup probe with a spike-level `WorkspaceBootPlan` JSON file.
+2. Replace ad hoc scripts with a CodeSandbox runner that consumes a boot plan and exposes provider-shaped operations.
+3. Port the current Frontman setup into `frontman.boot-plan.json` without hiding commands in runner code.
+4. Add one tiny representative fixture boot plan, ideally a minimal Vite or Next.js repo, to prove the runner is not Frontman-only.
+5. Build a prewarmed devcontainer template that runs `mise install` during template build, then reference it from the Frontman boot plan.
+6. Consider adding `yarn install` to template setup if template build time and cache behavior are acceptable.
+7. Retry ReScript build on Micro from the prewarmed template via the boot-plan runner.
+8. If ReScript still times out, unblock/test `Small` because `Micro` is probably not viable for full-stack dogfood.
+9. Once setup completes, test Elixir deps and database migration through the runner.
+10. Then boot Phoenix, Vite, Next.js, and Marketing as separate background services defined in the boot plan.
+11. Validate CodeSandbox host URLs, Phoenix WebSocket, Vite HMR, and Next.js HMR.
+12. Test filesystem APIs for read/write/list/watch and compare to expected sidecar semantics.
+13. Test lifecycle explicitly: hibernate, resume, restart, delete, and verify no running/billable VMs remain.
 
 ## Practical Implementation Notes
 
@@ -495,4 +631,6 @@ Keep the spike dogfood-specific:
 - No generic repo onboarding.
 - No GitHub issue/PR flow.
 
-The best near-term provider automation shape is still a disposable script plus a manifest, not production `WorkspaceProvider` code.
+The best near-term provider automation shape is a spike-level boot-plan runner, not production `WorkspaceProvider` code and not a pile of Frontman-only scripts.
+
+The runner can be disposable, but the contract it tests should be durable.

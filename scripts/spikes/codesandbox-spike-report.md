@@ -227,7 +227,11 @@ Goal: understand what Frontman must own for workspace lifecycle.
 
 ## Recommendation
 
-Pending.
+Continue CodeSandbox evaluation, but adjust the spike shape before adding more Frontman-specific automation.
+
+The next step should be a spike-level `WorkspaceBootPlan` plus a CodeSandbox runner that consumes that plan and returns normalized provider output. The runner can remain disposable, but the contract it validates should resemble the future `WorkspaceProvider` boundary.
+
+Do not keep expanding one-off Frontman-only scripts as the primary proof path. Frontman should be represented as one hard boot plan. Add a second small fixture boot plan to prove the runner is not purely bespoke.
 
 Options:
 
