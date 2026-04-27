@@ -1,0 +1,21 @@
+{
+  "name": "Frontman Devcontainer Spike",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": ".."
+  },
+  "remoteEnv": {
+    "DATABASE_URL": "postgres://postgres:postgres@localhost:5432/frontman_server_dev",
+    "MIX_OS_DEPS_COMPILE_PARTITION_COUNT": "1"
+  },
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "bash"
+      }
+    }
+  },
+  "features": {
+    "ghcr.io/devcontainers/features/git:1": {}
+  }
+}

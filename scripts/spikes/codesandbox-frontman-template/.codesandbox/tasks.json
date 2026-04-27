@@ -1,0 +1,9 @@
+{
+  "setupTasks": [
+    "mise --version",
+    "node --version || true",
+    "docker --version || true",
+    "docker compose version || true"
+  ],
+  "tasks": {}
+}
