@@ -212,25 +212,11 @@ module Selectors = {
     }
   }
 
-  let canCreateSession = (state: state): bool => {
-    let acpReady = switch state.acp {
-    | ACPConnected(_) => true
-    | ACPDisconnected | ACPConnecting | ACPAuthRequired(_) | ACPError(_) => false
+  let canCreateSession = (state: state): bool =>
+    switch (state.acp, state.relay, state.mcpServer, state.session) {
+    | (ACPConnected(_), RelayConnected, Some(_), NoSession) => true
+    | _ => false
     }
-    let relayReady = switch state.relay {
-    | RelayConnected => true
-    | RelayDisconnected | RelayConnecting | RelayError(_) => false
-    }
-    let mcpReady = switch state.mcpServer {
-    | Some(_) => true
-    | None => false
-    }
-    let hasNoSession = switch state.session {
-    | NoSession => true
-    | SessionCreating | SessionActive(_) | SessionError(_) => false
-    }
-    acpReady && relayReady && mcpReady && hasNoSession
-  }
 
   // Derive user-facing connection state
   type connectionStatus =
