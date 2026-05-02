@@ -849,8 +849,20 @@ let screenshotMetaSchema: S.t<screenshotMeta> = S.object(s => {
   annotationId: s.field("annotation_id", S.string),
 })
 
-// Convert a SourceLocation parent chain to a parentLocationMeta chain
-let rec parentLocationFromSourceLocation = (
+type annotationBlockData = {
+  id: string,
+  tagName: string,
+  comment: option<string>,
+  selector: option<string>,
+  screenshot: option<string>,
+  sourceLocation: option<parentLocationMeta>,
+  cssClasses: option<string>,
+  nearbyText: option<string>,
+  elementorContext: option<Client__ElementorDetection.t>,
+  boundingBox: option<boundingBoxMeta>,
+}
+
+let rec sourceLocationFromClientTypes = (
   loc: Client__Types.SourceLocation.t,
 ): parentLocationMeta => {
   file: stripFileUriPrefix(loc.file),
@@ -858,23 +870,37 @@ let rec parentLocationFromSourceLocation = (
   column: loc.column,
   componentName: loc.componentName,
   componentProps: loc.componentProps,
-  parent: loc.parent->Option.map(parentLocationFromSourceLocation),
+  parent: loc.parent->Option.map(sourceLocationFromClientTypes),
+}
+
+let rec sourceLocationFromMessageAnnotation = (
+  loc: Message.MessageAnnotation.sourceLocation,
+): parentLocationMeta => {
+  file: stripFileUriPrefix(loc.file),
+  line: loc.line,
+  column: loc.column,
+  componentName: loc.componentName,
+  componentProps: loc.componentProps,
+  parent: loc.parent->Option.map(sourceLocationFromMessageAnnotation),
 }
 
 // Build _meta JSON for an annotation from its data + source location fields
-let makeAnnotationMeta = (
-  annotation: Annotation.t,
-  ~index: int,
-  ~sourceLocation: option<Client__Types.SourceLocation.t>,
-): JSON.t => {
-  let (file, line, column, componentName, componentProps, parent) = switch sourceLocation {
+let makeAnnotationMeta = (annotation: annotationBlockData, ~index: int): JSON.t => {
+  let (
+    file,
+    line,
+    column,
+    componentName,
+    componentProps,
+    parent,
+  ) = switch annotation.sourceLocation {
   | Some(loc) => (
-      Some(stripFileUriPrefix(loc.file)),
+      Some(loc.file),
       Some(loc.line),
       Some(loc.column),
       loc.componentName,
       loc.componentProps,
-      loc.parent->Option.map(p => parentLocationFromSourceLocation(p)->parentLocationToJson),
+      loc.parent->Option.map(parentLocationToJson),
     )
   | None => (None, None, None, None, None, None)
   }
@@ -899,15 +925,55 @@ let makeAnnotationMeta = (
         ~tagName=annotation.tagName,
       ),
       elementorContext: annotation.elementorContext,
-      boundingBox: annotation.boundingBox->Option.map(bb => {
-        x: bb.x,
-        y: bb.y,
-        width: bb.width,
-        height: bb.height,
-      }),
+      boundingBox: annotation.boundingBox,
     },
     annotationMetaSchema,
   )
+}
+
+let annotationResourceUriAndText = (annotation: annotationBlockData): (string, string) =>
+  switch annotation.sourceLocation {
+  | Some(loc) => {
+      let l = loc.line->Int.toString
+      let c = loc.column->Int.toString
+      (
+        `file://${loc.file}:${l}:${c}`,
+        `Annotated element: <${annotation.tagName}> at ${loc.file}:${l}:${c}`,
+      )
+    }
+  | None =>
+    switch annotation.elementorContext {
+    | Some(context) => (
+        Client__ElementorDetection.uri(context),
+        elementorText(context, ~tagName=annotation.tagName),
+      )
+    | None =>
+      switch annotation.selector {
+      | Some(sel) => (
+          `selector://${sel}`,
+          `Annotated element: <${annotation.tagName}> matching ${sel}`,
+        )
+      | None => (`element://${annotation.tagName}`, `Annotated element: <${annotation.tagName}>`)
+      }
+    }
+  }
+
+let annotationTextResourceBlock = (
+  annotation: annotationBlockData,
+  ~index,
+): ACPTypes.contentBlock => {
+  let (uri, text) = annotationResourceUriAndText(annotation)
+  let _meta = makeAnnotationMeta(annotation, ~index)
+
+  ACPTypes.EmbeddedResource({
+    resource: {
+      _meta: Some(_meta),
+      annotations: None,
+      resource: ACPTypes.TextResourceContents({uri, mimeType: Some("text/plain"), text}),
+    },
+    _meta: None,
+    annotations: None,
+  })
 }
 
 // Helper to extract media type and base64 data from a data URL
@@ -932,54 +998,10 @@ let parseDataUrl = (dataUrl: string): (string, string) => {
   }
 }
 
-// Build content blocks for a single annotation
-// Returns 1-2 blocks: resource block with annotation _meta, optional screenshot blob
-// Unwraps result<option<T>, string> to option<T> — errors are treated as absent for serialization
-let annotationToContentBlocks = (annotation: Annotation.t, ~index: int): array<
+let annotationScreenshotBlock = (annotation: annotationBlockData, ~index: int): option<
   ACPTypes.contentBlock,
-> => {
-  let sourceLocation = annotation.sourceLocation->Result.getOr(None)
-  let selector = annotation.selector->Result.getOr(None)
-  let screenshot = annotation.screenshot->Result.getOr(None)
-
-  let _meta = makeAnnotationMeta(annotation, ~index, ~sourceLocation)
-
-  // Build text description and URI from source location, falling back to Elementor or selector
-  let (uri, text) = switch sourceLocation {
-  | Some(loc) => {
-      let f = stripFileUriPrefix(loc.file)
-      let l = loc.line->Int.toString
-      let c = loc.column->Int.toString
-      (`file://${f}:${l}:${c}`, `Annotated element: <${annotation.tagName}> at ${f}:${l}:${c}`)
-    }
-  | None =>
-    switch annotation.elementorContext {
-    | Some(context) => (
-        Client__ElementorDetection.uri(context),
-        elementorText(context, ~tagName=annotation.tagName),
-      )
-    | None =>
-      switch selector {
-      | Some(sel) => (
-          `selector://${sel}`,
-          `Annotated element: <${annotation.tagName}> matching ${sel}`,
-        )
-      | None => (`element://${annotation.tagName}`, `Annotated element: <${annotation.tagName}>`)
-      }
-    }
-  }
-
-  let resourceBlock: ACPTypes.contentBlock = ACPTypes.EmbeddedResource({
-    resource: {
-      _meta: Some(_meta),
-      annotations: None,
-      resource: ACPTypes.TextResourceContents({uri, mimeType: Some("text/plain"), text}),
-    },
-    _meta: None,
-    annotations: None,
-  })
-
-  let screenshotBlock = screenshot->Option.map(screenshotDataUrl => {
+> =>
+  annotation.screenshot->Option.map(screenshotDataUrl => {
     let (mimeType, base64Data) = parseDataUrl(screenshotDataUrl)
 
     let screenshotMeta: JSON.t = S.reverseConvertToJsonOrThrow(
@@ -1007,7 +1029,53 @@ let annotationToContentBlocks = (annotation: Annotation.t, ~index: int): array<
     block
   })
 
-  [Some(resourceBlock), screenshotBlock]->Array.filterMap(x => x)
+let annotationContentBlocks = (annotation: annotationBlockData, ~index: int): array<
+  ACPTypes.contentBlock,
+> => {
+  [
+    Some(annotationTextResourceBlock(annotation, ~index)),
+    annotationScreenshotBlock(annotation, ~index),
+  ]->Array.filterMap(x => x)
+}
+
+let annotationBoundingBoxMeta = (bb: Annotation.boundingBox): boundingBoxMeta => {
+  x: bb.x,
+  y: bb.y,
+  width: bb.width,
+  height: bb.height,
+}
+
+let messageAnnotationBoundingBoxMeta = (
+  bb: Message.MessageAnnotation.boundingBox,
+): boundingBoxMeta => {
+  x: bb.x,
+  y: bb.y,
+  width: bb.width,
+  height: bb.height,
+}
+
+// Build content blocks for a single annotation
+// Returns 1-2 blocks: resource block with annotation _meta, optional screenshot blob
+// Unwraps result<option<T>, string> to option<T> — errors are treated as absent for serialization
+let annotationToContentBlocks = (annotation: Annotation.t, ~index: int): array<
+  ACPTypes.contentBlock,
+> => {
+  let blockData = {
+    id: annotation.id,
+    tagName: annotation.tagName,
+    comment: annotation.comment,
+    selector: annotation.selector->Result.getOr(None),
+    screenshot: annotation.screenshot->Result.getOr(None),
+    sourceLocation: annotation.sourceLocation
+    ->Result.getOr(None)
+    ->Option.map(sourceLocationFromClientTypes),
+    cssClasses: annotation.cssClasses,
+    nearbyText: annotation.nearbyText,
+    elementorContext: annotation.elementorContext,
+    boundingBox: annotation.boundingBox->Option.map(annotationBoundingBoxMeta),
+  }
+
+  annotationContentBlocks(blockData, ~index)
 }
 
 // Helper to create _meta JSON for figma node with nodeId and is_dsl flag
@@ -1300,66 +1368,7 @@ let taskToPageContextBlocks = (task: Task.t): array<ACPTypes.contentBlock> => {
 // MessageAnnotation -> ContentBlock conversion
 // ============================================================================
 
-// Convert a MessageAnnotation.sourceLocation to parentLocationMeta for the parent chain
-let rec parentLocationFromMessageAnnotation = (
-  loc: Message.MessageAnnotation.sourceLocation,
-): parentLocationMeta => {
-  file: stripFileUriPrefix(loc.file),
-  line: loc.line,
-  column: loc.column,
-  componentName: loc.componentName,
-  componentProps: loc.componentProps,
-  parent: loc.parent->Option.map(parentLocationFromMessageAnnotation),
-}
-
-// Build _meta JSON for a MessageAnnotation — uses same annotationMeta schema
-// Unwraps result<option<T>, string> to option<T> — errors are treated as absent for serialization
-let makeMessageAnnotationMeta = (annotation: Message.MessageAnnotation.t, ~index: int): JSON.t => {
-  let sourceLocation = annotation.sourceLocation->Result.getOr(None)
-  let (file, line, column, componentName, componentProps, parent) = switch sourceLocation {
-  | Some(loc) => (
-      Some(stripFileUriPrefix(loc.file)),
-      Some(loc.line),
-      Some(loc.column),
-      loc.componentName,
-      loc.componentProps,
-      loc.parent->Option.map(p => parentLocationFromMessageAnnotation(p)->parentLocationToJson),
-    )
-  | None => (None, None, None, None, None, None)
-  }
-
-  S.reverseConvertToJsonOrThrow(
-    {
-      annotation: true,
-      annotationIndex: index,
-      annotationId: annotation.id,
-      tagName: annotation.tagName,
-      comment: annotation.comment,
-      file,
-      line,
-      column,
-      componentName,
-      componentProps,
-      parent,
-      cssClasses: annotation.cssClasses,
-      nearbyText: nearbyTextWithElementorHint(
-        ~nearbyText=annotation.nearbyText,
-        ~elementorContext=annotation.elementorContext,
-        ~tagName=annotation.tagName,
-      ),
-      elementorContext: annotation.elementorContext,
-      boundingBox: annotation.boundingBox->Option.map(bb => {
-        x: bb.x,
-        y: bb.y,
-        width: bb.width,
-        height: bb.height,
-      }),
-    },
-    annotationMetaSchema,
-  )
-}
-
-// Inverse of makeMessageAnnotationMeta: reconstruct a MessageAnnotation.t from an annotationMeta
+// Inverse of makeAnnotationMeta: reconstruct a MessageAnnotation.t from an annotationMeta
 // Used during history replay to rebuild user messages from stored content blocks
 let annotationMetaToMessageAnnotation = (
   meta: annotationMeta,
@@ -1433,76 +1442,22 @@ let messageAnnotationToContentBlocks = (
   annotation: Message.MessageAnnotation.t,
   ~index: int,
 ): array<ACPTypes.contentBlock> => {
-  let sourceLocation = annotation.sourceLocation->Result.getOr(None)
-  let selector = annotation.selector->Result.getOr(None)
-  let screenshot = annotation.screenshot->Result.getOr(None)
-
-  let _meta = makeMessageAnnotationMeta(annotation, ~index)
-
-  // Build text description and URI from source location, falling back to Elementor or selector
-  let (uri, text) = switch sourceLocation {
-  | Some(loc) => {
-      let f = stripFileUriPrefix(loc.file)
-      let l = loc.line->Int.toString
-      let c = loc.column->Int.toString
-      (`file://${f}:${l}:${c}`, `Annotated element: <${annotation.tagName}> at ${f}:${l}:${c}`)
-    }
-  | None =>
-    switch annotation.elementorContext {
-    | Some(context) => (
-        Client__ElementorDetection.uri(context),
-        elementorText(context, ~tagName=annotation.tagName),
-      )
-    | None =>
-      switch selector {
-      | Some(sel) => (
-          `selector://${sel}`,
-          `Annotated element: <${annotation.tagName}> matching ${sel}`,
-        )
-      | None => (`element://${annotation.tagName}`, `Annotated element: <${annotation.tagName}>`)
-      }
-    }
+  let blockData = {
+    id: annotation.id,
+    tagName: annotation.tagName,
+    comment: annotation.comment,
+    selector: annotation.selector->Result.getOr(None),
+    screenshot: annotation.screenshot->Result.getOr(None),
+    sourceLocation: annotation.sourceLocation
+    ->Result.getOr(None)
+    ->Option.map(sourceLocationFromMessageAnnotation),
+    cssClasses: annotation.cssClasses,
+    nearbyText: annotation.nearbyText,
+    elementorContext: annotation.elementorContext,
+    boundingBox: annotation.boundingBox->Option.map(messageAnnotationBoundingBoxMeta),
   }
 
-  let resourceBlock: ACPTypes.contentBlock = ACPTypes.EmbeddedResource({
-    resource: {
-      _meta: Some(_meta),
-      annotations: None,
-      resource: ACPTypes.TextResourceContents({uri, mimeType: Some("text/plain"), text}),
-    },
-    _meta: None,
-    annotations: None,
-  })
-
-  let screenshotBlock = screenshot->Option.map(screenshotDataUrl => {
-    let (mimeType, base64Data) = parseDataUrl(screenshotDataUrl)
-
-    let screenshotMeta: JSON.t = S.reverseConvertToJsonOrThrow(
-      {
-        annotationScreenshot: true,
-        annotationIndex: index,
-        annotationId: annotation.id,
-      },
-      screenshotMetaSchema,
-    )
-
-    let block: ACPTypes.contentBlock = ACPTypes.EmbeddedResource({
-      resource: {
-        _meta: Some(screenshotMeta),
-        annotations: None,
-        resource: ACPTypes.BlobResourceContents({
-          uri: `annotation://${annotation.id}/screenshot`,
-          mimeType: Some(mimeType),
-          blob: base64Data,
-        }),
-      },
-      _meta: None,
-      annotations: None,
-    })
-    block
-  })
-
-  [Some(resourceBlock), screenshotBlock]->Array.filterMap(x => x)
+  annotationContentBlocks(blockData, ~index)
 }
 
 // Build content blocks from an array of MessageAnnotations
