@@ -9,6 +9,8 @@ module Log = FrontmanLogs.Logs.Make({
 })
 
 module ACP = FrontmanAiFrontmanClient.FrontmanClient__ACP
+module ACPTypes = FrontmanAiFrontmanProtocol.FrontmanProtocol__ACP
+module MCP = FrontmanAiFrontmanClient.FrontmanClient__MCP
 module Relay = FrontmanAiFrontmanClient.FrontmanClient__Relay
 module MCPServer = FrontmanAiFrontmanClient.FrontmanClient__MCP__Server
 module Channel = FrontmanAiFrontmanClient.FrontmanClient__Phoenix__Channel
@@ -79,6 +81,11 @@ type initPayload = {
   mcpServer: MCPServer.t,
 }
 
+type sessionUpdateHandler = (string, ACPTypes.sessionUpdate) => unit
+type titleUpdatedHandler = (string, string) => unit
+type mcpMessageHandler = (MCP.messageDirection, JSON.t) => unit
+type promptCompleteHandler = result<ACPTypes.promptResult, string> => unit
+
 // Actions
 type action =
   | Initialize(initPayload)
@@ -95,18 +102,15 @@ type action =
   | SessionCreateSuccess(ACP.session)
   | SessionCreateError(string)
   | CreateSession({
-      onUpdate: (string, FrontmanAiFrontmanProtocol.FrontmanProtocol__ACP.sessionUpdate) => unit,
-      onTitleUpdated: (string, string) => unit,
-      onMcpMessage: (FrontmanAiFrontmanClient.FrontmanClient__MCP.messageDirection, JSON.t) => unit,
+      onUpdate: sessionUpdateHandler,
+      onTitleUpdated: titleUpdatedHandler,
+      onMcpMessage: mcpMessageHandler,
       onComplete: result<string, string> => unit,
     })
   | SendPrompt({
       text: string,
-      additionalBlocks: array<FrontmanAiFrontmanProtocol.FrontmanProtocol__ACP.contentBlock>,
-      onComplete: result<
-        FrontmanAiFrontmanProtocol.FrontmanProtocol__ACP.promptResult,
-        string,
-      > => unit,
+      additionalBlocks: array<ACPTypes.contentBlock>,
+      onComplete: promptCompleteHandler,
       _meta: option<JSON.t>,
     })
   | PromptSent
@@ -115,9 +119,9 @@ type action =
   | LoadTask({
       taskId: string,
       needsHistory: bool,
-      onUpdate: (string, FrontmanAiFrontmanProtocol.FrontmanProtocol__ACP.sessionUpdate) => unit,
-      onTitleUpdated: (string, string) => unit,
-      onMcpMessage: (FrontmanAiFrontmanClient.FrontmanClient__MCP.messageDirection, JSON.t) => unit,
+      onUpdate: sessionUpdateHandler,
+      onTitleUpdated: titleUpdatedHandler,
+      onMcpMessage: mcpMessageHandler,
       onComplete: result<unit, string> => unit,
     })
   | DeleteSession({taskId: string, onComplete: result<unit, string> => unit})
@@ -140,19 +144,16 @@ type effect =
   | CreateSessionEffect({
       connection: ACP.connection,
       mcpServer: MCPServer.t,
-      onUpdate: (string, FrontmanAiFrontmanProtocol.FrontmanProtocol__ACP.sessionUpdate) => unit,
-      onTitleUpdated: (string, string) => unit,
-      onMcpMessage: (FrontmanAiFrontmanClient.FrontmanClient__MCP.messageDirection, JSON.t) => unit,
+      onUpdate: sessionUpdateHandler,
+      onTitleUpdated: titleUpdatedHandler,
+      onMcpMessage: mcpMessageHandler,
       onComplete: result<string, string> => unit,
     })
   | SendPromptEffect({
       session: ACP.session,
       text: string,
-      additionalBlocks: array<FrontmanAiFrontmanProtocol.FrontmanProtocol__ACP.contentBlock>,
-      onComplete: result<
-        FrontmanAiFrontmanProtocol.FrontmanProtocol__ACP.promptResult,
-        string,
-      > => unit,
+      additionalBlocks: array<ACPTypes.contentBlock>,
+      onComplete: promptCompleteHandler,
       _meta: option<JSON.t>,
     })
   | CancelPromptEffect({session: ACP.session})
@@ -163,9 +164,9 @@ type effect =
       mcpServer: MCPServer.t,
       taskId: string,
       needsHistory: bool,
-      onUpdate: (string, FrontmanAiFrontmanProtocol.FrontmanProtocol__ACP.sessionUpdate) => unit,
-      onTitleUpdated: (string, string) => unit,
-      onMcpMessage: (FrontmanAiFrontmanClient.FrontmanClient__MCP.messageDirection, JSON.t) => unit,
+      onUpdate: sessionUpdateHandler,
+      onTitleUpdated: titleUpdatedHandler,
+      onMcpMessage: mcpMessageHandler,
       onComplete: result<unit, string> => unit,
     })
   | DeleteSessionEffect({
@@ -186,6 +187,22 @@ let initialState: state = {
   mcpServer: None,
   abortController: None,
 }
+
+let sessionSuccessLabel = session =>
+  switch session {
+  | SessionCreating => "created"
+  | NoSession => "loaded"
+  | SessionActive(_) => "switched"
+  | SessionError(_) => "recovered"
+  }
+
+let activateSessionState = (state, sess) => (
+  {...state, session: SessionActive(sess), isSendingPrompt: false},
+  [LogInfo(`Session ${sessionSuccessLabel(state.session)}: ${sess.sessionId}`)],
+)
+
+let withLogInfo = (state, msg) => (state, [LogInfo(msg)])
+let withLogError = (state, msg) => (state, [LogError(msg)])
 
 module Selectors = {
   let getSession = (state: state): option<ACP.session> => {
@@ -341,7 +358,8 @@ let reduce = (state: state, action: action): (state, array<effect>) => {
   | (
       {relay: RelayDisconnected, relayInstance: Some(_), abortController: None},
       RelayConnectStart,
-    ) => (state, [LogError("Cannot connect relay: no abort controller")])
+    ) =>
+    withLogError(state, "Cannot connect relay: no abort controller")
 
   | ({relay: RelayConnecting}, RelayConnectSuccess) => (
       {...state, relay: RelayConnected},
@@ -368,33 +386,10 @@ let reduce = (state: state, action: action): (state, array<effect>) => {
     ) => ({...state, session: SessionCreating}, [])
 
   // Reject session creation if relay is not connected
-  | ({relay: RelayDisconnected | RelayConnecting | RelayError(_)}, SessionCreateStart) => (
-      state,
-      [LogError("Cannot create session: Relay not connected")],
-    )
+  | ({relay: RelayDisconnected | RelayConnecting | RelayError(_)}, SessionCreateStart) =>
+    withLogError(state, "Cannot create session: Relay not connected")
 
-  | ({session: SessionCreating}, SessionCreateSuccess(sess)) => (
-      {...state, session: SessionActive(sess), isSendingPrompt: false},
-      [LogInfo(`Session created: ${sess.sessionId}`)],
-    )
-
-  // Handle SessionCreateSuccess from NoSession - happens when LoadTaskEffect completes
-  | ({session: NoSession}, SessionCreateSuccess(sess)) => (
-      {...state, session: SessionActive(sess), isSendingPrompt: false},
-      [LogInfo(`Session loaded: ${sess.sessionId}`)],
-    )
-
-  // Handle SessionCreateSuccess when switching tasks - old session already cleaned up in effect handler
-  | ({session: SessionActive(_)}, SessionCreateSuccess(sess)) => (
-      {...state, session: SessionActive(sess), isSendingPrompt: false},
-      [LogInfo(`Session switched: ${sess.sessionId}`)],
-    )
-
-  // Handle SessionCreateSuccess after previous failure - recovery
-  | ({session: SessionError(_)}, SessionCreateSuccess(sess)) => (
-      {...state, session: SessionActive(sess), isSendingPrompt: false},
-      [LogInfo(`Session recovered: ${sess.sessionId}`)],
-    )
+  | (_, SessionCreateSuccess(sess)) => activateSessionState(state, sess)
 
   | ({session: SessionCreating}, SessionCreateError(msg)) => (
       {...state, session: SessionError(msg)},
@@ -441,27 +436,21 @@ let reduce = (state: state, action: action): (state, array<effect>) => {
       [CancelPromptEffect({session: session})],
     )
 
-  | ({isSendingPrompt: false}, CancelPrompt) => (
-      state,
-      [LogInfo("CancelPrompt ignored: not sending a prompt")],
-    )
+  | ({isSendingPrompt: false}, CancelPrompt) =>
+    withLogInfo(state, "CancelPrompt ignored: not sending a prompt")
 
   | ({session: SessionActive(session)}, RetryTurn({retriedErrorId})) => (
       state,
       [RetryTurnEffect({session, retriedErrorId})],
     )
 
-  | (_, RetryTurn(_)) => (state, [LogError("Cannot retry turn: no active session")])
+  | (_, RetryTurn(_)) => withLogError(state, "Cannot retry turn: no active session")
 
-  | ({isSendingPrompt: true}, SendPrompt(_)) => (
-      state,
-      [LogError("Cannot send prompt: already sending")],
-    )
+  | ({isSendingPrompt: true}, SendPrompt(_)) =>
+    withLogError(state, "Cannot send prompt: already sending")
 
-  | ({session: NoSession | SessionCreating | SessionError(_)}, SendPrompt(_)) => (
-      state,
-      [LogError("Cannot send prompt: no active session")],
-    )
+  | ({session: NoSession | SessionCreating | SessionError(_)}, SendPrompt(_)) =>
+    withLogError(state, "Cannot send prompt: no active session")
 
   // Load a persisted task (calls ACP.loadSession or joinSession based on needsHistory)
   | (
@@ -483,7 +472,7 @@ let reduce = (state: state, action: action): (state, array<effect>) => {
       ],
     )
 
-  | (_, LoadTask(_)) => (state, [LogError("Cannot load task: not connected")])
+  | (_, LoadTask(_)) => withLogError(state, "Cannot load task: not connected")
 
   // Delete a persisted session (calls ACP.deleteSession)
   | ({acp: ACPConnected(conn)}, DeleteSession({taskId, onComplete})) => (
@@ -506,7 +495,7 @@ let reduce = (state: state, action: action): (state, array<effect>) => {
     )
   | (_, ClearSession) => ({...state, session: NoSession}, [])
 
-  | (_, CreateSession(_)) => (state, [LogError("Cannot create session: not ready")])
+  | (_, CreateSession(_)) => withLogError(state, "Cannot create session: not ready")
 
   // === Cleanup ===
   | (_, Cleanup) =>
@@ -528,82 +517,67 @@ let reduce = (state: state, action: action): (state, array<effect>) => {
     )
 
   // === Invalid transitions ===
-  | (_, Initialize(_)) => (state, [LogInfo("Initialize ignored: already initialized")])
+  | (_, Initialize(_)) => withLogInfo(state, "Initialize ignored: already initialized")
 
-  | (
-      {acp: ACPConnecting | ACPConnected(_) | ACPAuthRequired(_) | ACPError(_)},
-      ACPConnectStart,
-    ) => (state, [LogInfo("ACPConnectStart ignored: ACP not disconnected")])
+  | ({acp: ACPConnecting | ACPConnected(_) | ACPAuthRequired(_) | ACPError(_)}, ACPConnectStart) =>
+    withLogInfo(state, "ACPConnectStart ignored: ACP not disconnected")
 
   | (
       {acp: ACPDisconnected | ACPConnected(_) | ACPAuthRequired(_) | ACPError(_)},
       ACPConnectSuccess(_),
-    ) => (state, [LogInfo("ACPConnectSuccess ignored")])
+    ) =>
+    withLogInfo(state, "ACPConnectSuccess ignored")
 
   | (
       {acp: ACPDisconnected | ACPConnected(_) | ACPAuthRequired(_) | ACPError(_)},
       ACPAuthRequiredReceived(_),
-    ) => (state, [LogInfo("ACPAuthRequiredReceived ignored")])
+    ) =>
+    withLogInfo(state, "ACPAuthRequiredReceived ignored")
 
   | (
       {acp: ACPDisconnected | ACPConnected(_) | ACPAuthRequired(_) | ACPError(_)},
       ACPConnectError(_),
-    ) => (state, [LogInfo("ACPConnectError ignored")])
+    ) =>
+    withLogInfo(state, "ACPConnectError ignored")
 
-  | ({relayInstance: Some(_)}, RelayInstanceCreated(_)) => (
-      state,
-      [LogInfo("RelayInstanceCreated ignored: already exists")],
-    )
+  | ({relayInstance: Some(_)}, RelayInstanceCreated(_)) =>
+    withLogInfo(state, "RelayInstanceCreated ignored: already exists")
 
-  | ({relay: RelayConnecting | RelayConnected | RelayError(_)}, RelayConnectStart) => (
-      state,
-      [LogInfo("RelayConnectStart ignored: relay not disconnected")],
-    )
+  | ({relay: RelayConnecting | RelayConnected | RelayError(_)}, RelayConnectStart) =>
+    withLogInfo(state, "RelayConnectStart ignored: relay not disconnected")
 
-  | ({relay: RelayDisconnected, relayInstance: None}, RelayConnectStart) => (
-      state,
-      [LogError("RelayConnectStart rejected: no relay instance")],
-    )
+  | ({relay: RelayDisconnected, relayInstance: None}, RelayConnectStart) =>
+    withLogError(state, "RelayConnectStart rejected: no relay instance")
 
-  | ({relay: RelayDisconnected | RelayConnected | RelayError(_)}, RelayConnectSuccess) => (
-      state,
-      [LogInfo("RelayConnectSuccess ignored")],
-    )
+  | ({relay: RelayDisconnected | RelayConnected | RelayError(_)}, RelayConnectSuccess) =>
+    withLogInfo(state, "RelayConnectSuccess ignored")
 
-  | ({relay: RelayDisconnected | RelayConnected | RelayError(_)}, RelayConnectError(_)) => (
-      state,
-      [LogInfo("RelayConnectError ignored")],
-    )
+  | ({relay: RelayDisconnected | RelayConnected | RelayError(_)}, RelayConnectError(_)) =>
+    withLogInfo(state, "RelayConnectError ignored")
 
-  | ({mcpServer: Some(_)}, MCPServerCreated(_)) => (
-      state,
-      [LogInfo("MCPServerCreated ignored: already exists")],
-    )
+  | ({mcpServer: Some(_)}, MCPServerCreated(_)) =>
+    withLogInfo(state, "MCPServerCreated ignored: already exists")
 
   | (
       {acp: ACPDisconnected | ACPConnecting | ACPAuthRequired(_) | ACPError(_)},
       SessionCreateStart,
-    ) => (state, [LogError("SessionCreateStart rejected: ACP not connected")])
+    ) =>
+    withLogError(state, "SessionCreateStart rejected: ACP not connected")
 
-  | ({mcpServer: None}, SessionCreateStart) => (
-      state,
-      [LogError("SessionCreateStart rejected: MCPServer not ready")],
-    )
+  | ({mcpServer: None}, SessionCreateStart) =>
+    withLogError(state, "SessionCreateStart rejected: MCPServer not ready")
 
-  | ({session: SessionCreating | SessionActive(_) | SessionError(_)}, SessionCreateStart) => (
-      state,
-      [LogError("SessionCreateStart rejected: session already exists")],
-    )
+  | ({session: SessionCreating | SessionActive(_) | SessionError(_)}, SessionCreateStart) =>
+    withLogError(state, "SessionCreateStart rejected: session already exists")
 
-  | ({session: NoSession | SessionActive(_) | SessionError(_)}, SessionCreateError(_)) => (
-      state,
-      [LogInfo("SessionCreateError ignored")],
-    )
+  | ({session: NoSession | SessionActive(_) | SessionError(_)}, SessionCreateError(_)) =>
+    withLogInfo(state, "SessionCreateError ignored")
 
   | (
       {isSendingPrompt: true, session: NoSession | SessionCreating | SessionError(_)},
       CancelPrompt,
-    ) => (state, [LogError("CancelPrompt rejected: no active session")])
+    ) =>
+    withLogError(state, "CancelPrompt rejected: no active session")
   }
 }
 
@@ -669,8 +643,7 @@ let handleEffect = (effect: effect, state: state, dispatch: action => unit) => {
             switch initialAuthBehavior {
             | Client__FtueState.ShowWelcomeModal =>
               dispatch(ACPAuthRequiredReceived({loginUrl: fullUrl}))
-            | Client__FtueState.RedirectToLogin =>
-              Client__HostNavigation.assign(~url=fullUrl)
+            | Client__FtueState.RedirectToLogin => Client__HostNavigation.assign(~url=fullUrl)
             }
           | ACP.ConnectionFailed(msg) => dispatch(ACPConnectError(msg))
           }
