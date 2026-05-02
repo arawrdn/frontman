@@ -862,17 +862,6 @@ type annotationBlockData = {
   boundingBox: option<boundingBoxMeta>,
 }
 
-let rec sourceLocationFromClientTypes = (
-  loc: Client__Types.SourceLocation.t,
-): parentLocationMeta => {
-  file: stripFileUriPrefix(loc.file),
-  line: loc.line,
-  column: loc.column,
-  componentName: loc.componentName,
-  componentProps: loc.componentProps,
-  parent: loc.parent->Option.map(sourceLocationFromClientTypes),
-}
-
 let rec sourceLocationFromMessageAnnotation = (
   loc: Message.MessageAnnotation.sourceLocation,
 ): parentLocationMeta => {
@@ -1013,7 +1002,7 @@ let annotationScreenshotBlock = (annotation: annotationBlockData, ~index: int): 
       screenshotMetaSchema,
     )
 
-    let block: ACPTypes.contentBlock = ACPTypes.EmbeddedResource({
+    ACPTypes.EmbeddedResource({
       resource: {
         _meta: Some(screenshotMeta),
         annotations: None,
@@ -1026,7 +1015,6 @@ let annotationScreenshotBlock = (annotation: annotationBlockData, ~index: int): 
       _meta: None,
       annotations: None,
     })
-    block
   })
 
 let annotationContentBlocks = (annotation: annotationBlockData, ~index: int): array<
@@ -1038,13 +1026,6 @@ let annotationContentBlocks = (annotation: annotationBlockData, ~index: int): ar
   ]->Array.filterMap(x => x)
 }
 
-let annotationBoundingBoxMeta = (bb: Annotation.boundingBox): boundingBoxMeta => {
-  x: bb.x,
-  y: bb.y,
-  width: bb.width,
-  height: bb.height,
-}
-
 let messageAnnotationBoundingBoxMeta = (
   bb: Message.MessageAnnotation.boundingBox,
 ): boundingBoxMeta => {
@@ -1054,26 +1035,28 @@ let messageAnnotationBoundingBoxMeta = (
   height: bb.height,
 }
 
+let messageAnnotationToBlockData = (
+  annotation: Message.MessageAnnotation.t,
+): annotationBlockData => {
+  id: annotation.id,
+  tagName: annotation.tagName,
+  comment: annotation.comment,
+  selector: annotation.selector->Result.getOr(None),
+  screenshot: annotation.screenshot->Result.getOr(None),
+  sourceLocation: annotation.sourceLocation
+  ->Result.getOr(None)
+  ->Option.map(sourceLocationFromMessageAnnotation),
+  cssClasses: annotation.cssClasses,
+  nearbyText: annotation.nearbyText,
+  elementorContext: annotation.elementorContext,
+  boundingBox: annotation.boundingBox->Option.map(messageAnnotationBoundingBoxMeta),
+}
+
 // Build content blocks for a single annotation
-// Returns 1-2 blocks: resource block with annotation _meta, optional screenshot blob
-// Unwraps result<option<T>, string> to option<T> — errors are treated as absent for serialization
 let annotationToContentBlocks = (annotation: Annotation.t, ~index: int): array<
   ACPTypes.contentBlock,
 > => {
-  let blockData = {
-    id: annotation.id,
-    tagName: annotation.tagName,
-    comment: annotation.comment,
-    selector: annotation.selector->Result.getOr(None),
-    screenshot: annotation.screenshot->Result.getOr(None),
-    sourceLocation: annotation.sourceLocation
-    ->Result.getOr(None)
-    ->Option.map(sourceLocationFromClientTypes),
-    cssClasses: annotation.cssClasses,
-    nearbyText: annotation.nearbyText,
-    elementorContext: annotation.elementorContext,
-    boundingBox: annotation.boundingBox->Option.map(annotationBoundingBoxMeta),
-  }
+  let blockData = annotation->Message.MessageAnnotation.fromAnnotation->messageAnnotationToBlockData
 
   annotationContentBlocks(blockData, ~index)
 }
@@ -1442,22 +1425,7 @@ let messageAnnotationToContentBlocks = (
   annotation: Message.MessageAnnotation.t,
   ~index: int,
 ): array<ACPTypes.contentBlock> => {
-  let blockData = {
-    id: annotation.id,
-    tagName: annotation.tagName,
-    comment: annotation.comment,
-    selector: annotation.selector->Result.getOr(None),
-    screenshot: annotation.screenshot->Result.getOr(None),
-    sourceLocation: annotation.sourceLocation
-    ->Result.getOr(None)
-    ->Option.map(sourceLocationFromMessageAnnotation),
-    cssClasses: annotation.cssClasses,
-    nearbyText: annotation.nearbyText,
-    elementorContext: annotation.elementorContext,
-    boundingBox: annotation.boundingBox->Option.map(messageAnnotationBoundingBoxMeta),
-  }
-
-  annotationContentBlocks(blockData, ~index)
+  annotationContentBlocks(messageAnnotationToBlockData(annotation), ~index)
 }
 
 // Build content blocks from an array of MessageAnnotations
