@@ -127,6 +127,14 @@ defmodule FrontmanServerWeb.Router do
     get("/oauth/chatgpt/status", ChatGPTOAuthController, :status)
   end
 
+  if Application.compile_env(:frontman_server, :dev_routes) do
+    # Throwaway Daytona preview proxy spike. This intentionally skips router
+    # pipelines so CSRF/auth requirements do not block arbitrary preview methods.
+    scope "/_spikes", FrontmanServerWeb do
+      match(:*, "/daytona-preview/*path", IntegrationsController, :daytona_preview_proxy)
+    end
+  end
+
   # Enable LiveDashboard and Swoosh mailbox preview in development
   if Application.compile_env(:frontman_server, :dev_routes) do
     # If you want to use the LiveDashboard in production, you should put

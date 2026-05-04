@@ -1,0 +1,76 @@
+{
+  "provider": "daytona",
+  "repo": "https://github.com/frontman-ai/frontman.git",
+  "branch": "sandboxing_v2",
+  "workdir": "workspace/frontman",
+  "snapshot": "frontman-daytona-dind",
+  "fallbackSnapshot": "daytona-large",
+  "resources": {
+    "cpu": 4,
+    "memoryGiB": 8,
+    "diskGiB": 10
+  },
+  "lifecycle": {
+    "ephemeral": true,
+    "autoStopIntervalMinutes": 60,
+    "autoDeleteIntervalMinutes": 0
+  },
+  "setup": [
+    "sandbox.git.clone(repo, workdir, branch, undefined, username, githubToken)",
+    "mise trust --all",
+    "mise install --yes",
+    "docker compose up -d db",
+    "yarn install",
+    "yarn rescript build",
+    "cd apps/frontman_server && mix local.hex --force && mix local.rebar --force && mix deps.get",
+    "cd apps/frontman_server && mix ecto.create || true",
+    "cd apps/frontman_server && mix ecto.migrate"
+  ],
+  "processes": [
+    {
+      "name": "postgres",
+      "command": "docker compose up db"
+    },
+    {
+      "name": "rescript",
+      "command": "rm -f lib/bs/.compiler.log && make clean && make rescript-build && make rescript-watch"
+    },
+    {
+      "name": "server",
+      "command": "while [ ! -f lib/bs/.compiler.log ] || ! tail -1 lib/bs/.compiler.log 2>/dev/null | grep -q '^#Done'; do sleep 1; done && while ! pg_isready -h localhost -U postgres 2>/dev/null; do sleep 2; done && cd apps/frontman_server && make dev-container"
+    },
+    {
+      "name": "client",
+      "command": "while [ ! -f lib/bs/.compiler.log ] || ! tail -1 lib/bs/.compiler.log 2>/dev/null | grep -q '^#Done'; do sleep 1; done && make dev-client"
+    },
+    {
+      "name": "nextjs-bundle",
+      "command": "while [ ! -f lib/bs/.compiler.log ] || ! tail -1 lib/bs/.compiler.log 2>/dev/null | grep -q '^#Done'; do sleep 1; done && cd libs/frontman-nextjs && yarn tsup --watch"
+    },
+    {
+      "name": "astro-bundle",
+      "command": "while [ ! -f lib/bs/.compiler.log ] || ! tail -1 lib/bs/.compiler.log 2>/dev/null | grep -q '^#Done'; do sleep 1; done && cd libs/frontman-astro && yarn tsup --watch"
+    },
+    {
+      "name": "nextjs",
+      "command": "while [ ! -f lib/bs/.compiler.log ] || ! tail -1 lib/bs/.compiler.log 2>/dev/null | grep -q '^#Done'; do sleep 1; done && while [ ! -f libs/frontman-nextjs/dist/index.js ]; do sleep 1; done && make dev-nextjs"
+    },
+    {
+      "name": "marketing",
+      "command": "while [ ! -f lib/bs/.compiler.log ] || ! tail -1 lib/bs/.compiler.log 2>/dev/null | grep -q '^#Done'; do sleep 1; done && while [ ! -f libs/frontman-astro/dist/integration.js ]; do sleep 1; done && cd apps/marketing && yarn dev --host 0.0.0.0"
+    }
+  ],
+  "ports": [
+    {"name": "phoenix", "port": 4000, "required": true},
+    {"name": "vite", "port": 5173, "required": true},
+    {"name": "nextjs", "port": 3000, "path": "/frontman", "required": true},
+    {"name": "marketing", "port": 4321, "required": false},
+    {"name": "storybook", "port": 6006, "required": false}
+  ],
+  "notes": [
+    "Daytona default organization limit is documented as 4 vCPU, 8 GiB RAM, and 10 GiB disk unless support raises it.",
+    "Docker Compose requires a Docker-in-Docker snapshot; daytona-large alone is not enough to prove Postgres Compose.",
+    "Signed preview URLs are preferred for iframe tests because header-based preview tokens are awkward in browsers.",
+    "Browser previews show a warning page unless Frontman sends X-Daytona-Skip-Preview-Warning, uses Daytona Tier 3, or deploys a custom preview proxy."
+  ]
+}

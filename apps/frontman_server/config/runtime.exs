@@ -65,6 +65,12 @@ if config_env() in [:dev, :test, :e2e] do
   config :frontman_server, api_key_config
 end
 
+if config_env() in [:dev, :test, :e2e] do
+  config :frontman_server, :daytona_preview_spike,
+    url: env!("DAYTONA_PREVIEW_URL", :string, nil),
+    token: env!("DAYTONA_PREVIEW_TOKEN", :string, nil)
+end
+
 # WorkOS configuration for OAuth (GitHub, Google)
 config :workos, WorkOS.Client,
   api_key: env!("WORKOS_API_KEY", :string, nil),
