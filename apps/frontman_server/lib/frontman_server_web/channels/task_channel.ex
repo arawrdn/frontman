@@ -489,6 +489,12 @@ defmodule FrontmanServerWeb.TaskChannel do
         error_response = JsonRpc.error_response(id, -32_000, "Agent already running")
         {:reply, {:ok, %{@acp_message => error_response}}, socket}
 
+      {:error, :billing_inactive} ->
+        Logger.info("Rejected prompt — billing inactive for task #{task_id}")
+        message = Execution.error_message(scope, :billing_inactive)
+        error_response = JsonRpc.error_response(id, -32_000, message)
+        {:reply, {:ok, %{@acp_message => error_response}}, socket}
+
       {:ok, interaction} ->
         socket =
           assign(socket, :pending_prompt, %{

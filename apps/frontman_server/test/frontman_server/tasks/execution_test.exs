@@ -11,6 +11,7 @@ defmodule FrontmanServer.Tasks.ExecutionIntegrationTest do
 
   import Phoenix.ChannelTest
 
+  import FrontmanServer.BillingFixtures
   import FrontmanServer.Test.Fixtures.Accounts
   import FrontmanServer.Test.Fixtures.Tasks
 
@@ -71,7 +72,9 @@ defmodule FrontmanServer.Tasks.ExecutionIntegrationTest do
   end
 
   defp setup_user(_context) do
-    scope = user_scope_fixture() |> Scope.with_env_api_keys(%{"openrouter" => "sk-or-test"})
+    scope = user_scope_fixture()
+    subscription_for_scope_fixture(scope)
+    scope = Scope.with_env_api_keys(scope, %{"openrouter" => "sk-or-test"})
     {:ok, scope: scope}
   end
 

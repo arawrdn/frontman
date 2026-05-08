@@ -5,6 +5,7 @@ defmodule FrontmanServer.TasksTest do
   import FrontmanServer.InteractionCase.Helpers
   import FrontmanServer.Test.Fixtures.Tasks
 
+  alias FrontmanServer.Billing
   alias FrontmanServer.Tasks
   alias FrontmanServer.Tasks.Execution.Framework
   alias FrontmanServer.Tasks.Interaction
@@ -30,6 +31,43 @@ defmodule FrontmanServer.TasksTest do
       {:ok, task} = Tasks.get_task(scope, task_id)
       assert task.task_id == task_id
       assert task.framework == Framework.from_string(framework)
+    end
+  end
+
+  describe "submit_user_message/5 billing access" do
+    test "blocks prompt persistence when billing setup is not complete", %{scope: scope} do
+      task_id = task_fixture(scope)
+      :ok = Phoenix.PubSub.subscribe(FrontmanServer.PubSub, Tasks.topic(task_id))
+
+      assert {:error, :billing_inactive} =
+               Tasks.submit_user_message(scope, task_id, user_content("Hello"), [])
+
+      {:ok, task} = Tasks.get_task(scope, task_id)
+      assert task.interactions == []
+      refute_receive {:interaction, %Interaction.UserMessage{}}
+    end
+
+    test "blocks prompt persistence when entitlement has ended", %{scope: scope} do
+      task_id = task_fixture(scope)
+      create_billing_subscription(scope, "canceled")
+      :ok = Phoenix.PubSub.subscribe(FrontmanServer.PubSub, Tasks.topic(task_id))
+
+      assert {:error, :billing_inactive} =
+               Tasks.submit_user_message(scope, task_id, user_content("Hello"), [])
+
+      {:ok, task} = Tasks.get_task(scope, task_id)
+      assert task.interactions == []
+      refute_receive {:interaction, %Interaction.UserMessage{}}
+    end
+  end
+
+  describe "maybe_start_execution/4 billing access" do
+    test "blocks execution paths that do not submit a new prompt", %{scope: scope} do
+      task_id = task_fixture(scope)
+      :ok = Phoenix.PubSub.subscribe(FrontmanServer.PubSub, Tasks.topic(task_id))
+
+      assert :ok = Tasks.maybe_start_execution(scope, task_id, [], [])
+      assert_receive {:execution_start_error, "Finish billing setup to start using Frontman."}
     end
   end
 
@@ -585,5 +623,24 @@ defmodule FrontmanServer.TasksTest do
       assert length(messages) == 1
       assert hd(messages).role == :user
     end
+  end
+
+  defp create_billing_subscription(scope, status) do
+    unique = System.unique_integer([:positive])
+
+    {:ok, customer} =
+      Billing.create_customer(scope, %{stripe_customer_id: "cus_task_access_#{unique}"})
+
+    {:ok, subscription} =
+      Billing.create_subscription(scope, %{
+        billing_customer_id: customer.id,
+        stripe_subscription_id: "sub_task_access_#{unique}",
+        stripe_customer_id: customer.stripe_customer_id,
+        status: status,
+        interval: :monthly,
+        price_id: "price_monthly_test"
+      })
+
+    subscription
   end
 end

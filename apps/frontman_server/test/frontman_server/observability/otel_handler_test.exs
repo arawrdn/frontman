@@ -17,6 +17,7 @@ defmodule FrontmanServer.Observability.OtelHandlerTest do
   """
   use FrontmanServer.ExecutionCase
 
+  import FrontmanServer.BillingFixtures
   import FrontmanServer.Test.Fixtures.Accounts
   import FrontmanServer.InteractionCase.Helpers
   import FrontmanServer.Test.Fixtures.Tasks
@@ -56,6 +57,7 @@ defmodule FrontmanServer.Observability.OtelHandlerTest do
     on_exit(fn -> Sandbox.stop_owner(pid) end)
 
     scope = user_scope_fixture()
+    subscription_for_scope_fixture(scope)
 
     ensure_ets_tables()
     :otel_simple_processor.set_exporter(:otel_exporter_pid, self())

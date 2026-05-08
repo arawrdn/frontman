@@ -16,7 +16,12 @@ defmodule FrontmanServer.Tasks do
   """
 
   use Boundary,
-    deps: [FrontmanServer, FrontmanServer.Accounts, FrontmanServer.Providers],
+    deps: [
+      FrontmanServer,
+      FrontmanServer.Accounts,
+      FrontmanServer.Billing,
+      FrontmanServer.Providers
+    ],
     exports: [
       Task,
       TaskSchema,
@@ -42,6 +47,7 @@ defmodule FrontmanServer.Tasks do
     ]
 
   alias FrontmanServer.Accounts
+  alias FrontmanServer.Billing
   alias FrontmanServer.Providers
   alias FrontmanServer.Repo
 
@@ -290,18 +296,24 @@ defmodule FrontmanServer.Tasks do
   prompt is rejected entirely (nothing persisted).
   """
   @spec submit_user_message(Accounts.scope(), String.t(), list(), list(), keyword()) ::
-          {:ok, Interaction.UserMessage.t()} | {:error, :already_running} | {:error, :not_found}
+          {:ok, Interaction.UserMessage.t()}
+          | {:error, :already_running | :billing_inactive | :not_found}
   def submit_user_message(scope, task_id, content_blocks, tools, opts \\ []) do
     with :ok <- guard_not_running(scope, task_id),
+         :ok <- guard_billing_access(scope),
          {:ok, interaction} <- add_user_message(scope, task_id, content_blocks) do
       opts = Keyword.put(opts, :interaction_id, interaction.id)
-      maybe_start_execution(scope, task_id, tools, opts)
+      start_execution(scope, task_id, tools, opts)
       {:ok, interaction}
     end
   end
 
   defp guard_not_running(scope, task_id) do
     if Execution.running?(scope, task_id), do: {:error, :already_running}, else: :ok
+  end
+
+  defp guard_billing_access(scope) do
+    if Billing.access_allowed?(scope), do: :ok, else: {:error, :billing_inactive}
   end
 
   @doc """
@@ -471,28 +483,38 @@ defmodule FrontmanServer.Tasks do
   @spec maybe_start_execution(Accounts.scope(), String.t(), list(), keyword()) ::
           :ok | :already_running
   def maybe_start_execution(scope, task_id, tools, opts) do
-    if Execution.running?(scope, task_id) do
-      :already_running
-    else
-      {:ok, task} = get_task(scope, task_id)
+    cond do
+      Execution.running?(scope, task_id) ->
+        :already_running
 
-      case Execution.run(scope, task, Keyword.merge([tools: tools], opts)) do
-        {:ok, _pid_or_already_running} ->
-          :ok
+      not Billing.access_allowed?(scope) ->
+        broadcast_execution_start_error(scope, task_id, :billing_inactive)
 
-        {:error, reason} ->
-          # Broadcast as :execution_start_error so TaskChannel can handle it.
-          # This is NOT a swarm_event (the agent never started), so we use a
-          # separate message shape to avoid double-wrapping.
-          Phoenix.PubSub.broadcast(
-            FrontmanServer.PubSub,
-            topic(task_id),
-            {:execution_start_error, Execution.error_message(scope, reason)}
-          )
-
-          :ok
-      end
+      true ->
+        start_execution(scope, task_id, tools, opts)
     end
+  end
+
+  defp start_execution(scope, task_id, tools, opts) do
+    {:ok, task} = get_task(scope, task_id)
+
+    case Execution.run(scope, task, Keyword.merge([tools: tools], opts)) do
+      {:ok, _pid_or_already_running} -> :ok
+      {:error, reason} -> broadcast_execution_start_error(scope, task_id, reason)
+    end
+  end
+
+  defp broadcast_execution_start_error(scope, task_id, reason) do
+    # Broadcast as :execution_start_error so TaskChannel can handle it.
+    # This is NOT a swarm_event (the agent never started), so we use a
+    # separate message shape to avoid double-wrapping.
+    Phoenix.PubSub.broadcast(
+      FrontmanServer.PubSub,
+      topic(task_id),
+      {:execution_start_error, Execution.error_message(scope, reason)}
+    )
+
+    :ok
   end
 
   @doc false

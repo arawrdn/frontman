@@ -123,6 +123,7 @@ defmodule FrontmanServerWeb.TaskChannelTest do
 
   describe "session/prompt" do
     setup %{scope: scope} do
+      FrontmanServer.BillingFixtures.ensure_subscription_for_scope_fixture(scope)
       {socket, task_id} = join_task_channel(scope)
       {:ok, socket: socket, task_id: task_id}
     end
@@ -164,6 +165,34 @@ defmodule FrontmanServerWeb.TaskChannelTest do
           model: "openrouter:openai/gpt-5.5"
         }
       )
+    end
+  end
+
+  describe "session/prompt billing access" do
+    test "rejects inactive billing before persisting prompt or enqueuing title generation", %{
+      scope: scope
+    } do
+      task_id = Ecto.UUID.generate()
+      {:ok, ^task_id} = Tasks.create_task(scope, task_id, "nextjs")
+
+      {:ok, _reply, socket} =
+        UserSocket
+        |> socket("user_id", %{scope: scope})
+        |> subscribe_and_join("task:#{task_id}", %{})
+
+      complete_mcp_handshake(socket)
+
+      ref = push(socket, "acp:message", build_prompt_request(id: 42))
+
+      assert_reply(ref, :ok, %{
+        "acp:message" => %{
+          "error" => %{"message" => "Finish billing setup to start using Frontman."}
+        }
+      })
+
+      {:ok, task} = Tasks.get_task(scope, task_id)
+      assert task.interactions == []
+      refute_enqueued(worker: GenerateTitle, args: %{task_id: task_id})
     end
   end
 
@@ -323,10 +352,13 @@ defmodule FrontmanServerWeb.TaskChannelTest do
       socket: socket,
       task_id: task_id
     } do
-      # First, send a prompt to set pending_prompt
-      push(socket, "acp:message", build_prompt_request(id: 42))
-      # Wait for the prompt to be processed
-      :sys.get_state(socket.channel_pid)
+      :sys.replace_state(socket.channel_pid, fn socket ->
+        %{
+          socket
+          | assigns:
+              Map.put(socket.assigns, :pending_prompt, %{interaction_id: "test", jsonrpc_id: 42})
+        }
+      end)
 
       Phoenix.PubSub.broadcast(
         FrontmanServer.PubSub,
@@ -729,6 +761,7 @@ defmodule FrontmanServerWeb.TaskChannelTest do
       # 2. MCP init completes, storing tools in socket assigns
       # 3. Queued prompt is processed with the loaded MCP tools
 
+      FrontmanServer.BillingFixtures.ensure_subscription_for_scope_fixture(scope)
       {socket, _task_id} = join_task_channel(scope)
 
       # MCP init has started - we receive the initialize request
@@ -820,9 +853,13 @@ defmodule FrontmanServerWeb.TaskChannelTest do
     } do
       stub_llm_response({:delay, "Too late", 250})
 
-      # Send a prompt to set pending_prompt
-      push(socket, "acp:message", build_prompt_request(id: 99))
-      :sys.get_state(socket.channel_pid)
+      :sys.replace_state(socket.channel_pid, fn socket ->
+        %{
+          socket
+          | assigns:
+              Map.put(socket.assigns, :pending_prompt, %{interaction_id: "test", jsonrpc_id: 99})
+        }
+      end)
 
       Phoenix.PubSub.broadcast(FrontmanServer.PubSub, Tasks.topic(task_id), execution_cancelled())
 
@@ -1311,14 +1348,16 @@ defmodule FrontmanServerWeb.TaskChannelTest do
         retryable: true
       }
 
-      stub_llm_response({:error, error})
+      :sys.replace_state(socket.channel_pid, fn socket ->
+        %{
+          socket
+          | assigns:
+              Map.put(socket.assigns, :pending_prompt, %{interaction_id: "test", jsonrpc_id: 99})
+        }
+      end)
 
-      push(socket, "acp:message", build_prompt_request(id: 99))
-      :sys.get_state(socket.channel_pid)
-
-      # The prompt path creates the first transient failure. Drive the remaining
-      # failures directly; retry scheduling is not the behavior under test here.
-      Enum.each(1..5, fn _ ->
+      # Drive failures directly; retry scheduling is not the behavior under test here.
+      Enum.each(1..6, fn _ ->
         Phoenix.PubSub.broadcast(
           FrontmanServer.PubSub,
           Tasks.topic(task_id),
