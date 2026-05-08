@@ -183,6 +183,7 @@ defmodule FrontmanServer.Tasks.StreamCleanupTest do
       refute_receive :cancel_called, 100
     end
 
+    @tag :capture_log
     test "cancel_fn errors are handled gracefully" do
       cancel_fn = fn -> raise "cancel exploded" end
 
@@ -215,6 +216,7 @@ defmodule FrontmanServer.Tasks.StreamCleanupTest do
       consumer =
         spawn(fn ->
           Stream.repeatedly(fn ->
+            send(test_pid, :stream_started)
             Process.sleep(100)
             :tick
           end)
@@ -222,7 +224,7 @@ defmodule FrontmanServer.Tasks.StreamCleanupTest do
           |> Enum.take(100)
         end)
 
-      Process.sleep(50)
+      assert_receive :stream_started, 1_000
       Process.exit(consumer, :kill)
 
       # :kill is untrappable for the target process, but propagates as

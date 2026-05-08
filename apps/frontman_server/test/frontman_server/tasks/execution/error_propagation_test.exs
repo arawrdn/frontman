@@ -12,6 +12,8 @@ defmodule FrontmanServer.Tasks.Execution.ErrorPropagationTest do
 
   use FrontmanServer.ExecutionCase
 
+  @moduletag :capture_log
+
   import FrontmanServer.BillingFixtures
   import FrontmanServer.Test.Fixtures.Accounts
   import FrontmanServer.Test.Fixtures.Tasks

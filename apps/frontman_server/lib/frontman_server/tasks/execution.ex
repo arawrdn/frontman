@@ -25,6 +25,7 @@ defmodule FrontmanServer.Tasks.Execution do
   alias FrontmanServer.Accounts
   alias FrontmanServer.Accounts.Scope
   alias FrontmanServer.Billing
+  alias FrontmanServer.Billing.Subscription
   alias FrontmanServer.Image
   alias FrontmanServer.Observability.TelemetryEvents
   alias FrontmanServer.Providers
@@ -319,9 +320,9 @@ defmodule FrontmanServer.Tasks.Execution do
     do: "Agent failed to start. Please try again."
 
   def error_message(%Scope{} = scope, :billing_inactive) do
-    case Billing.access_state(scope) do
-      :pre_trial -> "Finish billing setup to start using Frontman."
-      :inactive -> "Your Frontman access has ended. Start a subscription to continue."
+    case Billing.get_current_subscription(scope) do
+      nil -> "Finish billing setup to start using Frontman."
+      %Subscription{} -> "Your Frontman access has ended. Start a subscription to continue."
     end
   end
 

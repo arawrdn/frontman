@@ -2,6 +2,8 @@ defmodule FrontmanServerWeb.TaskChannelTest do
   use FrontmanServerWeb.ChannelCase, async: true
   use Oban.Testing, repo: FrontmanServer.Repo
 
+  @moduletag :capture_log
+
   import FrontmanServer.InteractionCase.Helpers
   import FrontmanServer.Test.Fixtures.Tasks
   import FrontmanServer.Test.Fixtures.LLMProvider
@@ -123,7 +125,7 @@ defmodule FrontmanServerWeb.TaskChannelTest do
 
   describe "session/prompt" do
     setup %{scope: scope} do
-      FrontmanServer.BillingFixtures.ensure_subscription_for_scope_fixture(scope)
+      FrontmanServer.BillingFixtures.allow_access_for_scope_fixture(scope)
       {socket, task_id} = join_task_channel(scope)
       {:ok, socket: socket, task_id: task_id}
     end
@@ -761,7 +763,7 @@ defmodule FrontmanServerWeb.TaskChannelTest do
       # 2. MCP init completes, storing tools in socket assigns
       # 3. Queued prompt is processed with the loaded MCP tools
 
-      FrontmanServer.BillingFixtures.ensure_subscription_for_scope_fixture(scope)
+      FrontmanServer.BillingFixtures.allow_access_for_scope_fixture(scope)
       {socket, _task_id} = join_task_channel(scope)
 
       # MCP init has started - we receive the initialize request

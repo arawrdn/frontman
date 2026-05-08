@@ -313,7 +313,7 @@ defmodule FrontmanServer.Tasks do
   end
 
   defp guard_billing_access(scope) do
-    if Billing.access_allowed?(scope), do: :ok, else: {:error, :billing_inactive}
+    if Billing.allow_access?(scope), do: :ok, else: {:error, :billing_inactive}
   end
 
   @doc """
@@ -487,7 +487,7 @@ defmodule FrontmanServer.Tasks do
       Execution.running?(scope, task_id) ->
         :already_running
 
-      not Billing.access_allowed?(scope) ->
+      not Billing.allow_access?(scope) ->
         broadcast_execution_start_error(scope, task_id, :billing_inactive)
 
       true ->

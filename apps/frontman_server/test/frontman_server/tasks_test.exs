@@ -2,10 +2,10 @@ defmodule FrontmanServer.TasksTest do
   use FrontmanServer.DataCase, async: true
 
   import FrontmanServer.Test.Fixtures.Accounts
+  import FrontmanServer.BillingFixtures
   import FrontmanServer.InteractionCase.Helpers
   import FrontmanServer.Test.Fixtures.Tasks
 
-  alias FrontmanServer.Billing
   alias FrontmanServer.Tasks
   alias FrontmanServer.Tasks.Execution.Framework
   alias FrontmanServer.Tasks.Interaction
@@ -47,9 +47,9 @@ defmodule FrontmanServer.TasksTest do
       refute_receive {:interaction, %Interaction.UserMessage{}}
     end
 
-    test "blocks prompt persistence when entitlement has ended", %{scope: scope} do
+    test "blocks prompt persistence when subscription has ended", %{scope: scope} do
       task_id = task_fixture(scope)
-      create_billing_subscription(scope, "canceled")
+      block_access_for_scope_fixture(scope)
       :ok = Phoenix.PubSub.subscribe(FrontmanServer.PubSub, Tasks.topic(task_id))
 
       assert {:error, :billing_inactive} =
@@ -623,24 +623,5 @@ defmodule FrontmanServer.TasksTest do
       assert length(messages) == 1
       assert hd(messages).role == :user
     end
-  end
-
-  defp create_billing_subscription(scope, status) do
-    unique = System.unique_integer([:positive])
-
-    {:ok, customer} =
-      Billing.create_customer(scope, %{stripe_customer_id: "cus_task_access_#{unique}"})
-
-    {:ok, subscription} =
-      Billing.create_subscription(scope, %{
-        billing_customer_id: customer.id,
-        stripe_subscription_id: "sub_task_access_#{unique}",
-        stripe_customer_id: customer.stripe_customer_id,
-        status: status,
-        interval: :monthly,
-        price_id: "price_monthly_test"
-      })
-
-    subscription
   end
 end

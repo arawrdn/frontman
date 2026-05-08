@@ -4,6 +4,7 @@ defmodule FrontmanServerWeb.TaskChannelEnvKeyTest do
   """
   use FrontmanServerWeb.ChannelCase, async: true
 
+  import FrontmanServer.BillingFixtures
   import FrontmanServer.ProvidersFixtures
 
   alias FrontmanServer.Tasks
@@ -35,6 +36,7 @@ defmodule FrontmanServerWeb.TaskChannelEnvKeyTest do
 
   describe "env key extraction through channel" do
     setup %{scope: scope} do
+      allow_access_for_scope_fixture(scope)
       {socket, _task_id} = join_task_channel(scope)
       complete_mcp_handshake(socket)
       {:ok, socket: socket}
@@ -82,6 +84,7 @@ defmodule FrontmanServerWeb.TaskChannelEnvKeyTest do
 
   describe "env key persistence across retries" do
     setup %{scope: scope} do
+      allow_access_for_scope_fixture(scope)
       {socket, task_id} = join_task_channel(scope)
       complete_mcp_handshake(socket)
       {:ok, socket: socket, task_id: task_id}

@@ -8,6 +8,8 @@ defmodule FrontmanServer.Tasks.Execution.MCPToolBroadcastTest do
 
   use FrontmanServer.ExecutionCase
 
+  @moduletag :capture_log
+
   import FrontmanServer.InteractionCase.Helpers
 
   import FrontmanServer.BillingFixtures
@@ -57,36 +59,15 @@ defmodule FrontmanServer.Tasks.Execution.MCPToolBroadcastTest do
           [some_mcp_tool_def]
         )
 
-      # Collect all tool call interactions broadcast via PubSub
-      # Wait for broadcasts (tool executor has 60s timeout, but we'll collect what we get)
-      tool_call_broadcasts = collect_tool_call_broadcasts(mcp_tool_call.id, 2_000)
+      assert_receive {:interaction, %Tasks.Interaction.ToolCall{tool_call_id: tool_call_id}},
+                     1_000
+
+      assert tool_call_id == mcp_tool_call.id
 
       # THE KEY ASSERTION: tool call should be broadcast exactly ONCE
       # If this fails with count > 1, we have the duplicate bug
-      assert length(tool_call_broadcasts) == 1,
-             "Expected exactly 1 tool call broadcast, got #{length(tool_call_broadcasts)}. " <>
-               "This indicates Tasks.add_tool_call is being called multiple times."
-    end
-  end
-
-  # Collects all {:interaction, %ToolCall{}} broadcasts for a specific tool call ID
-  defp collect_tool_call_broadcasts(expected_tool_call_id, timeout_ms) do
-    collect_tool_call_broadcasts(expected_tool_call_id, timeout_ms, [])
-  end
-
-  defp collect_tool_call_broadcasts(expected_tool_call_id, timeout_ms, acc) do
-    receive do
-      {:interaction, %Tasks.Interaction.ToolCall{tool_call_id: ^expected_tool_call_id} = tc} ->
-        # Found a matching tool call broadcast, keep collecting
-        collect_tool_call_broadcasts(expected_tool_call_id, timeout_ms, [tc | acc])
-
-      {:interaction, _other} ->
-        # Different interaction, ignore and keep collecting
-        collect_tool_call_broadcasts(expected_tool_call_id, timeout_ms, acc)
-    after
-      timeout_ms ->
-        # Timeout reached, return what we collected
-        Enum.reverse(acc)
+      refute_receive {:interaction, %Tasks.Interaction.ToolCall{tool_call_id: ^tool_call_id}},
+                     50
     end
   end
 

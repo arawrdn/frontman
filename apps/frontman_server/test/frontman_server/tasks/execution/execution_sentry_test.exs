@@ -9,6 +9,8 @@ defmodule FrontmanServer.Tasks.Execution.ExecutionSentryTest do
 
   use FrontmanServer.ExecutionCase
 
+  @moduletag :capture_log
+
   import FrontmanServer.BillingFixtures
   import FrontmanServer.Test.Fixtures.Accounts
   import FrontmanServer.Test.Fixtures.Tasks

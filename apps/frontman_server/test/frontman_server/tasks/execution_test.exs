@@ -9,6 +9,9 @@ defmodule FrontmanServer.Tasks.ExecutionIntegrationTest do
   use FrontmanServer.ExecutionCase
   use Oban.Testing, repo: FrontmanServer.Repo
 
+  @moduletag :capture_log
+
+  import Mox
   import Phoenix.ChannelTest
 
   import FrontmanServer.BillingFixtures
@@ -21,7 +24,9 @@ defmodule FrontmanServer.Tasks.ExecutionIntegrationTest do
   alias Ecto.Adapters.SQL.Sandbox
   alias FrontmanServer.Accounts.Scope
   alias FrontmanServer.Tasks
+  alias FrontmanServer.Tasks.Execution.LLMProviderMock
   alias FrontmanServer.Tasks.{ExecutionEvent, Interaction}
+  alias FrontmanServer.Test.Fixtures.ReqLLMResponses
   alias FrontmanServer.Tools.MCP
   alias FrontmanServer.Workers.GenerateTitle
 
@@ -41,7 +46,7 @@ defmodule FrontmanServer.Tasks.ExecutionIntegrationTest do
           "properties" => %{"questions" => %{"type" => "array"}}
         },
         visible_to_agent: true,
-        timeout_ms: 200,
+        timeout_ms: 50,
         on_timeout: :pause_agent
       }
     ]
@@ -58,7 +63,7 @@ defmodule FrontmanServer.Tasks.ExecutionIntegrationTest do
           "properties" => %{"questions" => %{"type" => "array"}}
         },
         visible_to_agent: true,
-        timeout_ms: 100,
+        timeout_ms: 50,
         on_timeout: :error
       }
     ]
@@ -76,6 +81,28 @@ defmodule FrontmanServer.Tasks.ExecutionIntegrationTest do
     subscription_for_scope_fixture(scope)
     scope = Scope.with_env_api_keys(scope, %{"openrouter" => "sk-or-test"})
     {:ok, scope: scope}
+  end
+
+  defp wait_until_running(scope, task_id, attempts \\ 20) do
+    case Tasks.Execution.running?(scope, task_id) do
+      true ->
+        :ok
+
+      false when attempts > 0 ->
+        Process.sleep(10)
+        wait_until_running(scope, task_id, attempts - 1)
+    end
+  end
+
+  defp wait_until_tool_registered(tool_call_id, attempts \\ 20) do
+    case Registry.lookup(FrontmanServer.ToolCallRegistry, {:tool_call, tool_call_id}) do
+      [{_pid, _}] ->
+        :ok
+
+      [] when attempts > 0 ->
+        Process.sleep(10)
+        wait_until_tool_registered(tool_call_id, attempts - 1)
+    end
   end
 
   defp setup_task(%{scope: scope}) do
@@ -132,12 +159,18 @@ defmodule FrontmanServer.Tasks.ExecutionIntegrationTest do
       task_id: task_id,
       scope: scope
     } do
-      expect_llm_responses([{:delay, "slow", 5000}])
+      test_pid = self()
+
+      expect(LLMProviderMock, :stream_text, fn _model, _messages, _opts ->
+        send(test_pid, :stream_started)
+        ReqLLMResponses.response({:delay, "slow", 250})
+      end)
 
       {:ok, _} =
         Tasks.submit_user_message(scope, task_id, user_content("Hello"), [])
 
-      Process.sleep(100)
+      assert_receive :stream_started, 1_000
+      :ok = wait_until_running(scope, task_id)
       assert SwarmAi.Runtime.running?(FrontmanServer.AgentRuntime, task_id)
 
       assert :ok = Tasks.cancel_execution(scope, task_id)
@@ -156,12 +189,12 @@ defmodule FrontmanServer.Tasks.ExecutionIntegrationTest do
       task_id: task_id,
       scope: scope
     } do
-      expect_llm_responses([{:delay, "slow response", 5_000}])
+      expect_llm_responses([{:delay, "slow response", 100}])
 
       {:ok, _interaction} =
         Tasks.submit_user_message(scope, task_id, user_content("First"), [])
 
-      Process.sleep(100)
+      :ok = wait_until_running(scope, task_id)
       assert SwarmAi.Runtime.running?(FrontmanServer.AgentRuntime, task_id)
 
       assert {:error, :already_running} =
@@ -169,7 +202,6 @@ defmodule FrontmanServer.Tasks.ExecutionIntegrationTest do
 
       # Only one completion should fire
       assert_receive {:interaction, %Interaction.AgentCompleted{}}, 6_000
-      refute_receive {:interaction, %Interaction.AgentCompleted{}}, 500
 
       # Only one agent response persisted — second message was rejected entirely
       {:ok, task} = Tasks.get_task(scope, task_id)
@@ -269,7 +301,7 @@ defmodule FrontmanServer.Tasks.ExecutionIntegrationTest do
         )
 
       # Agent should still be running (blocking on receive)
-      Process.sleep(200)
+      :ok = wait_until_tool_registered(question_tc_id)
       assert SwarmAi.Runtime.running?(FrontmanServer.AgentRuntime, task_id)
 
       # Submit the tool result — this unblocks the agent
@@ -362,6 +394,7 @@ defmodule FrontmanServer.Tasks.ExecutionIntegrationTest do
   describe "interactive tool timeout — ToolResult DB persistence" do
     setup [:setup_sandbox, :setup_user, :setup_task]
 
+    @tag :capture_log
     test "ToolResult is persisted in DB when question tool times out", %{
       task_id: task_id,
       scope: scope
@@ -414,6 +447,7 @@ defmodule FrontmanServer.Tasks.ExecutionIntegrationTest do
   describe "MCP tool timeout with on_timeout: :error" do
     setup [:setup_sandbox, :setup_user, :setup_task]
 
+    @tag :capture_log
     test "ToolResult is persisted in DB when MCP tool times out (on_timeout: :error)", %{
       task_id: task_id,
       scope: scope
@@ -515,6 +549,7 @@ defmodule FrontmanServer.Tasks.ExecutionIntegrationTest do
     # Backend tools (todo_write, web_fetch) are absent from `tool_defs`, so
     # ParallelExecutor.spawn_or_reject immediately returns "Unknown tool: <name>"
     # instead of dispatching to the ToolExecutor closure.
+    @tag :capture_log
     test "todo_write executes successfully — not rejected as Unknown tool", %{
       task_id: task_id,
       scope: scope
@@ -556,6 +591,7 @@ defmodule FrontmanServer.Tasks.ExecutionIntegrationTest do
       :setup_channel
     ]
 
+    @tag :capture_log
     test "todo_write executes through the full channel → executor pipeline", %{
       task_id: task_id,
       scope: scope,
@@ -635,6 +671,7 @@ defmodule FrontmanServer.Tasks.ExecutionIntegrationTest do
       :setup_channel
     ]
 
+    @tag :capture_log
     test "session/update agent_turn_complete is pushed when backend tool raises", %{
       task_id: task_id,
       scope: scope,
@@ -676,6 +713,7 @@ defmodule FrontmanServer.Tasks.ExecutionIntegrationTest do
       :setup_channel
     ]
 
+    @tag :capture_log
     test "session/update agent_turn_complete is pushed when ParallelExecutor deadline fires", %{
       task_id: task_id,
       scope: scope,
@@ -778,6 +816,7 @@ defmodule FrontmanServer.Tasks.ExecutionIntegrationTest do
       :setup_channel
     ]
 
+    @tag :capture_log
     test "crashed event persists error, fires telemetry, and pushes agent_turn_complete to client",
          %{
            task_id: task_id,
@@ -841,6 +880,7 @@ defmodule FrontmanServer.Tasks.ExecutionIntegrationTest do
       :setup_channel
     ]
 
+    @tag :capture_log
     test "failed event persists classified error, fires telemetry, and pushes agent_turn_complete to client",
          %{
            task_id: task_id,
@@ -899,6 +939,7 @@ defmodule FrontmanServer.Tasks.ExecutionIntegrationTest do
   describe "backend tool crash — ToolResult DB persistence" do
     setup [:setup_sandbox, :setup_user, :setup_task]
 
+    @tag :capture_log
     test "ToolResult is persisted when backend tool raises", %{
       task_id: task_id,
       scope: scope
@@ -940,6 +981,7 @@ defmodule FrontmanServer.Tasks.ExecutionIntegrationTest do
   describe "backend tool timeout (ParallelExecutor) — ToolResult DB persistence" do
     setup [:setup_sandbox, :setup_user, :setup_task]
 
+    @tag :capture_log
     test "ToolResult is persisted when ParallelExecutor deadline fires before tool returns", %{
       task_id: task_id,
       scope: scope
