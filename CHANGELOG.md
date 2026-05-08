@@ -113,6 +113,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Add initial Frontman Server billing foundation for Stripe Managed Payments subscription trials, including monthly/yearly Checkout Session creation, Stripe webhook ingestion, billing persistence tables, and testable billing client behaviour.
+
 ### Changed
 
 - Refactor: move `env_api_keys` into `Scope` struct — eliminates ad-hoc `env_api_key` parameter threading across `Providers`, channels, and the execution pipeline. `Providers.prepare_api_key`, `resolve_api_key`, `available_provider_tiers`, and `model_config_data` all drop their `env_api_key` parameter and read from `scope.env_api_keys` instead.

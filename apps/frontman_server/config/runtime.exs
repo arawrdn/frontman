@@ -70,6 +70,17 @@ config :workos, WorkOS.Client,
   api_key: env!("WORKOS_API_KEY", :string, nil),
   client_id: env!("WORKOS_CLIENT_ID", :string, nil)
 
+if config_env() != :test do
+  stripe_config = Application.get_env(:frontman_server, :stripe, [])
+
+  config :frontman_server,
+    stripe:
+      Keyword.merge(stripe_config,
+        secret_key: env!("STRIPE_SECRET_KEY", :string, nil),
+        webhook_secret: env!("STRIPE_WEBHOOK_SECRET", :string, nil)
+      )
+end
+
 # OpenTelemetry configuration
 # Arize export enabled if both ARIZE_API_KEY and ARIZE_SPACE_ID are set
 # Optional in all environments - when not set, tracing export is disabled

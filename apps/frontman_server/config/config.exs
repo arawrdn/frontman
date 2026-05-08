@@ -42,6 +42,7 @@ config :req_llm,
 config :frontman_server,
   ecto_repos: [FrontmanServer.Repo],
   generators: [timestamp_type: :utc_datetime, binary_id: true],
+  billing_client: FrontmanServer.Billing.StripeClient,
   # Default usage limit for server-provided API keys
   user_key_usage_limit: 10,
   # Max time to wait for the next LLM stream chunk before declaring a stall.
@@ -51,6 +52,12 @@ config :frontman_server,
   # Max output tokens for LLM responses. Increase to support long file writes.
   # Sonnet 4.5 supports up to 64K output tokens.
   llm_max_tokens: 64_000
+
+config :frontman_server, :stripe,
+  api_base_url: "https://api.stripe.com",
+  api_version: "2025-03-31.basil",
+  signature_tolerance_seconds: 300,
+  trial_days: 14
 
 # Configures the endpoint
 config :frontman_server, FrontmanServerWeb.Endpoint,
