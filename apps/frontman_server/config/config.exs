@@ -54,7 +54,7 @@ config :frontman_server,
   llm_max_tokens: 64_000
 
 config :frontman_server, :stripe,
-  api_base_url: "https://api.stripe.com",
+  api_base_url: "https://api.stripe.com/v1",
   api_version: "2025-03-31.basil",
   signature_tolerance_seconds: 300,
   trial_days: 14
