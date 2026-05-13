@@ -470,6 +470,28 @@ let boundingBoxMetaSchema: S.t<boundingBoxMeta> = S.object(s => {
   height: s.field("height", S.float),
 })
 
+type pointMeta = {
+  x: float,
+  y: float,
+}
+
+let pointMetaSchema: S.t<pointMeta> = S.object(s => {
+  x: s.field("x", S.float),
+  y: s.field("y", S.float),
+})
+
+type penShapeMeta = {
+  coordinateSpace: string,
+  points: array<pointMeta>,
+  boundingBox: boundingBoxMeta,
+}
+
+let penShapeMetaSchema: S.t<penShapeMeta> = S.object(s => {
+  coordinateSpace: s.field("coordinate_space", S.string),
+  points: s.field("points", S.array(pointMetaSchema)),
+  boundingBox: s.field("bounding_box", boundingBoxMetaSchema),
+})
+
 // Recursive parent location chain — serialized manually to JSON because
 // Sury S.recursive has a bug with S.dict(S.json) in reverseConvertToJson.
 // The type is used for construction; parentLocationToJson handles serialization.
@@ -521,6 +543,7 @@ type annotationMeta = {
   nearbyText: option<string>,
   elementorContext: option<Client__ElementorDetection.t>,
   boundingBox: option<boundingBoxMeta>,
+  penShape: option<penShapeMeta>,
 }
 
 let annotationMetaSchema: S.t<annotationMeta> = S.object(s => {
@@ -539,6 +562,7 @@ let annotationMetaSchema: S.t<annotationMeta> = S.object(s => {
   nearbyText: s.field("nearby_text", S.option(S.string)),
   elementorContext: s.field("elementor", S.option(Client__ElementorDetection.schema)),
   boundingBox: s.field("bounding_box", S.option(boundingBoxMetaSchema)),
+  penShape: s.field("pen_shape", S.option(penShapeMetaSchema)),
 })
 
 let elementorText = (context: Client__ElementorDetection.t, ~tagName: string): string =>
@@ -549,6 +573,32 @@ let elementorTargetText = (context: Client__ElementorDetection.t): string =>
   | Some(postId) => `post_id=${postId->Int.toString}, element_id=${context.elementId}`
   | None => `element_id=${context.elementId}`
   }
+
+let boundingBoxToMeta = (bb: Annotation.boundingBox): boundingBoxMeta => {
+  x: bb.x,
+  y: bb.y,
+  width: bb.width,
+  height: bb.height,
+}
+
+let penShapeToMeta = (shape: Annotation.penShape): penShapeMeta => {
+  coordinateSpace: "viewport",
+  points: shape.points->Array.map(point => {x: point.x, y: point.y}),
+  boundingBox: boundingBoxToMeta(shape.boundingBox),
+}
+
+let boundingBoxText = (bb: boundingBoxMeta): string =>
+  `x=${bb.x->Float.toString}, y=${bb.y->Float.toString}, width=${bb.width->Float.toString}, height=${bb.height->Float.toString}`
+
+let penShapeText = (shape: penShapeMeta, ~tagName: string, ~selector: option<string>): string => {
+  let container = switch selector {
+  | Some(sel) => `<${tagName}> matching ${sel}`
+  | None => `<${tagName}>`
+  }
+  `Annotated pen mark inside ${container}; viewport bounding box: ${boundingBoxText(
+      shape.boundingBox,
+    )}; path points: ${shape.points->Array.length->Int.toString}`
+}
 
 let nearbyTextWithElementorHint = (
   ~nearbyText: option<string>,
@@ -635,12 +685,8 @@ let makeAnnotationMeta = (
         ~tagName=annotation.tagName,
       ),
       elementorContext: annotation.elementorContext,
-      boundingBox: annotation.boundingBox->Option.map(bb => {
-        x: bb.x,
-        y: bb.y,
-        width: bb.width,
-        height: bb.height,
-      }),
+      boundingBox: annotation.boundingBox->Option.map(boundingBoxToMeta),
+      penShape: annotation.penShape->Option.map(penShapeToMeta),
     },
     annotationMetaSchema,
   )
@@ -680,27 +726,35 @@ let annotationToContentBlocks = (annotation: Annotation.t, ~index: int): array<
 
   let _meta = makeAnnotationMeta(annotation, ~index, ~sourceLocation)
 
-  // Build text description and URI from source location, falling back to Elementor or selector
-  let (uri, text) = switch sourceLocation {
-  | Some(loc) => {
-      let f = stripFileUriPrefix(loc.file)
-      let l = loc.line->Int.toString
-      let c = loc.column->Int.toString
-      (`file://${f}:${l}:${c}`, `Annotated element: <${annotation.tagName}> at ${f}:${l}:${c}`)
-    }
+  // Build text description and URI from source location, falling back to Elementor or selector.
+  // Pen marks use the containing element for enrichment, but their resource text centers the mark.
+  let (uri, text) = switch annotation.penShape {
+  | Some(shape) => (
+      `pen-shape://${annotation.id}`,
+      penShapeText(penShapeToMeta(shape), ~tagName=annotation.tagName, ~selector),
+    )
   | None =>
-    switch annotation.elementorContext {
-    | Some(context) => (
-        Client__ElementorDetection.uri(context),
-        elementorText(context, ~tagName=annotation.tagName),
-      )
+    switch sourceLocation {
+    | Some(loc) => {
+        let f = stripFileUriPrefix(loc.file)
+        let l = loc.line->Int.toString
+        let c = loc.column->Int.toString
+        (`file://${f}:${l}:${c}`, `Annotated element: <${annotation.tagName}> at ${f}:${l}:${c}`)
+      }
     | None =>
-      switch selector {
-      | Some(sel) => (
-          `selector://${sel}`,
-          `Annotated element: <${annotation.tagName}> matching ${sel}`,
+      switch annotation.elementorContext {
+      | Some(context) => (
+          Client__ElementorDetection.uri(context),
+          elementorText(context, ~tagName=annotation.tagName),
         )
-      | None => (`element://${annotation.tagName}`, `Annotated element: <${annotation.tagName}>`)
+      | None =>
+        switch selector {
+        | Some(sel) => (
+            `selector://${sel}`,
+            `Annotated element: <${annotation.tagName}> matching ${sel}`,
+          )
+        | None => (`element://${annotation.tagName}`, `Annotated element: <${annotation.tagName}>`)
+        }
       }
     }
   }
@@ -992,12 +1046,8 @@ let makeMessageAnnotationMeta = (annotation: Message.MessageAnnotation.t, ~index
         ~tagName=annotation.tagName,
       ),
       elementorContext: annotation.elementorContext,
-      boundingBox: annotation.boundingBox->Option.map(bb => {
-        x: bb.x,
-        y: bb.y,
-        width: bb.width,
-        height: bb.height,
-      }),
+      boundingBox: annotation.boundingBox->Option.map(boundingBoxToMeta),
+      penShape: annotation.penShape->Option.map(penShapeToMeta),
     },
     annotationMetaSchema,
   )
@@ -1060,10 +1110,22 @@ let annotationMetaToMessageAnnotation = (
     screenshot: Ok(screenshot),
     sourceLocation,
     boundingBox: meta.boundingBox->Option.map(bb => {
-      Message.MessageAnnotation.x: bb.x,
+      Annotation.x: bb.x,
       y: bb.y,
       width: bb.width,
       height: bb.height,
+    }),
+    penShape: meta.penShape->Option.map(shape => {
+      Annotation.points: shape.points->Array.map(point => {
+        Annotation.x: point.x,
+        y: point.y,
+      }),
+      boundingBox: {
+        Annotation.x: shape.boundingBox.x,
+        y: shape.boundingBox.y,
+        width: shape.boundingBox.width,
+        height: shape.boundingBox.height,
+      },
     }),
     nearbyText: meta.nearbyText,
     elementorContext: meta.elementorContext,
@@ -1083,27 +1145,35 @@ let messageAnnotationToContentBlocks = (
 
   let _meta = makeMessageAnnotationMeta(annotation, ~index)
 
-  // Build text description and URI from source location, falling back to Elementor or selector
-  let (uri, text) = switch sourceLocation {
-  | Some(loc) => {
-      let f = stripFileUriPrefix(loc.file)
-      let l = loc.line->Int.toString
-      let c = loc.column->Int.toString
-      (`file://${f}:${l}:${c}`, `Annotated element: <${annotation.tagName}> at ${f}:${l}:${c}`)
-    }
+  // Build text description and URI from source location, falling back to Elementor or selector.
+  // Pen marks use the containing element for enrichment, but their resource text centers the mark.
+  let (uri, text) = switch annotation.penShape {
+  | Some(shape) => (
+      `pen-shape://${annotation.id}`,
+      penShapeText(penShapeToMeta(shape), ~tagName=annotation.tagName, ~selector),
+    )
   | None =>
-    switch annotation.elementorContext {
-    | Some(context) => (
-        Client__ElementorDetection.uri(context),
-        elementorText(context, ~tagName=annotation.tagName),
-      )
+    switch sourceLocation {
+    | Some(loc) => {
+        let f = stripFileUriPrefix(loc.file)
+        let l = loc.line->Int.toString
+        let c = loc.column->Int.toString
+        (`file://${f}:${l}:${c}`, `Annotated element: <${annotation.tagName}> at ${f}:${l}:${c}`)
+      }
     | None =>
-      switch selector {
-      | Some(sel) => (
-          `selector://${sel}`,
-          `Annotated element: <${annotation.tagName}> matching ${sel}`,
+      switch annotation.elementorContext {
+      | Some(context) => (
+          Client__ElementorDetection.uri(context),
+          elementorText(context, ~tagName=annotation.tagName),
         )
-      | None => (`element://${annotation.tagName}`, `Annotated element: <${annotation.tagName}>`)
+      | None =>
+        switch selector {
+        | Some(sel) => (
+            `selector://${sel}`,
+            `Annotated element: <${annotation.tagName}> matching ${sel}`,
+          )
+        | None => (`element://${annotation.tagName}`, `Annotated element: <${annotation.tagName}>`)
+        }
       }
     }
   }

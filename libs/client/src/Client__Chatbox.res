@@ -117,9 +117,7 @@ let make = () => {
   let hasProviderConfigured = Client__State.useSelector(
     Client__State.Selectors.hasAnyProviderConfigured,
   )
-  let webPreviewIsSelecting = Client__State.useSelector(
-    Client__State.Selectors.webPreviewIsSelecting,
-  )
+  let annotationMode = Client__State.useSelector(Client__State.Selectors.annotationMode)
   let annotations = Client__State.useSelector(Client__State.Selectors.annotations)
   let hasEnrichingAnnotations = Client__State.useSelector(
     Client__State.Selectors.hasEnrichingAnnotations,
@@ -150,6 +148,14 @@ let make = () => {
   let hasPendingQuestion =
     Client__State.useSelector(Client__State.Selectors.pendingQuestion)->Option.isSome
   let hasAnnotations = Array.length(annotations) > 0
+  let isSelectingElement = switch annotationMode {
+  | Client__Annotation__Types.Selecting => true
+  | _ => false
+  }
+  let isDrawingShape = switch annotationMode {
+  | Client__Annotation__Types.Drawing => true
+  | _ => false
+  }
 
   let handleSubmit = (~text: string, ~inputItems: array<Client__PromptInput.inputItem>) => {
     // Snapshot live annotations into serializable MessageAnnotation records
@@ -461,7 +467,9 @@ let make = () => {
           disabled={isUsageExhausted}
           disabledPlaceholder="Free requests exhausted. Add your API key in Settings to continue."
           onSelectElement={Client__State.Actions.toggleWebPreviewSelection}
-          isSelecting={webPreviewIsSelecting}
+          onDrawShape={Client__State.Actions.toggleWebPreviewPen}
+          isSelecting={isSelectingElement}
+          isDrawing={isDrawingShape}
           hasAnnotations
           isEnrichingAnnotations={hasEnrichingAnnotations}
         />
